@@ -7,6 +7,7 @@ import android.util.Log
 import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.Mat
+import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import java.util.Locale
 
@@ -21,6 +22,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var partySelectTemplate: Mat? = null
 
     companion object {
+        // 基準とする横幅
+        private const val REFERENCE_WIDTH = 1080f
+
         // VSロゴの中心座標比率
         private const val VS_X_RATIO = 540f / 1080f
         private const val VS_Y_RATIO = 1260f / 2364f
@@ -80,7 +84,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             }
         }
 
-        // ロゴのロード (assets内のtemplatesフォルダを想定)
         vsTemplate = loadColorTemplate(context, "templates/VS.png")
         winTemplate = loadColorTemplate(context, "templates/WIN.png")
         loseTemplate = loadColorTemplate(context, "templates/LOSE.png")
@@ -133,15 +136,25 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     private fun getSlotROI(fullMat: Mat, index: Int, imgW: Float, imgH: Float): Mat? {
+        val scale = imgW / REFERENCE_WIDTH
         val ratio = if (index < 4) MY_PARTY_RATIOS[index] else ENEMY_PARTY_RATIOS[index - 4]
         val centerX = (imgW * ratio.x).toInt()
         val centerY = (imgH * ratio.y).toInt()
 
-        val left = (centerX - CROP_SIZE_W / 2).coerceIn(0, (imgW.toInt() - CROP_SIZE_W))
-        val top = (centerY - CROP_SIZE_H / 2).coerceIn(0, (imgH.toInt() - CROP_SIZE_H))
+        // 実際の画面サイズに合わせた切り出しサイズ
+        val actualW = (CROP_SIZE_W * scale).toInt()
+        val actualH = (CROP_SIZE_H * scale).toInt()
+
+        val left = (centerX - actualW / 2).coerceIn(0, (imgW.toInt() - actualW))
+        val top = (centerY - actualH / 2).coerceIn(0, (imgH.toInt() - actualH))
 
         return try {
-            fullMat.submat(top, top + CROP_SIZE_H, left, left + CROP_SIZE_W)
+            val roi = fullMat.submat(top, top + actualH, left, left + actualW)
+            val resizedRoi = Mat()
+            // テンプレートのサイズ(基準サイズ)にリサイズして戻す
+            Imgproc.resize(roi, resizedRoi, Size(CROP_SIZE_W.toDouble(), CROP_SIZE_H.toDouble()))
+            roi.release()
+            resizedRoi
         } catch (_: Exception) {
             null
         }
@@ -200,17 +213,27 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         val imgW = rgbMat.cols()
         val imgH = rgbMat.rows()
+        val scale = imgW.toFloat() / REFERENCE_WIDTH
 
-        val left = (imgW * rx - tw / 2).toInt().coerceIn(0, imgW - tw)
-        val top = (imgH * ry - th / 2).toInt().coerceIn(0, imgH - th)
+        val centerX = (imgW * rx).toInt()
+        val centerY = (imgH * ry).toInt()
+        
+        val actualTw = (tw * scale).toInt()
+        val actualTh = (th * scale).toInt()
 
-        val roi = rgbMat.submat(top, top + th, left, left + tw)
+        val left = (centerX - actualTw / 2).coerceIn(0, imgW - actualTw)
+        val top = (centerY - actualTh / 2).coerceIn(0, imgH - actualTh)
+
+        val roi = rgbMat.submat(top, top + actualTh, left, left + actualTw)
+        val resizedRoi = Mat()
+        // テンプレートと同じサイズにリサイズ
+        Imgproc.resize(roi, resizedRoi, Size(tw.toDouble(), th.toDouble()))
+        
         val res = Mat()
-
-        Imgproc.matchTemplate(roi, template, res, Imgproc.TM_CCOEFF_NORMED)
+        Imgproc.matchTemplate(resizedRoi, template, res, Imgproc.TM_CCOEFF_NORMED)
         val score = Core.minMaxLoc(res).maxVal
 
-        roi.release(); res.release(); rgbMat.release(); fullMat.release()
+        roi.release(); resizedRoi.release(); res.release(); rgbMat.release(); fullMat.release()
 
         return score
     }
