@@ -36,7 +36,10 @@ class BattleHistoryAdapter(
 
         holder.result.text = record.result
         holder.result.setTextColor(if (record.result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt())
-        holder.party.text = "P[${record.partyIndex + 1}]"
+        
+        // 文字列結合の警告を修正: stringリソースを使用
+        holder.party.text = context.getString(R.string.party_label_format, record.partyIndex + 1)
+        
         holder.time.text = record.timestamp
 
         // アイコン表示の更新
@@ -69,8 +72,8 @@ class BattleHistoryAdapter(
                     val bitmap = BitmapFactory.decodeStream(stream)
                     imageView.setImageBitmap(bitmap)
                 }
-            } catch (e: Exception) {
-                // 画像がない場合や判定不能な場合は引き続きハテナマークを出す
+            } catch (_: Exception) {
+                // 未使用変数の警告を修正: e を _ に変更
                 imageView.setImageResource(android.R.drawable.ic_menu_help)
             }
             layout.addView(imageView)

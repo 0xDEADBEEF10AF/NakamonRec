@@ -4,6 +4,9 @@ import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
 import android.widget.GridView
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -12,14 +15,12 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.toColorInt
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.android.nakamonrec.databinding.ActivityHistoryBinding
 import java.text.SimpleDateFormat
-import java.util.Locale
 import java.util.Date
-import android.view.View
-import android.view.ViewGroup
-import android.widget.BaseAdapter
+import java.util.Locale
 
 class HistoryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHistoryBinding
@@ -54,32 +55,32 @@ class HistoryActivity : AppCompatActivity() {
         val stats = dataManager.getStatistics()
 
         // 総合戦績の反映
-        binding.valTotalCount.text = "${stats.totalWins + stats.totalLosses}戦"
-        binding.valTotalWin.text = "${stats.totalWins}勝"
-        binding.valTotalLose.text = "${stats.totalLosses}敗"
-        binding.valTotalRate.text = "(${String.format(Locale.US, "%.1f", stats.winRate)}%)"
+        binding.valTotalCount.text = getString(R.string.stats_count_format, stats.totalWins + stats.totalLosses)
+        binding.valTotalWin.text = getString(R.string.stats_win_format, stats.totalWins)
+        binding.valTotalLose.text = getString(R.string.stats_lose_format, stats.totalLosses)
+        binding.valTotalRate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", stats.winRate))
 
         // 各パーティ戦績の反映
         stats.partyStats.forEach { party ->
             val count = party.wins + party.losses
             when (party.index) {
                 0 -> {
-                    binding.valP1Count.text = "${count}戦"
-                    binding.valP1Win.text = "${party.wins}勝"
-                    binding.valP1Lose.text = "${party.losses}敗"
-                    binding.valP1Rate.text = "(${String.format(Locale.US, "%.1f", party.winRate)}%)"
+                    binding.valP1Count.text = getString(R.string.stats_count_format, count)
+                    binding.valP1Win.text = getString(R.string.stats_win_format, party.wins)
+                    binding.valP1Lose.text = getString(R.string.stats_lose_format, party.losses)
+                    binding.valP1Rate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", party.winRate))
                 }
                 1 -> {
-                    binding.valP2Count.text = "${count}戦"
-                    binding.valP2Win.text = "${party.wins}勝"
-                    binding.valP2Lose.text = "${party.losses}敗"
-                    binding.valP2Rate.text = "(${String.format(Locale.US, "%.1f", party.winRate)}%)"
+                    binding.valP2Count.text = getString(R.string.stats_count_format, count)
+                    binding.valP2Win.text = getString(R.string.stats_win_format, party.wins)
+                    binding.valP2Lose.text = getString(R.string.stats_lose_format, party.losses)
+                    binding.valP2Rate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", party.winRate))
                 }
                 2 -> {
-                    binding.valP3Count.text = "${count}戦"
-                    binding.valP3Win.text = "${party.wins}勝"
-                    binding.valP3Lose.text = "${party.losses}敗"
-                    binding.valP3Rate.text = "(${String.format(Locale.US, "%.1f", party.winRate)}%)"
+                    binding.valP3Count.text = getString(R.string.stats_count_format, count)
+                    binding.valP3Win.text = getString(R.string.stats_win_format, party.wins)
+                    binding.valP3Lose.text = getString(R.string.stats_lose_format, party.losses)
+                    binding.valP3Rate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", party.winRate))
                 }
             }
         }
@@ -130,15 +131,19 @@ class HistoryActivity : AppCompatActivity() {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
                 val view = convertView ?: layoutInflater.inflate(R.layout.item_monster_ranking, parent, false)
                 val data = rankingList[position]
-                view.findViewById<TextView>(R.id.textRank).text = "${position + 1}"
+                view.findViewById<TextView>(R.id.textRank).text = String.format(Locale.US, "%d", position + 1)
                 view.findViewById<TextView>(R.id.textMonsterName).text = data.name
-                view.findViewById<TextView>(R.id.textAppearance).text = "出現: ${data.count}回 (${String.format(Locale.US, "%.1f", data.appearanceRate)}%)"
+                view.findViewById<TextView>(R.id.textAppearance).text = getString(
+                    R.string.rank_appearance_format,
+                    data.count,
+                    String.format(Locale.US, "%.1f", data.appearanceRate)
+                )
                 val winRateTextView = view.findViewById<TextView>(R.id.textWinRate)
-                winRateTextView.text = "勝率: ${String.format(Locale.US, "%.1f", data.winRate)}%"
+                winRateTextView.text = getString(R.string.rank_win_rate_format, String.format(Locale.US, "%.1f", data.winRate))
                 when {
-                    data.winRate < 40.0 -> winRateTextView.setTextColor(Color.parseColor("#F09199"))
-                    data.winRate > 60.0 -> winRateTextView.setTextColor(Color.parseColor("#90D7EC"))
-                    else -> winRateTextView.setTextColor(Color.parseColor("#CCCCCC"))
+                    data.winRate < 40.0 -> winRateTextView.setTextColor("#F09199".toColorInt())
+                    data.winRate > 60.0 -> winRateTextView.setTextColor("#90D7EC".toColorInt())
+                    else -> winRateTextView.setTextColor("#CCCCCC".toColorInt())
                 }
                 val imageView = view.findViewById<ImageView>(R.id.imageMonster)
                 val monsterData = dataManager.monsterMaster.find { it.name == data.name }
@@ -147,7 +152,7 @@ class HistoryActivity : AppCompatActivity() {
                         assets.open("templates/${monsterData.fileName}").use {
                             imageView.setImageBitmap(android.graphics.BitmapFactory.decodeStream(it))
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         imageView.setImageResource(android.R.drawable.ic_menu_help)
                     }
                 }
@@ -249,7 +254,7 @@ class HistoryActivity : AppCompatActivity() {
                         assets.open("templates/${monsterData.fileName}").use {
                             setImageBitmap(android.graphics.BitmapFactory.decodeStream(it))
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         setImageResource(android.R.drawable.ic_menu_help)
                     }
                 }
@@ -301,7 +306,7 @@ class HistoryActivity : AppCompatActivity() {
                         assets.open("templates/${monster.fileName}").use {
                             imageView.setImageBitmap(android.graphics.BitmapFactory.decodeStream(it))
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         imageView.setImageResource(android.R.drawable.ic_menu_help)
                     }
                     return imageView
@@ -347,7 +352,7 @@ class HistoryActivity : AppCompatActivity() {
     private fun insertRecordAfter(position: Int) {
         val baseRecord = dataManager.history.records[position]
         val newRecord = baseRecord.copy(
-            timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()) + " (手動)",
+            timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
         )
         dataManager.history.records.add(position + 1, newRecord)
         if (newRecord.result == "WIN") dataManager.history.totalWins++

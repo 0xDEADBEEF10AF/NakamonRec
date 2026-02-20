@@ -2,7 +2,6 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#555555">
@@ -30,7 +29,7 @@
 
             <!-- 総合戦績行 -->
             <TableRow android:paddingVertical="2dp">
-                <TextView android:id="@+id/labelTotal" android:text="TOTAL" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/labelTotal" android:text="@string/label_total" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valTotalCount" android:gravity="end" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valTotalWin" android:gravity="end" android:textColor="#F09199" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="8dp" />
                 <TextView android:id="@+id/valTotalLose" android:gravity="end" android:textColor="#90D7EC" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="8dp" />
@@ -39,7 +38,7 @@
 
             <!-- パーティ1 -->
             <TableRow android:paddingVertical="2dp">
-                <TextView android:id="@+id/labelP1" android:text="P[1]" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/labelP1" android:text="@string/label_p1" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valP1Count" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valP1Win" android:gravity="end" android:textColor="#F09199" android:textSize="14sp" android:layout_marginEnd="8dp" />
                 <TextView android:id="@+id/valP1Lose" android:gravity="end" android:textColor="#90D7EC" android:textSize="14sp" android:layout_marginEnd="8dp" />
@@ -48,7 +47,7 @@
 
             <!-- パーティ2 -->
             <TableRow android:paddingVertical="2dp">
-                <TextView android:id="@+id/labelP2" android:text="P[2]" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/labelP2" android:text="@string/label_p2" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valP2Count" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valP2Win" android:gravity="end" android:textColor="#F09199" android:textSize="14sp" android:layout_marginEnd="8dp" />
                 <TextView android:id="@+id/valP2Lose" android:gravity="end" android:textColor="#90D7EC" android:textSize="14sp" android:layout_marginEnd="8dp" />
@@ -57,7 +56,7 @@
 
             <!-- パーティ3 -->
             <TableRow android:paddingVertical="2dp">
-                <TextView android:id="@+id/labelP3" android:text="P[3]" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/labelP3" android:text="@string/label_p3" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valP3Count" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
                 <TextView android:id="@+id/valP3Win" android:gravity="end" android:textColor="#F09199" android:textSize="14sp" android:layout_marginEnd="8dp" />
                 <TextView android:id="@+id/valP3Lose" android:gravity="end" android:textColor="#90D7EC" android:textSize="14sp" android:layout_marginEnd="8dp" />
@@ -82,7 +81,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="20dp"
-        android:text="Back"
+        android:text="@string/btn_back"
         android:textColor="#FFFFFF"
         app:icon="@android:drawable/ic_menu_revert"
         app:iconTint="#FFFFFF"
@@ -97,7 +96,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="20dp"
-        android:text="Analyze"
+        android:text="@string/btn_analyze"
         android:textColor="#FFFFFF"
         app:icon="@android:drawable/ic_menu_search"
         app:iconTint="#FFFFFF"

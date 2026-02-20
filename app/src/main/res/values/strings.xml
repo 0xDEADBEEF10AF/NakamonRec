@@ -1,11 +1,31 @@
 <resources>
-    <string name="app_name">なかもんREC</string>
-    <string name="btn_start">キャプチャ開始</string>
-    <string name="btn_stop">キャプチャ停止</string>
-    <string name="status_waiting">対戦待ち…</string>
-    <string name="status_in_battle">戦闘中！</string>
-    <string name="current_file_label">使用中: %1$s</string>
+    <string name="app_name">なかもんれっく</string>
+    <string name="btn_rec">REC</string>
+    <string name="btn_stop">STOP</string>
+    <string name="current_file_format">使用ファイル名: %1$s</string>
     <string name="file_switched_toast">「%1$s」に切り替えました</string>
-    <string name="btn_history">戦績履歴を見る</string>
+    <string name="btn_history">戦績チェック</string>
+    <string name="btn_manage">ファイル管理</string>
+    <string name="btn_reset">データリセット</string>
     <string name="summary_format">勝率 %1$s%% (%2$d勝%3$d敗)</string>
+    <string name="party_label_format">P[%1$d]</string>
+
+    <!-- 統計表示用 -->
+    <string name="stats_count_format">%1$d戦</string>
+    <string name="stats_win_format">%1$d勝</string>
+    <string name="stats_lose_format">%1$d敗</string>
+    <string name="stats_rate_format">(%1$s%%)</string>
+
+    <!-- ラベル用 -->
+    <string name="label_total">TOTAL</string>
+    <string name="label_p1">P[1]</string>
+    <string name="label_p2">P[2]</string>
+    <string name="label_p3">P[3]</string>
+    <string name="btn_back">Back</string>
+    <string name="btn_analyze">Analyze</string>
+    <string name="label_vs">vs</string>
+
+    <!-- ランキング表示用 -->
+    <string name="rank_appearance_format">出現: %1$d回 (%2$s%%)</string>
+    <string name="rank_win_rate_format">勝率: %1$s%%</string>
 </resources>

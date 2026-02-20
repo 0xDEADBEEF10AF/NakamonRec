@@ -8,11 +8,11 @@ import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
+import java.util.Locale
 
 data class PosRatio(val x: Float, val y: Float)
 
-class BattleAnalyzer(private val master: List<MonsterData>) {
-    private val monsterMaster = master
+class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private val identifiedNames = arrayOfNulls<String>(8)
 
     private var vsTemplate: Mat? = null
@@ -72,11 +72,10 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 val mat = Mat()
                 Utils.bitmapToMat(bitmap, mat)
-                //Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2GRAY)
                 Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2RGB)
                 data.templateMat = mat
                 Log.i("BattleAnalyzer", "✅ ロード完了: ${data.name}")
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 Log.e("BattleAnalyzer", "❌ ロード失敗: ${data.fileName}")
             }
         }
@@ -84,24 +83,8 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
         // ロゴのロード (assets内のtemplatesフォルダを想定)
         vsTemplate = loadColorTemplate(context, "templates/VS.png")
         winTemplate = loadColorTemplate(context, "templates/WIN.png")
-        //loseTemplate = loadGrayTemplate(context, "templates/LOSE.png")
         loseTemplate = loadColorTemplate(context, "templates/LOSE.png")
         partySelectTemplate = loadColorTemplate(context, "templates/SELECT.png")
-        //partySelectTemplate = loadGrayTemplate(context, "templates/SELECT.png")
-    }
-
-    private fun loadGrayTemplate(context: Context, path: String): Mat? {
-        return try {
-            val stream = context.assets.open(path)
-            val bitmap = BitmapFactory.decodeStream(stream)
-            val mat = Mat()
-            Utils.bitmapToMat(bitmap, mat)
-            Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2GRAY)
-            mat
-        } catch (e: Exception) {
-            Log.e("BattleAnalyzer", "Template load failed: $path")
-            null
-        }
     }
 
     private fun loadColorTemplate(context: Context, path: String): Mat? {
@@ -114,7 +97,7 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
             Imgproc.cvtColor(mat, rgbMat, Imgproc.COLOR_RGBA2RGB)
             mat.release()
             rgbMat
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Log.e("BattleAnalyzer", "Template load failed: $path")
             null
         }
@@ -130,11 +113,9 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
         val fullMat = Mat()
         Utils.bitmapToMat(bitmap, fullMat)
 
-        // 画像のサイズを取得しておく
         val imgW = fullMat.cols().toFloat()
         val imgH = fullMat.rows().toFloat()
 
-        //Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_BGR2GRAY)
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
 
         for (i in 0..7) {
@@ -144,7 +125,7 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
 
             if (result.score > MONSTER_THRESHOLD) {
                 identifiedNames[i] = result.name
-                Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format("%.3f", result.score)})")
+                Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
             }
             roiMat.release()
         }
@@ -161,7 +142,7 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
 
         return try {
             fullMat.submat(top, top + CROP_SIZE_H, left, left + CROP_SIZE_W)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -195,51 +176,17 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
 
     fun isVsDetected(bitmap: Bitmap): Boolean {
         val score = performColorMatch(bitmap, VS_X_RATIO, VS_Y_RATIO, VS_W, VS_H, vsTemplate)
-        //if (score > 0.1) {
-        //    Log.d("BattleAnalyzer", "🔍 VS Matching Score: ${String.format("%.3f", score)}")
-        //}
         return score > VS_THRESHOLD
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {
         val winScore = performColorMatch(bitmap, RESULT_X_RATIO, RESULT_Y_RATIO, WIN_W, WIN_H, winTemplate)
-        //if (winScore > 0.1) {
-        //    Log.d("BattleAnalyzer", "🔍 WIN Matching Score: ${String.format("%.3f", winScore)}")
-        //}
         if (winScore > WIN_THRESHOLD) return "WIN"
 
         val loseScore = performColorMatch(bitmap, RESULT_X_RATIO, RESULT_Y_RATIO, LOSE_W, LOSE_H, loseTemplate)
-        //if (loseScore > 0.1) {
-        //   Log.d("BattleAnalyzer", "🔍 LOSE Matching Score: ${String.format("%.3f", loseScore)}")
-        //}
         if (loseScore > LOSE_THRESHOLD) return "LOSE"
 
         return null
-    }
-
-    private fun performGrayMatch(bitmap: Bitmap, rx: Float, ry: Float, tw: Int, th: Int, template: Mat?): Double {
-        if (template == null) return 0.0
-
-        val fullMat = Mat()
-        Utils.bitmapToMat(bitmap, fullMat)
-
-        val grayMat = Mat()
-        Imgproc.cvtColor(fullMat, grayMat, Imgproc.COLOR_RGBA2GRAY)
-
-        val imgW = grayMat.cols()
-        val imgH = grayMat.rows()
-
-        val left = (imgW * rx - tw / 2).toInt().coerceIn(0, imgW - tw)
-        val top = (imgH * ry - th / 2).toInt().coerceIn(0, imgH - th)
-
-        val roi = grayMat.submat(top, top + th, left, left + tw)
-        val res = Mat()
-
-        Imgproc.matchTemplate(roi, template, res, Imgproc.TM_CCOEFF_NORMED)
-        val score = Core.minMaxLoc(res).maxVal
-
-        roi.release(); res.release(); grayMat.release(); fullMat.release()
-        return score
     }
 
     private fun performColorMatch(bitmap: Bitmap, rx: Float, ry: Float, tw: Int, th: Int, template: Mat?): Double {
@@ -285,19 +232,10 @@ class BattleAnalyzer(private val master: List<MonsterData>) {
         val maxScore = scores.maxOrNull() ?: 0.0
         val maxIndex = scores.indexOf(maxScore)
 
-        // 2位のスコアを取得
-        val secondMax = scores.filterIndexed { index, _ -> index != maxIndex }.maxOrNull() ?: 0.0
-
-        // デバッグログ: 相対値の差を確認
-        //Log.d("BattleAnalyzer", "Scores: P1=${String.format("%.2f", scores[0])}, P2=${String.format("%.2f", scores[1])}, P3=${String.format("%.2f", scores[2])}")
-
-        // 判定条件:
-        // 1. 1位が最低限の閾値(0.45)を超えている
-        // 2. 1位が2位よりも「明らかに高い」(例: 0.05〜0.1以上の差)
         return if (maxScore >= PARTY_THRESHOLD) {
             maxIndex
         } else {
-            -1 // 確信が持てない(遷移中など)は更新しない
+            -1
         }
     }
 

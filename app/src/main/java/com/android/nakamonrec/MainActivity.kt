@@ -1,9 +1,12 @@
 package com.android.nakamonrec
 
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.ColorStateList
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -16,14 +19,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import org.opencv.android.OpenCVLoader
 import androidx.core.content.edit
-import java.io.File
+import androidx.core.graphics.toColorInt
 import com.android.nakamonrec.databinding.ActivityMainBinding
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.animation.ObjectAnimator
-import android.animation.PropertyValuesHolder
+import org.opencv.android.OpenCVLoader
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
             csvContentToSave?.let { content ->
                 try {
                     contentResolver.openOutputStream(it)?.use { outputStream ->
+                        // UTF-8 with BOM for Excel compatibility
                         outputStream.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
                         outputStream.write(content.toByteArray())
                     }
@@ -160,19 +161,19 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI(isRunning: Boolean) {
         if (isRunning) {
             binding.btnToggleService.apply {
-                text = "STOP"
-                backgroundTintList = ColorStateList.valueOf(Color.parseColor("#90D7EC"))
+                text = getString(R.string.btn_stop)
+                backgroundTintList = ColorStateList.valueOf("#90D7EC".toColorInt())
             }
             startPulseAnimation()
         } else {
             binding.btnToggleService.apply {
-                text = "REC"
-                backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F09199"))
+                text = getString(R.string.btn_rec)
+                backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt())
             }
             stopPulseAnimation()
         }
 
-        binding.textCurrentFile.text = "選択ファイル名: ${getCurrentFileName()}"
+        binding.textCurrentFile.text = getString(R.string.current_file_format, getCurrentFileName())
     }
 
     private fun startPulseAnimation() {
@@ -303,6 +304,7 @@ class MainActivity : AppCompatActivity() {
                     dm.resetHistory()
                     saveCurrentFileName(newName)
                     refreshServiceAndUI()
+                    updateUI(MediaCaptureService.isRunning)
                     Toast.makeText(this, "「$newName」を作成しました", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -360,7 +362,7 @@ class MainActivity : AppCompatActivity() {
     private fun showResetHistoryConfirmDialog(fileName: String) {
         AlertDialog.Builder(this)
             .setTitle("データのクリア")
-            .setMessage("選択ファイルの戦績をリセットしますか？\n(ファイル自体は削除されません)")
+            .setMessage("「$fileName」の戦績データをすべて削除しますか？\n(ファイル自体は削除されません)")
             .setPositiveButton("クリア") { _, _ ->
                 val dm = BattleDataManager(this)
                 dm.loadHistory(fileName)

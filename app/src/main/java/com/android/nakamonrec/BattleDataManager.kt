@@ -4,9 +4,8 @@ import android.content.Context
 import com.google.gson.Gson
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
-import kotlin.text.toDouble
-import kotlin.times
+import java.util.Date
+import java.util.Locale
 
 class BattleDataManager(private val context: Context) {
     private val gson = Gson()
@@ -35,12 +34,6 @@ class BattleDataManager(private val context: Context) {
         saveHistory()
     }
 
-    fun getStatsSummary(): String {
-        val total = history.totalWins + history.totalLosses
-        val rate = if (total > 0) (history.totalWins.toFloat() / total * 100).toInt() else 0
-        return "${total}戦 ${history.totalWins}勝 ${history.totalLosses}敗 (勝率${rate}%)"
-    }
-
     fun loadHistory(fileName: String) {
         this.currentFileName = fileName
         val file = File(context.filesDir, "$fileName.json")
@@ -61,10 +54,6 @@ class BattleDataManager(private val context: Context) {
     fun resetHistory() {
         history = BattleHistory()
         saveHistory()
-    }
-
-    fun getSummaryText(): String {
-        return "ファイル: $currentFileName\n戦績: ${history.totalWins}勝 ${history.totalLosses}敗"
     }
 
     fun getStatistics(): BattleStats {
