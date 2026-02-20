@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NakamonRec"
 include(":app")
+include(":opencv")

@@ -4,11 +4,7 @@ plugins {
 
 android {
     namespace = "com.android.nakamonrec"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.android.nakamonrec"
@@ -54,5 +50,5 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation("com.google.code.gson:gson:2.13.2")
-    implementation("com.quickbirdstudios:opencv:4.5.3.0")
+    implementation(project(":opencv"))
 }
