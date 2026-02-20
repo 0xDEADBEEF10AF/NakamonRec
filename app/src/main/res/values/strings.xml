@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">なかもんREC</string>
+    <string name="btn_start">キャプチャ開始</string>
+    <string name="btn_stop">キャプチャ停止</string>
+    <string name="status_waiting">対戦待ち…</string>
+    <string name="status_in_battle">戦闘中！</string>
+    <string name="current_file_label">使用中: %1$s</string>
+    <string name="file_switched_toast">「%1$s」に切り替えました</string>
+    <string name="btn_history">戦績履歴を見る</string>
+    <string name="summary_format">勝率 %1$s%% (%2$d勝%3$d敗)</string>
+</resources>

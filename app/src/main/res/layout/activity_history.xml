@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#555555">
+
+    <androidx.cardview.widget.CardView
+        android:id="@+id/fixedHeader"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="48dp"
+        android:layout_marginBottom="8dp"
+        android:layout_marginLeft="4dp"
+        android:layout_marginRight="4dp"
+        app:cardBackgroundColor="#666666"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent">
+
+        <TableLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="start"
+            android:paddingVertical="12dp"
+            android:paddingStart="32dp"
+            android:paddingEnd="12dp">
+
+            <!-- 総合戦績行 -->
+            <TableRow android:paddingVertical="2dp">
+                <TextView android:id="@+id/labelTotal" android:text="TOTAL" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valTotalCount" android:gravity="end" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valTotalWin" android:gravity="end" android:textColor="#F09199" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valTotalLose" android:gravity="end" android:textColor="#90D7EC" android:textStyle="bold" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valTotalRate" android:gravity="end" android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="14sp" />
+            </TableRow>
+
+            <!-- パーティ1 -->
+            <TableRow android:paddingVertical="2dp">
+                <TextView android:id="@+id/labelP1" android:text="P[1]" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valP1Count" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valP1Win" android:gravity="end" android:textColor="#F09199" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valP1Lose" android:gravity="end" android:textColor="#90D7EC" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valP1Rate" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" />
+            </TableRow>
+
+            <!-- パーティ2 -->
+            <TableRow android:paddingVertical="2dp">
+                <TextView android:id="@+id/labelP2" android:text="P[2]" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valP2Count" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valP2Win" android:gravity="end" android:textColor="#F09199" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valP2Lose" android:gravity="end" android:textColor="#90D7EC" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valP2Rate" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" />
+            </TableRow>
+
+            <!-- パーティ3 -->
+            <TableRow android:paddingVertical="2dp">
+                <TextView android:id="@+id/labelP3" android:text="P[3]" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valP3Count" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" android:layout_marginEnd="12dp" />
+                <TextView android:id="@+id/valP3Win" android:gravity="end" android:textColor="#F09199" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valP3Lose" android:gravity="end" android:textColor="#90D7EC" android:textSize="14sp" android:layout_marginEnd="8dp" />
+                <TextView android:id="@+id/valP3Rate" android:gravity="end" android:textColor="#CCCCCC" android:textSize="14sp" />
+            </TableRow>
+        </TableLayout>
+    </androidx.cardview.widget.CardView>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerViewHistory"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="80dp"
+        app:layout_constraintTop_toBottomOf="@id/fixedHeader"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent" />
+
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/btnBack"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="20dp"
+        android:text="Back"
+        android:textColor="#FFFFFF"
+        app:icon="@android:drawable/ic_menu_revert"
+        app:iconTint="#FFFFFF"
+        app:backgroundTint="#666666"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        android:elevation="12dp"
+        app:elevation="12dp" />
+
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/btnAnalyze"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="20dp"
+        android:text="Analyze"
+        android:textColor="#FFFFFF"
+        app:icon="@android:drawable/ic_menu_search"
+        app:iconTint="#FFFFFF"
+        app:backgroundTint="#666666"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintRight_toRightOf="parent"
+        android:elevation="12dp"
+        app:elevation="12dp" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
