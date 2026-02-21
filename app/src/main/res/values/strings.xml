@@ -23,8 +23,8 @@
     <string name="label_p1">P[1]</string>
     <string name="label_p2">P[2]</string>
     <string name="label_p3">P[3]</string>
-    <string name="btn_back">Back</string>
-    <string name="btn_analyze">Analyze</string>
+    <string name="btn_back">戻る</string>
+    <string name="btn_analyze">分析</string>
     <string name="label_vs">vs</string>
     <string name="btn_default">デフォルト</string>
     <string name="btn_save_calibration">この位置で決定</string>
@@ -34,19 +34,18 @@
     <string name="rank_win_rate_format">勝率: %1$s%%</string>
 
     <!-- 校正用ガイド -->
-    <string name="calibrate_guide_party">パーティ枠の左上にある「選択マーク」の位置に枠を合わせてください</string>
+    <string name="calibrate_guide_party">パーティ枠の左上角の位置に枠を合わせてください</string>
     <string name="calibrate_guide_vs">「VS」ロゴと、各モンスターの顔の位置に枠を合わせてください</string>
     <string name="calibrate_guide_result">「勝利」や「ざんねん」のロゴの位置に枠を合わせてください</string>
     <string name="calibrate_guide_default">枠をドラッグして位置を合わせてください</string>
 
     <!-- Readme / Copyright -->
-    <string name="readme_title">Readme / 著作権表記</string>
+    <string name="readme_title">Readme / Copyright</string>
     <string name="readme_content">
         【アプリ概要】\n
         このアプリはゲーム画面をキャプチャし、対戦相手のモンスターを自動的に識別して戦績を記録するツールです。\n\n
         【著作権表記】\n
-        このアプリで使用されているモンスターの名称や画像に関する著作権、商標、その他の知的財産権は、株式会社スクウェア・エニックス、株式会社アーマープロジェクト、株式会社バードスタジオ、株式会社エイリム等に帰属します。\n
-        © ARMOR PROJECT/BIRD STUDIO/SQUARE ENIX All Rights Reserved.\n
-        © SUGIYAMA KOBO
+        このページで利用している株式会社スクウェア・エニックスを代表とする共同著作者が権利を所有する画像の転載・配布は禁止いたします。
+        © ARMOR PROJECT/BIRD STUDIO/SQUARE ENIX All Rights Reserved.
     </string>
 </resources>
