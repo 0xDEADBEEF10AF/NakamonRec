@@ -7,13 +7,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Gravity
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -26,6 +31,7 @@ import androidx.core.graphics.toColorInt
 import com.android.nakamonrec.databinding.ActivityMainBinding
 import org.opencv.android.OpenCVLoader
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,6 +40,7 @@ class MainActivity : AppCompatActivity() {
 
     private var isResetRequested = false
     private lateinit var binding: ActivityMainBinding
+    private var pendingCalibrationFileName: String? = null
 
     private val serviceStopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -50,6 +57,19 @@ class MainActivity : AppCompatActivity() {
             Handler(Looper.getMainLooper()).postDelayed({
                 startCaptureService(result.resultCode, result.data!!, isResetRequested)
             }, 200)
+        }
+    }
+
+    // 画像選択用のランチャー
+    private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            val fileName = pendingCalibrationFileName ?: return@let
+            if (importImageForCalibration(it, fileName)) {
+                Toast.makeText(this, "画像をインポートしました", Toast.LENGTH_SHORT).show()
+                showCalibrationSelectorDialog() // ダイアログを再表示して状態を反映
+            } else {
+                Toast.makeText(this, "インポートに失敗しました", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -115,7 +135,106 @@ class MainActivity : AppCompatActivity() {
             showReadmeDialog()
         }
 
+        binding.btnCalibrate.setOnClickListener {
+            showCalibrationSelectorDialog()
+        }
+
         updateUI(MediaCaptureService.isRunning)
+    }
+
+    private fun showCalibrationSelectorDialog() {
+        val titles = arrayOf("パーティ選択画面", "VS画面", "勝利画面", "敗北画面")
+        val fileNames = arrayOf("base_party.png", "base_vs.png", "base_win.png", "base_lose.png")
+        val modes = arrayOf("party", "vs", "result", "result")
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+
+        for (i in titles.indices) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 10, 0, 10)
+                gravity = Gravity.CENTER_VERTICAL
+                isClickable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+            }
+
+            val thumb = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(120, 120)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(0xFF333333.toInt())
+                val file = File(filesDir, fileNames[i])
+                if (file.exists()) {
+                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    setImageBitmap(bitmap)
+                } else {
+                    setImageResource(android.R.drawable.ic_menu_gallery)
+                }
+            }
+
+            val label = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                text = titles[i]
+                setPadding(20, 0, 0, 0)
+                textSize = 16f
+                setTextColor(0xFFFFFFFF.toInt())
+            }
+
+            val status = TextView(this).apply {
+                text = if (File(filesDir, fileNames[i]).exists()) "✅" else "未"
+                setPadding(10, 0, 0, 0)
+            }
+
+            row.addView(thumb)
+            row.addView(label)
+            row.addView(status)
+
+            row.setOnClickListener {
+                val options = arrayOf("ギャラリーからインポート", "位置合わせを開始")
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(titles[i])
+                    .setItems(options) { _, opt ->
+                        if (opt == 0) {
+                            pendingCalibrationFileName = fileNames[i]
+                            pickImageLauncher.launch("image/*")
+                        } else {
+                            if (File(filesDir, fileNames[i]).exists()) {
+                                val intent = Intent(this@MainActivity, CalibrationActivity::class.java).apply {
+                                    putExtra("EXTRA_MODE", modes[i])
+                                    putExtra("EXTRA_FILE_NAME", fileNames[i])
+                                }
+                                startActivity(intent)
+                            } else {
+                                Toast.makeText(this@MainActivity, "先に画像をインポートしてください", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }.show()
+            }
+            container.addView(row)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("端末設定の校正")
+            .setView(container)
+            .setNegativeButton("閉じる", null)
+            .show()
+    }
+
+    private fun importImageForCalibration(uri: Uri, destFileName: String): Boolean {
+        return try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                val destFile = File(filesDir, destFileName)
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 
     private fun showReadmeDialog() {

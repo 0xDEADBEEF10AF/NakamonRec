@@ -13,8 +13,9 @@ import android.media.projection.MediaProjectionManager
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.graphics.createBitmap
+import com.google.gson.Gson
 import java.util.Locale
+import androidx.core.graphics.createBitmap
 
 private const val ANALYSIS_INTERVAL_MS = 500L // 0.5秒ごとに解析
 class MediaCaptureService : Service() {
@@ -65,6 +66,17 @@ class MediaCaptureService : Service() {
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
         val lastFile = prefs.getString("last_file_name", "battle_history") ?: "battle_history"
         dataManager.loadHistory(lastFile)
+
+        // 保存されている校正データをロードして解析器にセット
+        val calJson = prefs.getString("calibration_data", null)
+        if (calJson != null) {
+            try {
+                val calData = Gson().fromJson(calJson, CalibrationData::class.java)
+                analyzer.setCalibrationData(calData)
+            } catch (e: Exception) {
+                Log.e("CaptureService", "校正データのロード失敗: ${e.message}")
+            }
+        }
 
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "待機中 ($lastFile)")
 
@@ -140,6 +152,7 @@ class MediaCaptureService : Service() {
         val rowStride = planes.rowStride
         val rowPadding = rowStride - pixelStride * image.width
 
+        // createBitmap は Bitmap.createBitmap を呼び出すための KTX 拡張
         val tempBitmap = createBitmap(image.width + rowPadding / pixelStride, image.height)
         tempBitmap.copyPixelsFromBuffer(buffer)
 
@@ -223,7 +236,7 @@ class MediaCaptureService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(status)
             .setContentText("戦績: ${win}勝 ${lose}敗 (勝率 ${String.format(Locale.US, "%.1f", winRate)}%)")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

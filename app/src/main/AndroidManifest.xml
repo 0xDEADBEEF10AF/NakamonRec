@@ -27,6 +27,11 @@
             android:name=".HistoryActivity"
             android:exported="false"
             android:label="戦績履歴" />
+        <activity
+            android:name=".CalibrationActivity"
+            android:exported="false"
+            android:label="位置合わせ校正"
+            android:screenOrientation="portrait" />
         <service
             android:name=".MediaCaptureService"
             android:enabled="true"
