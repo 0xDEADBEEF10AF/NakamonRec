@@ -46,6 +46,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         private const val LOSE_THRESHOLD = 0.5
         private const val MONSTER_THRESHOLD = 0.7
 
+        //右下座標基準(X[235,430,624,819] Y[1700])
+        //右下座標基準(X[240,435,629,824] Y[980])
+        //サイズ(78x130)
         private val MY_PARTY_RATIOS = listOf(
             PosRatio(196f / 1080f, 1635f / 2364f),
             PosRatio(391f / 1080f, 1635f / 2364f),
