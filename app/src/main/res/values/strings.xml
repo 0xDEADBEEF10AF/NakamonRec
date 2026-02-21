@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">なかもんれっく</string>
+    <string name="app_version">Ver 1.0.0</string>
     <string name="btn_rec">REC</string>
     <string name="btn_stop">STOP</string>
     <string name="current_file_format">使用ファイル名: %1$s</string>
@@ -28,4 +29,14 @@
     <!-- ランキング表示用 -->
     <string name="rank_appearance_format">出現: %1$d回 (%2$s%%)</string>
     <string name="rank_win_rate_format">勝率: %1$s%%</string>
+
+    <!-- Readme / Copyright -->
+    <string name="readme_title">Readme / Copyright</string>
+    <string name="readme_content">
+        【アプリ概要】\n
+        このアプリはゲーム画面をキャプチャし、対戦相手のモンスターを自動的に識別して戦績を記録するツールです。\n\n
+        【著作権表記】\n
+        このページで利用している株式会社スクウェア・エニックスを代表とする共同著作者が権利を所有する画像の転載・配布は禁止いたします。\n
+        © ARMOR PROJECT/BIRD STUDIO/SQUARE ENIX All Rights Reserved.
+    </string>
 </resources>

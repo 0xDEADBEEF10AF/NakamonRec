@@ -7,6 +7,33 @@
     android:background="#555555"
     tools:context=".MainActivity">
 
+    <!-- 左上のバージョン表示 (paddingをmarginに移動) -->
+    <TextView
+        android:id="@+id/textVersion"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="56dp"
+        android:text="@string/app_version"
+        android:textColor="#CCCCCC"
+        android:textSize="12sp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent" />
+
+    <!-- 右上のヘルプボタン (paddingを削除し、中心を合わせる) -->
+    <ImageButton
+        android:id="@+id/btnReadme"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginTop="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@android:drawable/ic_menu_help"
+        app:tint="#CCCCCC"
+        android:contentDescription="@string/readme_title"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintRight_toRightOf="parent" />
+
     <!-- タイトルロゴ -->
     <TextView
         android:id="@+id/textLogo"

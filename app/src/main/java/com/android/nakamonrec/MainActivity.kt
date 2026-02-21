@@ -14,6 +14,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.EditText
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -79,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
         }
 
-        if (OpenCVLoader.initDebug()) {
+        if (OpenCVLoader.initLocal()) {
             Log.i("OpenCV", "OpenCV loaded successfully")
         } else {
             Log.e("OpenCV", "OpenCV load failed")
@@ -109,13 +111,34 @@ class MainActivity : AppCompatActivity() {
             showResetHistoryConfirmDialog(getCurrentFileName())
         }
 
+        binding.btnReadme.setOnClickListener {
+            showReadmeDialog()
+        }
+
         updateUI(MediaCaptureService.isRunning)
+    }
+
+    private fun showReadmeDialog() {
+        val scrollView = ScrollView(this)
+        val textView = TextView(this).apply {
+            text = getString(R.string.readme_content)
+            textSize = 13f
+            setPadding(60, 40, 60, 40)
+            setLineSpacing(0f, 1.2f)
+            setTextColor("#CCCCCC".toColorInt())
+        }
+        scrollView.addView(textView)
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.readme_title)
+            .setView(scrollView)
+            .setPositiveButton("閉じる", null)
+            .show()
     }
 
     override fun onStart() {
         super.onStart()
         val filter = IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED)
-        // ContextCompatを使用してAPIレベルの差異を吸収
         ContextCompat.registerReceiver(
             this,
             serviceStopReceiver,
