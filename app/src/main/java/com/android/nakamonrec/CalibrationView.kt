@@ -13,19 +13,35 @@ class CalibrationView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private var backgroundImage: Bitmap? = null
+    // メインの枠をライム色（Color.GREEN = #00FF00）に変更
     private val paintRect = Paint().apply {
-        color = Color.RED
+        color = Color.GREEN
         style = Paint.Style.STROKE
         strokeWidth = 5f
+    }
+    // 探索バッファ用のペイント（半透明のシアン）
+    private val paintBufferFill = Paint().apply {
+        color = Color.CYAN
+        style = Paint.Style.FILL
+        alpha = 60
+    }
+    private val paintBufferStroke = Paint().apply {
+        color = Color.CYAN
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        alpha = 180
     }
     private val paintHandle = Paint().apply {
         color = Color.YELLOW
         style = Paint.Style.FILL
     }
+    // テキストもライム色に変更して統一感を出す
     private val paintText = Paint().apply {
-        color = Color.RED
+        color = Color.GREEN
         textSize = 40f
         isFakeBoldText = true
+        // 縁取りを追加してさらに読みやすく
+        setShadowLayer(5f, 0f, 0f, Color.BLACK)
     }
 
     data class CalibrationBox(
@@ -42,6 +58,7 @@ class CalibrationView @JvmOverloads constructor(
     private var isResizing = false
     private val imageRect = RectF()
     private val reusableRect = RectF()
+    private val bufferRect = RectF()
     private val handleRadius = 30f
 
     fun setSourceImage(bitmap: Bitmap) {
@@ -75,21 +92,30 @@ class CalibrationView @JvmOverloads constructor(
         val viewH = imageRect.height()
 
         boxes.forEachIndexed { index, box ->
-            // centerX/centerY は画面全体に対する比率なのでビューサイズに掛ける
             val cx = imageRect.left + (viewW * box.centerX)
             val cy = imageRect.top + (viewH * box.centerY)
             
-            // width/height はビットマップの生ピクセルなので、表示倍率を掛けてビュー上のサイズに変換
-            val bw = (box.width * (viewW / bitmapW)) / 2f
-            val bh = (box.height * (viewH / bitmapH)) / 2f
+            val scaleX = viewW / bitmapW
+            val scaleY = viewH / bitmapH
+            
+            val bw = (box.width * scaleX) / 2f
+            val bh = (box.height * scaleY) / 2f
 
             reusableRect.set(cx - bw, cy - bh, cx + bw, cy + bh)
             
+            // パーティ選択枠 (P1, P2, P3) の場合は、上下の探索範囲(計200px)を可視化
+            if (box.label.startsWith("P")) {
+                val marginY = 100f * scaleY
+                bufferRect.set(reusableRect.left, reusableRect.top - marginY, reusableRect.right, reusableRect.bottom + marginY)
+                canvas.drawRect(bufferRect, paintBufferFill)
+                canvas.drawRect(bufferRect, paintBufferStroke)
+            }
+
             if (index == activeBoxIndex) {
                 paintRect.color = Color.YELLOW
                 canvas.drawCircle(reusableRect.right, reusableRect.bottom, handleRadius, paintHandle)
             } else {
-                paintRect.color = Color.RED
+                paintRect.color = Color.GREEN // ライム色
             }
             
             canvas.drawRect(reusableRect, paintRect)
@@ -116,8 +142,12 @@ class CalibrationView @JvmOverloads constructor(
                 boxes.forEachIndexed { index, box ->
                     val cx = imageRect.left + (viewW * box.centerX)
                     val cy = imageRect.top + (viewH * box.centerY)
-                    val bw = (box.width * (viewW / bitmapW)) / 2f
-                    val bh = (box.height * (viewH / bitmapH)) / 2f
+                    
+                    val scaleX = viewW / bitmapW
+                    val scaleY = viewH / bitmapH
+                    
+                    val bw = (box.width * scaleX) / 2f
+                    val bh = (box.height * scaleY) / 2f
                     
                     val distToHandle = hypot(x - (cx + bw), y - (cy + bh))
                     if (distToHandle < handleRadius * 2) {
@@ -142,11 +172,11 @@ class CalibrationView @JvmOverloads constructor(
                         val cx = imageRect.left + (viewW * box.centerX)
                         val cy = imageRect.top + (viewH * box.centerY)
                         
-                        val bitmapToViewScaleX = viewW / bitmapW
-                        val bitmapToViewScaleY = viewH / bitmapH
+                        val scaleX = viewW / bitmapW
+                        val scaleY = viewH / bitmapH
                         
-                        box.width = ((abs(x - cx) * 2) / bitmapToViewScaleX).toInt().coerceAtLeast(20)
-                        box.height = ((abs(y - cy) * 2) / bitmapToViewScaleY).toInt().coerceAtLeast(20)
+                        box.width = ((abs(x - cx) * 2) / scaleX).toInt().coerceAtLeast(20)
+                        box.height = ((abs(y - cy) * 2) / scaleY).toInt().coerceAtLeast(20)
                     } else {
                         box.centerX = ((x - imageRect.left) / viewW).coerceIn(0f, 1f)
                         box.centerY = ((y - imageRect.top) / viewH).coerceIn(0f, 1f)

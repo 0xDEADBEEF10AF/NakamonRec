@@ -22,7 +22,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var partySelectTemplate: Mat? = null
 
     companion object {
-        // カスタムゲッターにすることで、「Condition is always false」 と 「Make it const」 の両方のワーニングを回避
         private val DEBUG: Boolean get() = false
         private const val VS_THRESHOLD = 0.7
         private const val WIN_THRESHOLD = 0.4
@@ -423,7 +422,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     fun detectSelectedParty(bitmap: Bitmap): Int {
         val scores = mutableListOf<Double>()
         for (i in calibrationData.partySelectBoxes.indices) {
-            scores.add(performColorMatch(bitmap, calibrationData.partySelectBoxes[i], partySelectTemplate, "party$i"))
+            val config = calibrationData.partySelectBoxes[i]
+            // スクロール対応：探索領域の高さを大幅に広げる（Pixel Foldの330pxすべてのカバーは難しいが、上下に100pxずつの余裕を持たせる）
+            val searchMargin = 200
+            val expandedConfig = BoxConfig(
+                config.centerX,
+                config.centerY,
+                config.width,
+                config.height + searchMargin
+            )
+            scores.add(performColorMatch(bitmap, expandedConfig, partySelectTemplate, "party$i"))
         }
         val maxScore = scores.maxOrNull() ?: 0.0
         val maxIndex = scores.indexOf(maxScore)
