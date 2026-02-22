@@ -10,13 +10,14 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 操作パネルを2行形式にしてスタイリッシュに -->
     <LinearLayout
         android:id="@+id/layoutControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#AA333333"
-        android:padding="16dp"
+        android:background="#CC222222"
+        android:padding="12dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
         <TextView
@@ -25,43 +26,67 @@
             android:layout_height="wrap_content"
             android:text="@string/calibrate_guide_default"
             android:textColor="#FFFFFF"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:gravity="center"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="12dp" />
 
-        <LinearLayout
+        <GridLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            style="?android:attr/buttonBarStyle">
+            android:columnCount="2"
+            android:rowCount="2"
+            android:alignmentMode="alignMargins"
+            android:columnOrderPreserved="false">
 
             <Button
                 android:id="@+id/btnCancel"
                 style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="2dp"
                 android:text="@string/btn_back"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:background="#444444" />
 
             <Button
                 android:id="@+id/btnDefault"
                 style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="2dp"
                 android:text="@string/btn_default"
-                android:textColor="#CCCCCC" />
+                android:textColor="#CCCCCC"
+                android:textSize="13sp"
+                android:background="#444444" />
+
+            <Button
+                android:id="@+id/btnAuto"
+                style="?android:attr/buttonBarButtonStyle"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="2dp"
+                android:text="@string/btn_auto"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:background="#444444" />
 
             <Button
                 android:id="@+id/btnSave"
                 style="?android:attr/buttonBarButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="2dp"
                 android:text="@string/btn_save_calibration"
-                android:textColor="#90D7EC" />
-        </LinearLayout>
+                android:textColor="#90D7EC"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:background="#444444" />
+        </GridLayout>
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

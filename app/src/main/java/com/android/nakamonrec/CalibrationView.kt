@@ -5,6 +5,8 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.abs
+import kotlin.math.hypot
 
 class CalibrationView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -39,7 +41,8 @@ class CalibrationView @JvmOverloads constructor(
     private var activeBoxIndex = -1
     private var isResizing = false
     private val imageRect = RectF()
-    private val HANDLE_RADIUS = 30f
+    private val reusableRect = RectF()
+    private val handleRadius = 30f // 命名規則に合わせて小文字キャメルケースに修正
 
     fun setSourceImage(bitmap: Bitmap) {
         backgroundImage = bitmap
@@ -73,18 +76,17 @@ class CalibrationView @JvmOverloads constructor(
             val bw = (box.width * (imageRect.width() / 1080f)) / 2f
             val bh = (box.height * (imageRect.width() / 1080f)) / 2f
 
-            val rect = RectF(cx - bw, cy - bh, cx + bw, cy + bh)
+            reusableRect.set(cx - bw, cy - bh, cx + bw, cy + bh)
             
             if (index == activeBoxIndex) {
                 paintRect.color = Color.YELLOW
-                // リサイズハンドルを描画（右下）
-                canvas.drawCircle(rect.right, rect.bottom, HANDLE_RADIUS, paintHandle)
+                canvas.drawCircle(reusableRect.right, reusableRect.bottom, handleRadius, paintHandle)
             } else {
                 paintRect.color = Color.RED
             }
             
-            canvas.drawRect(rect, paintRect)
-            canvas.drawText(box.label, rect.left, rect.top - 10f, paintText)
+            canvas.drawRect(reusableRect, paintRect)
+            canvas.drawText(box.label, reusableRect.left, reusableRect.top - 10f, paintText)
         }
     }
 
@@ -103,18 +105,15 @@ class CalibrationView @JvmOverloads constructor(
                     val cy = imageRect.top + (imageRect.height() * box.centerY)
                     val bw = (box.width * (imageRect.width() / 1080f)) / 2f
                     val bh = (box.height * (imageRect.width() / 1080f)) / 2f
-                    val rect = RectF(cx - bw, cy - bh, cx + bw, cy + bh)
-
-                    // ハンドル（右下）の判定
-                    val distToHandle = Math.sqrt(Math.pow((x - rect.right).toDouble(), 2.0) + Math.pow((y - rect.bottom).toDouble(), 2.0))
-                    if (distToHandle < HANDLE_RADIUS * 2) {
+                    
+                    val distToHandle = hypot(x - (cx + bw), y - (cy + bh))
+                    if (distToHandle < handleRadius * 2) {
                         activeBoxIndex = index
                         isResizing = true
                         return@forEachIndexed
                     }
 
-                    // 枠内の判定
-                    if (rect.contains(x, y)) {
+                    if (x in (cx - bw)..(cx + bw) && y in (cy - bh)..(cy + bh)) {
                         activeBoxIndex = index
                         isResizing = false
                         return@forEachIndexed
@@ -128,13 +127,11 @@ class CalibrationView @JvmOverloads constructor(
                     val viewScale = imageRect.width() / 1080f
 
                     if (isResizing) {
-                        // サイズ変更: 中心座標を固定し、端までの距離から幅・高さを逆算
                         val cx = imageRect.left + (imageRect.width() * box.centerX)
                         val cy = imageRect.top + (imageRect.height() * box.centerY)
-                        box.width = ((Math.abs(x - cx) * 2) / viewScale).toInt().coerceAtLeast(20)
-                        box.height = ((Math.abs(y - cy) * 2) / viewScale).toInt().coerceAtLeast(20)
+                        box.width = ((abs(x - cx) * 2) / viewScale).toInt().coerceAtLeast(20)
+                        box.height = ((abs(y - cy) * 2) / viewScale).toInt().coerceAtLeast(20)
                     } else {
-                        // 位置移動
                         box.centerX = ((x - imageRect.left) / imageRect.width()).coerceIn(0f, 1f)
                         box.centerY = ((y - imageRect.top) / imageRect.height()).coerceIn(0f, 1f)
                     }

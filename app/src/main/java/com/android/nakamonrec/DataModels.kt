@@ -37,11 +37,6 @@ data class PartyStat(
 )
 
 /**
- * 座標比率を保持するシンプルなデータクラス
- */
-data class PosRatio(val x: Float, val y: Float)
-
-/**
  * 位置とサイズを含む校正ユニット
  */
 data class BoxConfig(

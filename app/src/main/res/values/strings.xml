@@ -27,6 +27,7 @@
     <string name="btn_analyze">分析</string>
     <string name="label_vs">vs</string>
     <string name="btn_default">デフォルト</string>
+    <string name="btn_auto">自動合わせ</string>
     <string name="btn_save_calibration">この位置で決定</string>
 
     <!-- ランキング表示用 -->
@@ -39,13 +40,24 @@
     <string name="calibrate_guide_result">「勝利」や「ざんねん」のロゴの位置に枠を合わせてください</string>
     <string name="calibrate_guide_default">枠をドラッグして位置を合わせてください</string>
 
+    <!-- メッセージ用 -->
+    <string name="toast_scanning">スキャン中…</string>
+    <string name="toast_auto_calibrated">位置を自動調整しました</string>
+    <string name="toast_auto_calibrate_failed">検出できませんでした</string>
+    <string name="toast_default_restored">デフォルト位置に戻しました</string>
+    <string name="toast_save_success">校正データを保存しました</string>
+    <string name="toast_image_not_found">画像ファイルが見つかりません</string>
+    <string name="toast_import_first">先に画像をインポートしてください</string>
+    <string name="msg_imported">画像をインポートしました</string>
+    <string name="msg_import_failed">インポートに失敗しました</string>
+
     <!-- Readme / Copyright -->
     <string name="readme_title">Readme / Copyright</string>
     <string name="readme_content">
         【アプリ概要】\n
         このアプリはゲーム画面をキャプチャし、対戦相手のモンスターを自動的に識別して戦績を記録するツールです。\n\n
         【著作権表記】\n
-        このページで利用している株式会社スクウェア・エニックスを代表とする共同著作者が権利を所有する画像の転載・配布は禁止いたします。
+        このページで利用している株式会社スクウェア・エニックスを代表とする共同著作者が権利を所有する画像の転載・配布は禁止いたします。\n
         © ARMOR PROJECT/BIRD STUDIO/SQUARE ENIX All Rights Reserved.
     </string>
 </resources>
