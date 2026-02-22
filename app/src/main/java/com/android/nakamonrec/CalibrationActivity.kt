@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
@@ -20,6 +21,7 @@ class CalibrationActivity : AppCompatActivity() {
     private var mode: String? = null
     private var fileName: String? = null
     private var sourceBitmap: Bitmap? = null
+    private var detectedScale: Float = 1.0f
     private val executor = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,11 +58,13 @@ class CalibrationActivity : AppCompatActivity() {
         binding.textInstruction.text = when (mode) {
             "party" -> getString(R.string.calibrate_guide_party)
             "vs" -> getString(R.string.calibrate_guide_vs)
-            "result" -> getString(R.string.calibrate_guide_result)
+            "win" -> getString(R.string.calibrate_guide_win)
+            "lose" -> getString(R.string.calibrate_guide_lose)
             else -> getString(R.string.calibrate_guide_default)
         }
 
         val currentData = loadCalibrationData()
+        detectedScale = currentData.uiScale
         displayBoxes(currentData)
 
         binding.btnSave.setOnClickListener {
@@ -72,7 +76,9 @@ class CalibrationActivity : AppCompatActivity() {
         }
 
         binding.btnDefault.setOnClickListener {
-            displayBoxes(CalibrationData())
+            val defaultData = CalibrationData()
+            detectedScale = defaultData.uiScale
+            displayBoxes(defaultData)
             Toast.makeText(this, getString(R.string.toast_default_restored), Toast.LENGTH_SHORT).show()
         }
 
@@ -83,48 +89,56 @@ class CalibrationActivity : AppCompatActivity() {
 
     private fun runAutoCalibration() {
         val bitmap = sourceBitmap ?: return
-        Toast.makeText(this, getString(R.string.toast_scanning), Toast.LENGTH_SHORT).show()
+        
+        // 進捗表示レイアウトを可視化
+        binding.layoutProgress.visibility = View.VISIBLE
 
         executor.execute {
+            var newScale = detectedScale
             val results: List<CalibrationView.CalibrationBox>? = when (mode) {
                 "party" -> {
-                    analyzer.autoCalibrateParty(bitmap)?.mapIndexed { i, config ->
-                        CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}")
-                    }
+                    val res = analyzer.autoCalibrateParty(bitmap)
+                    if (res != null) {
+                        newScale = res.second
+                        res.first.mapIndexed { i, config ->
+                            CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}")
+                        }
+                    } else null
                 }
                 "vs" -> {
-                    val vsConfig = analyzer.findTemplateGlobal(bitmap, analyzer.getVsTemplate(), true)
-                    if (vsConfig != null) {
+                    val autoData = analyzer.autoCalibrateBattleScene(bitmap)
+                    if (autoData != null) {
+                        newScale = autoData.uiScale
                         val list = mutableListOf<CalibrationView.CalibrationBox>()
-                        list.add(CalibrationView.CalibrationBox(0, vsConfig.centerX, vsConfig.centerY, vsConfig.width, vsConfig.height, "VS"))
-                        
-                        val def = CalibrationData()
-                        val dx = vsConfig.centerX - def.vsBox.centerX
-                        val dy = vsConfig.centerY - def.vsBox.centerY
-                        
-                        def.enemyPartyBoxes.forEachIndexed { i, b ->
-                            list.add(CalibrationView.CalibrationBox(10+i, b.centerX + dx, b.centerY + dy, b.width, b.height, "敵${i+1}"))
+                        list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS"))
+                        autoData.enemyPartyBoxes.forEachIndexed { i, b ->
+                            list.add(CalibrationView.CalibrationBox(10+i, b.centerX, b.centerY, b.width, b.height, "敵${i+1}"))
                         }
-                        def.myPartyBoxes.forEachIndexed { i, b ->
-                            list.add(CalibrationView.CalibrationBox(20+i, b.centerX + dx, b.centerY + dy, b.width, b.height, "自${i+1}"))
+                        autoData.myPartyBoxes.forEachIndexed { i, b ->
+                            list.add(CalibrationView.CalibrationBox(20+i, b.centerX, b.centerY, b.width, b.height, "自${i+1}"))
                         }
                         list
                     } else null
                 }
-                "result" -> {
-                    var resConfig = analyzer.findTemplateGlobal(bitmap, analyzer.getWinTemplate(), true)
-                    if (resConfig == null) {
-                        resConfig = analyzer.findTemplateGlobal(bitmap, analyzer.getLoseTemplate(), true)
+                "win" -> {
+                    val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getWinTemplate(), false, 0.0f, 0.5f)
+                    resRes?.let {
+                        listOf(CalibrationView.CalibrationBox(0, it.first.centerX, it.first.centerY, it.first.width, it.first.height, getString(R.string.label_win_short)))
                     }
-                    resConfig?.let {
-                        listOf(CalibrationView.CalibrationBox(0, it.centerX, it.centerY, it.width, it.height, "判定"))
+                }
+                "lose" -> {
+                    val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getLoseTemplate(), false, 0.0f, 0.5f)
+                    resRes?.let {
+                        listOf(CalibrationView.CalibrationBox(0, it.first.centerX, it.first.centerY, it.first.width, it.first.height, getString(R.string.label_lose_short)))
                     }
                 }
                 else -> null
             }
 
             Handler(Looper.getMainLooper()).post {
+                binding.layoutProgress.visibility = View.GONE
                 if (results != null) {
+                    detectedScale = newScale
                     binding.calibrationView.setBoxes(results)
                     Toast.makeText(this, getString(R.string.toast_auto_calibrated), Toast.LENGTH_SHORT).show()
                 } else {
@@ -150,8 +164,11 @@ class CalibrationActivity : AppCompatActivity() {
                 }
                 list
             }
-            "result" -> listOf(
-                CalibrationView.CalibrationBox(0, data.resultBox.centerX, data.resultBox.centerY, data.resultBox.width, data.resultBox.height, "判定")
+            "win" -> listOf(
+                CalibrationView.CalibrationBox(0, data.winBox.centerX, data.winBox.centerY, data.winBox.width, data.winBox.height, getString(R.string.label_win_short))
+            )
+            "lose" -> listOf(
+                CalibrationView.CalibrationBox(0, data.loseBox.centerX, data.loseBox.centerY, data.loseBox.width, data.loseBox.height, getString(R.string.label_lose_short))
             )
             else -> emptyList()
         }
@@ -173,6 +190,7 @@ class CalibrationActivity : AppCompatActivity() {
         if (updatedBoxes.isEmpty()) return
 
         val data = loadCalibrationData()
+        data.uiScale = detectedScale
 
         when (mode) {
             "party" -> {
@@ -184,9 +202,13 @@ class CalibrationActivity : AppCompatActivity() {
                 data.enemyPartyBoxes = updatedBoxes.filter { it.id in 10..13 }.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
                 data.myPartyBoxes = updatedBoxes.filter { it.id in 20..23 }.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
             }
-            "result" -> {
+            "win" -> {
                 val res = updatedBoxes[0]
-                data.resultBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
+                data.winBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
+            }
+            "lose" -> {
+                val res = updatedBoxes[0]
+                data.loseBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
             }
         }
 

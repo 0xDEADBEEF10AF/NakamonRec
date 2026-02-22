@@ -17,7 +17,7 @@ import com.google.gson.Gson
 import java.util.Locale
 import androidx.core.graphics.createBitmap
 
-private const val ANALYSIS_INTERVAL_MS = 500L // 0.5秒ごとに解析
+private const val ANALYSIS_INTERVAL_MS = 500L
 class MediaCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -30,12 +30,13 @@ class MediaCaptureService : Service() {
     private var currentState = State.IDLE
     private var lastAnalysisTime = 0L
     private var latestBitmap: Bitmap? = null
-    private var selectedPartyIndex = -1 // -1:未選択, 0:パーティ1, 1:パーティ2, 2:パーティ3
+    private var selectedPartyIndex = -1
 
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "capture_channel"
         const val ACTION_SERVICE_STOPPED = "com.android.nakamonrec.ACTION_SERVICE_STOPPED"
+        const val ACTION_RELOAD_SETTINGS = "com.android.nakamonrec.ACTION_RELOAD_SETTINGS"
         var isRunning = false
     }
 
@@ -53,10 +54,16 @@ class MediaCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_RELOAD_SETTINGS) {
+            reloadCalibrationData()
+            return START_NOT_STICKY
+        }
+
         val bootNotif = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("起動中...")
             .build()
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, bootNotif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
@@ -66,17 +73,8 @@ class MediaCaptureService : Service() {
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
         val lastFile = prefs.getString("last_file_name", "battle_history") ?: "battle_history"
         dataManager.loadHistory(lastFile)
-
-        // 保存されている校正データをロードして解析器にセット
-        val calJson = prefs.getString("calibration_data", null)
-        if (calJson != null) {
-            try {
-                val calData = Gson().fromJson(calJson, CalibrationData::class.java)
-                analyzer.setCalibrationData(calData)
-            } catch (e: Exception) {
-                Log.e("CaptureService", "校正データのロード失敗: ${e.message}")
-            }
-        }
+        
+        reloadCalibrationData()
 
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "待機中 ($lastFile)")
 
@@ -97,6 +95,20 @@ class MediaCaptureService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun reloadCalibrationData() {
+        val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
+        val calJson = prefs.getString("calibration_data", null)
+        if (calJson != null) {
+            try {
+                val calData = Gson().fromJson(calJson, CalibrationData::class.java)
+                analyzer.setCalibrationData(calData)
+                Log.i("CaptureService", "🔄 校正データを最新の状態に更新しました")
+            } catch (e: Exception) {
+                Log.e("CaptureService", "校正データのロード失敗: ${e.message}")
+            }
+        }
+    }
+
     private fun setupVirtualDisplay() {
         val metrics = resources.displayMetrics
         val width = metrics.widthPixels
@@ -105,7 +117,6 @@ class MediaCaptureService : Service() {
 
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                Log.d("CaptureDebug", "MediaProjection stopped by system")
                 stopSelf()
             }
         }, Handler(Looper.getMainLooper()))
@@ -119,7 +130,6 @@ class MediaCaptureService : Service() {
 
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastAnalysisTime < ANALYSIS_INTERVAL_MS) {
                 image.close()
@@ -151,11 +161,8 @@ class MediaCaptureService : Service() {
         val pixelStride = planes.pixelStride
         val rowStride = planes.rowStride
         val rowPadding = rowStride - pixelStride * image.width
-
-        // createBitmap は Bitmap.createBitmap を呼び出すための KTX 拡張
         val tempBitmap = createBitmap(image.width + rowPadding / pixelStride, image.height)
         tempBitmap.copyPixelsFromBuffer(buffer)
-
         val cleanBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, image.width, image.height)
         tempBitmap.recycle()
         return cleanBitmap
@@ -163,15 +170,11 @@ class MediaCaptureService : Service() {
 
     private fun repeatScan(count: Int, delayMs: Long) {
         if (count <= 0 || analyzer.isAllIdentified()) return
-
         backgroundHandler?.postDelayed({
             val bitmapToProcess: Bitmap? = synchronized(this) {
                 val current = latestBitmap
-                if (current != null && !current.isRecycled) {
-                    Bitmap.createBitmap(current)
-                } else null
+                if (current != null && !current.isRecycled) Bitmap.createBitmap(current) else null
             }
-
             bitmapToProcess?.let { bitmap ->
                 try {
                     analyzer.identifyStepByStep(bitmap)
@@ -191,14 +194,12 @@ class MediaCaptureService : Service() {
             selectedPartyIndex = detected
             Log.d("Battle", "✅ パーティ${selectedPartyIndex + 1} を記録対象に設定")
         }
-
         if (analyzer.isVsDetected(bitmap)) {
             Log.i("Battle", "⚔️ 戦闘開始 (使用パーティIndex: $selectedPartyIndex)")
             currentState = State.IN_BATTLE
             analyzer.resetIdentification()
             val partyName = if (selectedPartyIndex != -1) "Party${selectedPartyIndex + 1}" else "?"
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始！ ($partyName)")
-
             repeatScan(40, 50L)
         }
     }
@@ -228,13 +229,8 @@ class MediaCaptureService : Service() {
     private fun buildMyNotification(win: Int, lose: Int, status: String): Notification {
         val total = win + lose
         val winRate = if (total > 0) (win.toDouble() / total * 100) else 0.0
-
         val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(status)
@@ -254,14 +250,10 @@ class MediaCaptureService : Service() {
     override fun onDestroy() {
         isRunning = false
         sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
-
         virtualDisplay?.release()
         imageReader?.close()
         mediaProjection?.stop()
-
-        if (::analyzer.isInitialized) {
-            analyzer.releaseTemplates()
-        }
+        if (::analyzer.isInitialized) analyzer.releaseTemplates()
         handlerThread?.quitSafely()
         super.onDestroy()
     }

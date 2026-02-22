@@ -42,7 +42,7 @@ class CalibrationView @JvmOverloads constructor(
     private var isResizing = false
     private val imageRect = RectF()
     private val reusableRect = RectF()
-    private val handleRadius = 30f // 命名規則に合わせて小文字キャメルケースに修正
+    private val handleRadius = 30f
 
     fun setSourceImage(bitmap: Bitmap) {
         backgroundImage = bitmap
@@ -69,12 +69,19 @@ class CalibrationView @JvmOverloads constructor(
         imageRect.set(0f, 0f, width.toFloat(), height.toFloat())
         canvas.drawBitmap(img, null, imageRect, null)
 
+        val bitmapW = img.width.toFloat()
+        val bitmapH = img.height.toFloat()
+        val viewW = imageRect.width()
+        val viewH = imageRect.height()
+
         boxes.forEachIndexed { index, box ->
-            val cx = imageRect.left + (imageRect.width() * box.centerX)
-            val cy = imageRect.top + (imageRect.height() * box.centerY)
+            // centerX/centerY は画面全体に対する比率なのでビューサイズに掛ける
+            val cx = imageRect.left + (viewW * box.centerX)
+            val cy = imageRect.top + (viewH * box.centerY)
             
-            val bw = (box.width * (imageRect.width() / 1080f)) / 2f
-            val bh = (box.height * (imageRect.width() / 1080f)) / 2f
+            // width/height はビットマップの生ピクセルなので、表示倍率を掛けてビュー上のサイズに変換
+            val bw = (box.width * (viewW / bitmapW)) / 2f
+            val bh = (box.height * (viewH / bitmapH)) / 2f
 
             reusableRect.set(cx - bw, cy - bh, cx + bw, cy + bh)
             
@@ -91,8 +98,14 @@ class CalibrationView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val img = backgroundImage ?: return super.onTouchEvent(event)
         val x = event.x
         val y = event.y
+        
+        val viewW = imageRect.width()
+        val viewH = imageRect.height()
+        val bitmapW = img.width.toFloat()
+        val bitmapH = img.height.toFloat()
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
@@ -101,10 +114,10 @@ class CalibrationView @JvmOverloads constructor(
                 isResizing = false
                 
                 boxes.forEachIndexed { index, box ->
-                    val cx = imageRect.left + (imageRect.width() * box.centerX)
-                    val cy = imageRect.top + (imageRect.height() * box.centerY)
-                    val bw = (box.width * (imageRect.width() / 1080f)) / 2f
-                    val bh = (box.height * (imageRect.width() / 1080f)) / 2f
+                    val cx = imageRect.left + (viewW * box.centerX)
+                    val cy = imageRect.top + (viewH * box.centerY)
+                    val bw = (box.width * (viewW / bitmapW)) / 2f
+                    val bh = (box.height * (viewH / bitmapH)) / 2f
                     
                     val distToHandle = hypot(x - (cx + bw), y - (cy + bh))
                     if (distToHandle < handleRadius * 2) {
@@ -124,16 +137,19 @@ class CalibrationView @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 if (activeBoxIndex != -1) {
                     val box = boxes[activeBoxIndex]
-                    val viewScale = imageRect.width() / 1080f
 
                     if (isResizing) {
-                        val cx = imageRect.left + (imageRect.width() * box.centerX)
-                        val cy = imageRect.top + (imageRect.height() * box.centerY)
-                        box.width = ((abs(x - cx) * 2) / viewScale).toInt().coerceAtLeast(20)
-                        box.height = ((abs(y - cy) * 2) / viewScale).toInt().coerceAtLeast(20)
+                        val cx = imageRect.left + (viewW * box.centerX)
+                        val cy = imageRect.top + (viewH * box.centerY)
+                        
+                        val bitmapToViewScaleX = viewW / bitmapW
+                        val bitmapToViewScaleY = viewH / bitmapH
+                        
+                        box.width = ((abs(x - cx) * 2) / bitmapToViewScaleX).toInt().coerceAtLeast(20)
+                        box.height = ((abs(y - cy) * 2) / bitmapToViewScaleY).toInt().coerceAtLeast(20)
                     } else {
-                        box.centerX = ((x - imageRect.left) / imageRect.width()).coerceIn(0f, 1f)
-                        box.centerY = ((y - imageRect.top) / imageRect.height()).coerceIn(0f, 1f)
+                        box.centerX = ((x - imageRect.left) / viewW).coerceIn(0f, 1f)
+                        box.centerY = ((y - imageRect.top) / viewH).coerceIn(0f, 1f)
                     }
                     invalidate()
                 }

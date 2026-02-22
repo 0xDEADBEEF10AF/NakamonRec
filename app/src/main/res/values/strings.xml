@@ -23,11 +23,13 @@
     <string name="label_p1">P[1]</string>
     <string name="label_p2">P[2]</string>
     <string name="label_p3">P[3]</string>
+    <string name="label_win_short">勝利</string>
+    <string name="label_lose_short">敗北</string>
     <string name="btn_back">戻る</string>
     <string name="btn_analyze">分析</string>
     <string name="label_vs">vs</string>
     <string name="btn_default">デフォルト</string>
-    <string name="btn_auto">自動合わせ</string>
+    <string name="btn_auto">自動校正</string>
     <string name="btn_save_calibration">この位置で決定</string>
 
     <!-- ランキング表示用 -->
@@ -37,11 +39,14 @@
     <!-- 校正用ガイド -->
     <string name="calibrate_guide_party">パーティ枠の左上角の位置に枠を合わせてください</string>
     <string name="calibrate_guide_vs">「VS」ロゴと、各モンスターの顔の位置に枠を合わせてください</string>
+    <string name="calibrate_guide_win">「勝利」ロゴの範囲を調整してください</string>
+    <string name="calibrate_guide_lose">「ざんねん」ロゴの範囲を調整してください</string>
     <string name="calibrate_guide_result">「勝利」や「ざんねん」のロゴの位置に枠を合わせてください</string>
     <string name="calibrate_guide_default">枠をドラッグして位置を合わせてください</string>
 
     <!-- メッセージ用 -->
     <string name="toast_scanning">スキャン中…</string>
+    <string name="msg_analyzing">画像を解析中…\nしばらくお待ちください</string>
     <string name="toast_auto_calibrated">位置を自動調整しました</string>
     <string name="toast_auto_calibrate_failed">検出できませんでした</string>
     <string name="toast_default_restored">デフォルト位置に戻しました</string>

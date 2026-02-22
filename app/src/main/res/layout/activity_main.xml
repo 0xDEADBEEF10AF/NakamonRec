@@ -122,7 +122,7 @@
                 android:alignmentMode="alignMargins"
                 android:columnOrderPreserved="false">
 
-                <!-- 左上: ファイル管理 (アクセスのしやすさを優先) -->
+                <!-- 左上: ファイル管理 -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnManageFileName"
                     style="@style/Widget.Material3.Button.TonalButton"
@@ -135,6 +135,7 @@
                     android:textSize="12sp"
                     android:textColor="#FFFFFF"
                     app:icon="@android:drawable/ic_menu_preferences"
+                    app:iconSize="32dp"
                     app:iconGravity="top"
                     app:iconPadding="4dp"
                     app:backgroundTint="#555555"
@@ -153,6 +154,7 @@
                     android:textSize="12sp"
                     android:textColor="#FFFFFF"
                     app:icon="@android:drawable/ic_menu_camera"
+                    app:iconSize="32dp"
                     app:iconGravity="top"
                     app:iconPadding="4dp"
                     app:backgroundTint="#555555"
@@ -171,6 +173,7 @@
                     android:textSize="12sp"
                     android:textColor="#FFFFFF"
                     app:icon="@android:drawable/ic_menu_sort_by_size"
+                    app:iconSize="32dp"
                     app:iconGravity="top"
                     app:iconPadding="4dp"
                     app:backgroundTint="#555555"
@@ -189,6 +192,8 @@
                     android:textSize="12sp"
                     android:textColor="#F09199"
                     app:icon="@android:drawable/ic_menu_delete"
+                    app:iconSize="32dp"
+                    app:iconTint="#F09199"
                     app:iconGravity="top"
                     app:iconPadding="4dp"
                     app:backgroundTint="#555555"

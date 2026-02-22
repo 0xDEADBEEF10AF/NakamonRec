@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private var isResetRequested = false
     private lateinit var binding: ActivityMainBinding
     private var pendingCalibrationFileName: String? = null
+    private var calibrationSelectorDialog: AlertDialog? = null
 
     private val serviceStopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -60,15 +61,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 画像選択用のランチャー
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             val fileName = pendingCalibrationFileName ?: return@let
             if (importImageForCalibration(it, fileName)) {
-                Toast.makeText(this, "画像をインポートしました", Toast.LENGTH_SHORT).show()
-                showCalibrationSelectorDialog() // ダイアログを再表示して状態を反映
+                Toast.makeText(this, getString(R.string.msg_imported), Toast.LENGTH_SHORT).show()
+                calibrationSelectorDialog?.dismiss()
+                showCalibrationSelectorDialog() 
             } else {
-                Toast.makeText(this, "インポートに失敗しました", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.msg_import_failed), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -78,7 +79,6 @@ class MainActivity : AppCompatActivity() {
             csvContentToSave?.let { content ->
                 try {
                     contentResolver.openOutputStream(it)?.use { outputStream ->
-                        // UTF-8 with BOM for Excel compatibility
                         outputStream.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
                         outputStream.write(content.toByteArray())
                     }
@@ -145,7 +145,7 @@ class MainActivity : AppCompatActivity() {
     private fun showCalibrationSelectorDialog() {
         val titles = arrayOf("パーティ選択画面", "VS画面", "勝利画面", "敗北画面")
         val fileNames = arrayOf("base_party.png", "base_vs.png", "base_win.png", "base_lose.png")
-        val modes = arrayOf("party", "vs", "result", "result")
+        val modes = arrayOf("party", "vs", "win", "lose")
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
                                 }
                                 startActivity(intent)
                             } else {
-                                Toast.makeText(this@MainActivity, "先に画像をインポートしてください", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@MainActivity, getString(R.string.toast_import_first), Toast.LENGTH_SHORT).show()
                             }
                         }
                     }.show()
@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity() {
             container.addView(row)
         }
 
-        AlertDialog.Builder(this)
+        calibrationSelectorDialog = AlertDialog.Builder(this)
             .setTitle("端末設定の校正")
             .setView(container)
             .setNegativeButton("閉じる", null)

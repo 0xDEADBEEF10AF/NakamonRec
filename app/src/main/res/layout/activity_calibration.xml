@@ -10,7 +10,37 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- 操作パネルを2行形式にしてスタイリッシュに -->
+    <!-- 進捗表示用のレイアウト -->
+    <LinearLayout
+        android:id="@+id/layoutProgress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="#AA000000"
+        android:padding="24dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent">
+
+        <ProgressBar
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:indeterminate="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/msg_analyzing"
+            android:textColor="#FFFFFF"
+            android:gravity="center"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- 操作パネル -->
     <LinearLayout
         android:id="@+id/layoutControls"
         android:layout_width="match_parent"
