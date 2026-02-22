@@ -20,9 +20,18 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var winTemplate: Mat? = null
     private var loseTemplate: Mat? = null
     private var partySelectTemplate: Mat? = null
+    
+    // マイクロスケール対応のキャッシュ構造: Map<MonsterName, List<ScaledMat>>
+    private val scaledMonsterTemplates = mutableMapOf<String, List<Mat>>()
+    private var vsTemplateScaled: Mat? = null
+    private var winTemplateScaled: Mat? = null
+    private var loseTemplateScaled: Mat? = null
+    private var partySelectTemplateScaled: Mat? = null
+    private var cachedScale = -1.0
 
     companion object {
-        private val DEBUG: Boolean get() = false
+        // カスタムゲッターでワーニングを回避しつつデバッグ機能をオフにする
+        private val DEBUG: Boolean get() = false 
         private const val VS_THRESHOLD = 0.7
         private const val WIN_THRESHOLD = 0.4
         private const val LOSE_THRESHOLD = 0.4
@@ -38,6 +47,43 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     fun setCalibrationData(data: CalibrationData) {
         this.calibrationData = data
         if (DEBUG) Log.i("BattleAnalyzer", "⚙️ 校正データを適用しました (uiScale: ${data.uiScale})")
+        prepareScaledTemplates()
+    }
+
+    private fun prepareScaledTemplates() {
+        val s = calibrationData.uiScale.toDouble()
+        if (s == cachedScale) return
+        
+        if (DEBUG) Log.i("BattleAnalyzer", "🔄 高品質テンプレートキャッシュを作成中... (Base Scale: $s)")
+        val startTime = System.currentTimeMillis()
+
+        // 全リソースの解放
+        scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
+        scaledMonsterTemplates.clear()
+        
+        // マイクロスケール探索範囲 (98%, 100%, 102%)
+        val microScales = listOf(s * 0.98, s * 1.0, s * 1.02)
+        
+        monsterMaster.forEach { data ->
+            data.templateMat?.let { tpl ->
+                val variants = microScales.map { ms ->
+                    val scaled = Mat()
+                    // INTER_CUBIC を使用して拡大時のエッジ鮮明度を維持
+                    Imgproc.resize(tpl, scaled, Size(), ms, ms, Imgproc.INTER_CUBIC)
+                    scaled
+                }
+                scaledMonsterTemplates[data.name] = variants
+            }
+        }
+
+        // 基本UIテンプレートのリサイズ
+        vsTemplateScaled?.release(); vsTemplateScaled = vsTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        winTemplateScaled?.release(); winTemplateScaled = winTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        loseTemplateScaled?.release(); loseTemplateScaled = loseTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        partySelectTemplateScaled?.release(); partySelectTemplateScaled = partySelectTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+
+        cachedScale = s
+        if (DEBUG) Log.i("BattleAnalyzer", "✅ キャッシュ作成完了: ${System.currentTimeMillis() - startTime}ms")
     }
 
     fun loadTemplates(context: Context) {
@@ -57,6 +103,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         winTemplate = loadColorTemplate(context, "templates/WIN.png")
         loseTemplate = loadColorTemplate(context, "templates/LOSE.png")
         partySelectTemplate = loadColorTemplate(context, "templates/SELECT.png")
+        
+        prepareScaledTemplates()
     }
 
     private fun loadColorTemplate(context: Context, path: String): Mat? {
@@ -97,7 +145,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val scales = listOf(0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 1.9, 2.1, 2.3, 2.5)
         for (s in scales) {
             val workTpl = Mat()
-            Imgproc.resize(template, workTpl, Size(), s, s)
+            Imgproc.resize(template, workTpl, Size(), s, s, Imgproc.INTER_CUBIC)
             if (useGray) Imgproc.cvtColor(workTpl, workTpl, Imgproc.COLOR_RGB2GRAY)
 
             if (workTpl.cols() < roiScene.cols() && workTpl.rows() < roiScene.rows()) {
@@ -117,12 +165,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val res = if (bestScore > 0.4) {
             val tw = (template.cols() * bestScale).toInt()
             val th = (template.rows() * bestScale).toInt()
-            val config = BoxConfig(
-                (bestPos.x + tw / 2).toFloat() / scene.cols(),
-                (bestPos.y + startY + th / 2).toFloat() / scene.rows(),
-                tw,
-                th
-            )
+            val config = BoxConfig((bestPos.x + tw / 2).toFloat() / scene.cols(), (bestPos.y + startY + th / 2).toFloat() / scene.rows(), tw, th)
             ScanResult(config, bestScore, bestScale)
         } else null
 
@@ -165,14 +208,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 ?: BoxConfig(estCx / fullMat.cols(), estCy / fullMat.rows(), (80 * vsScale).toInt(), (130 * vsScale).toInt())
         }
 
-        newData.myPartyBoxes = listOf(
-            getMonsterConfig(196f, 1635f), getMonsterConfig(391f, 1635f),
-            getMonsterConfig(585f, 1635f), getMonsterConfig(780f, 1635f)
-        )
-        newData.enemyPartyBoxes = listOf(
-            getMonsterConfig(201f, 915f), getMonsterConfig(396f, 915f),
-            getMonsterConfig(590f, 915f), getMonsterConfig(785f, 915f)
-        )
+        newData.myPartyBoxes = listOf(getMonsterConfig(196f, 1635f), getMonsterConfig(391f, 1635f), getMonsterConfig(585f, 1635f), getMonsterConfig(780f, 1635f))
+        newData.enemyPartyBoxes = listOf(getMonsterConfig(201f, 915f), getMonsterConfig(396f, 915f), getMonsterConfig(590f, 915f), getMonsterConfig(785f, 915f))
 
         fullMat.release()
         return newData
@@ -194,7 +231,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             val tpl = m.templateMat ?: continue
             for (ls in localScales) {
                 val scaledTpl = Mat()
-                Imgproc.resize(tpl, scaledTpl, Size(), ls, ls)
+                Imgproc.resize(tpl, scaledTpl, Size(), ls, ls, Imgproc.INTER_CUBIC)
                 if (scaledTpl.cols() < roi.cols() && scaledTpl.rows() < roi.rows()) {
                     val result = Mat()
                     Imgproc.matchTemplate(roi, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
@@ -211,12 +248,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         }
 
         val config = if (bestScore > 0.55) {
-            BoxConfig(
-                (startX + bestPos.x + bestSize.width / 2).toFloat() / scene.cols(),
-                (startY + bestPos.y + bestSize.height / 2).toFloat() / scene.rows(),
-                bestSize.width.toInt(),
-                bestSize.height.toInt()
-            )
+            BoxConfig((startX + bestPos.x + bestSize.width / 2).toFloat() / scene.cols(), (startY + bestPos.y + bestSize.height / 2).toFloat() / scene.rows(), bestSize.width.toInt(), bestSize.height.toInt())
         } else null
 
         roi.release()
@@ -238,7 +270,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val scales = listOf(0.7, 1.0, 1.3, 1.6, 1.9, 2.2, 2.5)
         for (s in scales) {
             val scaledTpl = Mat()
-            Imgproc.resize(grayTemplate, scaledTpl, Size(), s, s)
+            Imgproc.resize(grayTemplate, scaledTpl, Size(), s, s, Imgproc.INTER_CUBIC)
             val result = Mat()
             Imgproc.matchTemplate(grayScene, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
             val currentConfigs = mutableListOf<BoxConfig>()
@@ -248,12 +280,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 if (mm.maxVal < 0.25) return@repeat
                 sumScore += mm.maxVal
                 val pos = mm.maxLoc
-                currentConfigs.add(BoxConfig(
-                    (pos.x + scaledTpl.cols() / 2).toFloat() / grayScene.cols(),
-                    (pos.y + scaledTpl.rows() / 2).toFloat() / grayScene.rows(),
-                    scaledTpl.cols(),
-                    scaledTpl.rows()
-                ))
+                currentConfigs.add(BoxConfig((pos.x + scaledTpl.cols() / 2).toFloat() / grayScene.cols(), (pos.y + scaledTpl.rows() / 2).toFloat() / grayScene.rows(), scaledTpl.cols(), scaledTpl.rows()))
                 val mask = result.submat((pos.y - scaledTpl.rows()).toInt().coerceAtLeast(0), (pos.y + scaledTpl.rows() * 2).toInt().coerceAtMost(result.rows()), (pos.x - scaledTpl.cols()).toInt().coerceAtLeast(0), (pos.x + scaledTpl.cols() * 2).toInt().coerceAtMost(result.cols()))
                 mask.setTo(Scalar(-1.0))
                 mask.release()
@@ -282,65 +309,50 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val imgW = fullMat.cols().toFloat()
         val imgH = fullMat.rows().toFloat()
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+        
         for (i in 0..7) {
             if (identifiedNames[i] != null) continue
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
-            val roiMat = getRawROI(fullMat, config, imgW, imgH, "monster_$i") ?: continue
-            val result = findBestMonsterMatch(roiMat)
-            if (result.score > MONSTER_THRESHOLD) {
-                identifiedNames[i] = result.name
-                if (DEBUG) {
-                    val scoreLog = String.format(Locale.US, "%.3f", result.score)
-                    Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: $scoreLog)")
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + 10, config.height + 10)
+            
+            val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
+            val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
+            
+            try {
+                val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
+                if (DEBUG) saveDebugMat(roi, "monster_$i")
+                
+                val result = findBestMonsterMatchMicroScales(roi)
+                if (result.score > MONSTER_THRESHOLD) {
+                    identifiedNames[i] = result.name
+                    if (DEBUG) Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
+                } else if (DEBUG && result.score > 0.5) {
+                    Log.d("BattleAnalyzer", "接近 Slot[$i] ${result.name} (Score: ${String.format(Locale.US, "%.3f", result.score)})")
                 }
-            }
-            roiMat.release()
+                roi.release()
+            } catch (_: Exception) {}
         }
         fullMat.release()
     }
 
-    private fun getRawROI(fullMat: Mat, config: BoxConfig, imgW: Float, imgH: Float, label: String): Mat? {
-        val centerX = (imgW * config.centerX).toInt()
-        val centerY = (imgH * config.centerY).toInt()
-        val tw = config.width
-        val th = config.height
-        val left = (centerX - tw / 2).coerceIn(0, (imgW.toInt() - tw))
-        val top = (centerY - th / 2).coerceIn(0, (imgH.toInt() - th))
-
-        if (DEBUG) Log.d("BattleAnalyzer", "ROI[$label]: Pos=($left, $top), Size=${tw}x${th}")
-
-        return try {
-            val safeW = if (left + tw > fullMat.cols()) fullMat.cols() - left else tw
-            val safeH = if (top + th > fullMat.rows()) fullMat.rows() - top else th
-            if (safeW <= 0 || safeH <= 0) return null
-            fullMat.submat(top, top + safeH, left, left + safeW).clone()
-        } catch (e: Exception) { 
-            if (DEBUG) Log.e("BattleAnalyzer", "ROI Error: ${e.message}")
-            null 
-        }
-    }
-
-    private fun findBestMonsterMatch(roiMat: Mat): MatchResult {
+    private fun findBestMonsterMatchMicroScales(roiMat: Mat): MatchResult {
         var bestScore = -1.0
         var bestName = ""
-        val s = calibrationData.uiScale.toDouble()
         
         for (monster in monsterMaster) {
-            val template = monster.templateMat ?: continue
-            val scaledTpl = Mat()
-            Imgproc.resize(template, scaledTpl, Size(), s, s)
-            
-            if (scaledTpl.cols() <= roiMat.cols() && scaledTpl.rows() <= roiMat.rows()) {
-                val result = Mat()
-                Imgproc.matchTemplate(roiMat, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
-                val score = Core.minMaxLoc(result).maxVal
-                if (score > bestScore) {
-                    bestScore = score
-                    bestName = monster.name
+            val variants = scaledMonsterTemplates[monster.name] ?: continue
+            for (scaledTpl in variants) {
+                if (scaledTpl.cols() <= roiMat.cols() && scaledTpl.rows() <= roiMat.rows()) {
+                    val result = Mat()
+                    Imgproc.matchTemplate(roiMat, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
+                    val score = Core.minMaxLoc(result).maxVal
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestName = monster.name
+                    }
+                    result.release()
                 }
-                result.release()
             }
-            scaledTpl.release()
         }
         return MatchResult(bestName, bestScore)
     }
@@ -354,61 +366,52 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun isVsDetected(bitmap: Bitmap): Boolean {
-        return performColorMatch(bitmap, calibrationData.vsBox, vsTemplate, "vs") > VS_THRESHOLD
+        return performColorMatchCached(bitmap, calibrationData.vsBox, vsTemplateScaled, "vs") > VS_THRESHOLD
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {
-        val winScore = performColorMatch(bitmap, calibrationData.winBox, winTemplate, "win")
+        val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, "win")
         if (winScore > WIN_THRESHOLD) {
             Log.i("BattleAnalyzer", "🏁 WIN detected! (Score: ${String.format(Locale.US, "%.3f", winScore)})")
             return "WIN"
         }
-        
-        val loseScore = performColorMatch(bitmap, calibrationData.loseBox, loseTemplate, "lose")
+        val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, "lose")
         if (loseScore > LOSE_THRESHOLD) {
             Log.i("BattleAnalyzer", "🏁 LOSE detected! (Score: ${String.format(Locale.US, "%.3f", loseScore)})")
             return "LOSE"
         }
-        
-        if (DEBUG && (winScore > 0.3 || loseScore > 0.3)) {
-            Log.d("BattleAnalyzer", "CheckResult: Win=${String.format(Locale.US, "%.3f", winScore)}, Lose=${String.format(Locale.US, "%.3f", loseScore)}")
-        }
         return null
     }
 
-    private fun performColorMatch(bitmap: Bitmap, config: BoxConfig, template: Mat?, debugLabel: String? = null): Double {
-        if (template == null) return 0.0
+    private fun performColorMatchCached(bitmap: Bitmap, config: BoxConfig, scaledTemplate: Mat?, debugLabel: String? = null): Double {
+        if (scaledTemplate == null) return 0.0
         val fullMat = Mat()
         Utils.bitmapToMat(bitmap, fullMat)
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
         val imgW = fullMat.cols().toFloat()
         val imgH = fullMat.rows().toFloat()
+        val centerX = (imgW * config.centerX).toInt()
+        val centerY = (imgH * config.centerY).toInt()
+        val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
+        val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
         
-        val roi = getRawROI(fullMat, config, imgW, imgH, debugLabel ?: "unknown")
         var score = 0.0
-        
-        if (roi != null) {
+        try {
+            val roi = fullMat.submat(top, top + config.height, left, left + config.width)
             if (DEBUG && debugLabel != null) saveDebugMat(roi, debugLabel)
-            
-            val s = calibrationData.uiScale.toDouble()
-            val scaledTpl = Mat()
-            Imgproc.resize(template, scaledTpl, Size(), s, s)
-            
-            if (scaledTpl.cols() <= roi.cols() && scaledTpl.rows() <= roi.rows()) {
+            if (scaledTemplate.cols() <= roi.cols() && scaledTemplate.rows() <= roi.rows()) {
                 val res = Mat()
-                Imgproc.matchTemplate(roi, scaledTpl, res, Imgproc.TM_CCOEFF_NORMED)
+                Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
                 score = Core.minMaxLoc(res).maxVal
                 res.release()
             }
-            scaledTpl.release()
             roi.release()
-        }
+        } catch (_: Exception) {}
         fullMat.release()
         return score
     }
 
     private fun saveDebugMat(mat: Mat, label: String) {
-        if (!DEBUG) return
         val ctx = appContext ?: return
         try {
             val bitmap = createBitmap(mat.cols(), mat.rows())
@@ -423,15 +426,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val scores = mutableListOf<Double>()
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
-            // スクロール対応：探索領域の高さを大幅に広げる（Pixel Foldの330pxすべてのカバーは難しいが、上下に100pxずつの余裕を持たせる）
-            val searchMargin = 200
-            val expandedConfig = BoxConfig(
-                config.centerX,
-                config.centerY,
-                config.width,
-                config.height + searchMargin
-            )
-            scores.add(performColorMatch(bitmap, expandedConfig, partySelectTemplate, "party$i"))
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width, config.height + 200)
+            scores.add(performColorMatchCached(bitmap, expandedConfig, partySelectTemplateScaled, "party$i"))
         }
         val maxScore = scores.maxOrNull() ?: 0.0
         val maxIndex = scores.indexOf(maxScore)
@@ -440,9 +436,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun releaseTemplates() {
         monsterMaster.forEach { it.templateMat?.release() }
-        vsTemplate?.release()
-        winTemplate?.release()
-        loseTemplate?.release()
-        partySelectTemplate?.release()
+        vsTemplate?.release(); winTemplate?.release(); loseTemplate?.release(); partySelectTemplate?.release()
+        scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
+        vsTemplateScaled?.release(); winTemplateScaled?.release(); loseTemplateScaled?.release(); partySelectTemplateScaled?.release()
     }
 }

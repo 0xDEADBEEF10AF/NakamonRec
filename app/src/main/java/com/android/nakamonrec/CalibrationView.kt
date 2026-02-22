@@ -13,13 +13,11 @@ class CalibrationView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private var backgroundImage: Bitmap? = null
-    // メインの枠をライム色（Color.GREEN = #00FF00）に変更
     private val paintRect = Paint().apply {
         color = Color.GREEN
         style = Paint.Style.STROKE
         strokeWidth = 5f
     }
-    // 探索バッファ用のペイント（半透明のシアン）
     private val paintBufferFill = Paint().apply {
         color = Color.CYAN
         style = Paint.Style.FILL
@@ -35,12 +33,10 @@ class CalibrationView @JvmOverloads constructor(
         color = Color.YELLOW
         style = Paint.Style.FILL
     }
-    // テキストもライム色に変更して統一感を出す
     private val paintText = Paint().apply {
         color = Color.GREEN
         textSize = 40f
         isFakeBoldText = true
-        // 縁取りを追加してさらに読みやすく
         setShadowLayer(5f, 0f, 0f, Color.BLACK)
     }
 
@@ -103,10 +99,17 @@ class CalibrationView @JvmOverloads constructor(
 
             reusableRect.set(cx - bw, cy - bh, cx + bw, cy + bh)
             
-            // パーティ選択枠 (P1, P2, P3) の場合は、上下の探索範囲(計200px)を可視化
+            // 探索範囲の可視化
             if (box.label.startsWith("P")) {
+                // パーティ選択枠：上下100pxずつの大きなバッファ
                 val marginY = 100f * scaleY
                 bufferRect.set(reusableRect.left, reusableRect.top - marginY, reusableRect.right, reusableRect.bottom + marginY)
+                canvas.drawRect(bufferRect, paintBufferFill)
+                canvas.drawRect(bufferRect, paintBufferStroke)
+            } else if (box.label.contains("自") || box.label.contains("敵")) {
+                // モンスター枠：上下左右5pxずつの微細なバッファ
+                val margin = 5f * scaleX
+                bufferRect.set(reusableRect.left - margin, reusableRect.top - margin, reusableRect.right + margin, reusableRect.bottom + margin)
                 canvas.drawRect(bufferRect, paintBufferFill)
                 canvas.drawRect(bufferRect, paintBufferStroke)
             }
@@ -115,7 +118,7 @@ class CalibrationView @JvmOverloads constructor(
                 paintRect.color = Color.YELLOW
                 canvas.drawCircle(reusableRect.right, reusableRect.bottom, handleRadius, paintHandle)
             } else {
-                paintRect.color = Color.GREEN // ライム色
+                paintRect.color = Color.GREEN
             }
             
             canvas.drawRect(reusableRect, paintRect)
