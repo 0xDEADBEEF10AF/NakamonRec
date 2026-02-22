@@ -60,15 +60,21 @@ class BattleDataManager(private val context: Context) {
         val records = history.records
         val totalWins = records.count { it.result == "WIN" }
         val totalLosses = records.count { it.result == "LOSE" }
-        val totalWinRate = if (records.isNotEmpty()) (totalWins.toDouble() / records.size) * 100 else 0.0
+        val totalCount = records.size
+        val totalWinRate = if (totalCount > 0) (totalWins.toDouble() / totalCount) * 100 else 0.0
 
         // パーティごとの集計 (0, 1, 2)
         val partyStats = (0..2).map { idx ->
             val pRecords = records.filter { it.partyIndex == idx }
+            val pCount = pRecords.size
             val pWins = pRecords.count { it.result == "WIN" }
             val pLosses = pRecords.count { it.result == "LOSE" }
-            val pRate = if (pRecords.isNotEmpty()) (pWins.toDouble() / pRecords.size) * 100 else 0.0
-            PartyStat(idx, pWins, pLosses, pRate)
+            val pWinRate = if (pCount > 0) (pWins.toDouble() / pCount) * 100 else 0.0
+            
+            // 使用率の計算 (そのパーティの戦闘数 / 全戦闘数)
+            val pUsageRate = if (totalCount > 0) (pCount.toDouble() / totalCount) * 100 else 0.0
+            
+            PartyStat(idx, pWins, pLosses, pWinRate, pUsageRate)
         }
 
         return BattleStats(totalWins, totalLosses, totalWinRate, partyStats)

@@ -48,7 +48,8 @@ data class PartyStat(
     val index: Int,
     val wins: Int,
     val losses: Int,
-    val winRate: Double
+    val winRate: Double,
+    val usageRate: Double // パーティ使用率 (0.0-100.0)
 )
 
 /**

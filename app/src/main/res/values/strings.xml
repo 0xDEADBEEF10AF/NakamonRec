@@ -17,6 +17,8 @@
     <string name="stats_win_format">%1$d勝</string>
     <string name="stats_lose_format">%1$d敗</string>
     <string name="stats_rate_format">(%1$s%%)</string>
+    <string name="label_win_rate">勝率</string>
+    <string name="label_usage_rate">使用率</string>
 
     <!-- ラベル用 -->
     <string name="label_total">TOTAL</string>

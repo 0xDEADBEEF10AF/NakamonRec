@@ -58,29 +58,35 @@ class HistoryActivity : AppCompatActivity() {
         binding.valTotalCount.text = getString(R.string.stats_count_format, stats.totalWins + stats.totalLosses)
         binding.valTotalWin.text = getString(R.string.stats_win_format, stats.totalWins)
         binding.valTotalLose.text = getString(R.string.stats_lose_format, stats.totalLosses)
-        binding.valTotalRate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", stats.winRate))
+        binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
 
         // 各パーティ戦績の反映
         stats.partyStats.forEach { party ->
             val count = party.wins + party.losses
+            val winRateStr = String.format(Locale.US, "%.1f%%", party.winRate)
+            val usageRateStr = String.format(Locale.US, "%.1f%%", party.usageRate)
+            
             when (party.index) {
                 0 -> {
                     binding.valP1Count.text = getString(R.string.stats_count_format, count)
                     binding.valP1Win.text = getString(R.string.stats_win_format, party.wins)
                     binding.valP1Lose.text = getString(R.string.stats_lose_format, party.losses)
-                    binding.valP1Rate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", party.winRate))
+                    binding.valP1Rate.text = winRateStr
+                    binding.valP1Usage.text = usageRateStr
                 }
                 1 -> {
                     binding.valP2Count.text = getString(R.string.stats_count_format, count)
                     binding.valP2Win.text = getString(R.string.stats_win_format, party.wins)
                     binding.valP2Lose.text = getString(R.string.stats_lose_format, party.losses)
-                    binding.valP2Rate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", party.winRate))
+                    binding.valP2Rate.text = winRateStr
+                    binding.valP2Usage.text = usageRateStr
                 }
                 2 -> {
                     binding.valP3Count.text = getString(R.string.stats_count_format, count)
                     binding.valP3Win.text = getString(R.string.stats_win_format, party.wins)
                     binding.valP3Lose.text = getString(R.string.stats_lose_format, party.losses)
-                    binding.valP3Rate.text = getString(R.string.stats_rate_format, String.format(Locale.US, "%.1f", party.winRate))
+                    binding.valP3Rate.text = winRateStr
+                    binding.valP3Usage.text = usageRateStr
                 }
             }
         }
