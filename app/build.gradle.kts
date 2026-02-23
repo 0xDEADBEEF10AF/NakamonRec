@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace = "com.android.nakamonrec"
-    compileSdk = 36
+    compileSdk = 36 // ライブラリの要求に合わせて 36 に戻す
 
     defaultConfig {
         applicationId = "com.android.nakamonrec"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35 // 実行環境の互換性のために 35 (Android 15) に設定
         versionCode = 1
         versionName = "1.0"
 
@@ -40,7 +40,7 @@ android {
     }
 }
 
-// APKの自動コピー＆リネーム設定 (実行ボタン △ に連動)
+// APKの自動コピー＆リネーム設定
 androidComponents {
     onVariants { variant ->
         val variantName = variant.name.replaceFirstChar { it.uppercase() }
@@ -48,12 +48,9 @@ androidComponents {
         val vName = android.defaultConfig.versionName ?: "1.0"
         val finalApkName = "NakamonRec_${vName}_${type}.apk"
 
-        // APKコピー用タスクを登録
         val copyTask = tasks.register("copy${variantName}Apk") {
             doLast {
-                // Artifacts APIを使用して、ビルドされたAPKのディレクトリを取得
                 val apkDir = variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.APK).get().asFile
-                // ディレクトリ内から実際のAPKファイルを探す
                 val apkFile = apkDir.walk().find { it.name.endsWith(".apk") }
                 
                 if (apkFile != null && apkFile.exists()) {
@@ -63,15 +60,12 @@ androidComponents {
                     val destFile = File(destDir, finalApkName)
                     apkFile.copyTo(destFile, overwrite = true)
                     
-                    logger.lifecycle("--------------------------------------------------")
                     logger.lifecycle("✅ APK generated and copied to Project Root /apks/")
                     logger.lifecycle("📍 File: ${destFile.absolutePath}")
-                    logger.lifecycle("--------------------------------------------------")
                 }
             }
         }
 
-        // 実行(△)ボタンなどで走る assemble タスクが完了した後にコピーを実行
         tasks.matching { it.name == "assemble$variantName" }.configureEach {
             finalizedBy(copyTask)
         }

@@ -193,7 +193,6 @@ class MainActivity : AppCompatActivity() {
             row.addView(status)
 
             row.setOnClickListener {
-                // 修正後: インポート -> 削除 -> 校正
                 val options = arrayOf(
                     getString(R.string.btn_import_image),
                     getString(R.string.btn_delete_image),
@@ -345,7 +344,13 @@ class MainActivity : AppCompatActivity() {
             stopPulseAnimation()
         }
 
-        binding.textCurrentFile.text = getString(R.string.current_file_format, getCurrentFileName())
+        val currentName = getCurrentFileName()
+        val file = File(filesDir, "$currentName.json")
+        if (file.exists()) {
+            binding.textCurrentFile.text = getString(R.string.current_file_format, currentName)
+        } else {
+            binding.textCurrentFile.text = getString(R.string.current_file_format, getString(R.string.file_not_found_hint, currentName))
+        }
     }
 
     private fun startPulseAnimation() {
@@ -371,7 +376,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun getCurrentFileName(): String {
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        return prefs.getString("last_file_name", "battle_history") ?: "battle_history"
+        return prefs.getString("last_file_name", "default_record") ?: "default_record"
     }
 
     private fun saveCurrentFileName(name: String) {
@@ -384,22 +389,23 @@ class MainActivity : AppCompatActivity() {
         val files = filesDir.listFiles { file -> file.extension == "json" && file.name != "monsters.json" }
         val fileNames = files?.map { it.nameWithoutExtension }?.toTypedArray() ?: arrayOf()
 
-        if (fileNames.isEmpty()) {
-            Toast.makeText(this, "ファイルがありません", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        AlertDialog.Builder(this)
+        val builder = AlertDialog.Builder(this)
             .setTitle("ファイルを選択")
-            .setItems(fileNames) { _, which ->
-                val selectedFile = fileNames[which]
-                showFileActionDialog(selectedFile)
-            }
             .setNeutralButton("新規作成") { _, _ ->
                 showCreateFileDialog()
             }
             .setNegativeButton("閉じる", null)
-            .show()
+
+        if (fileNames.isEmpty()) {
+            builder.setMessage("保存されたファイルがありません。\n「新規作成」から新しく作成できます。")
+        } else {
+            builder.setItems(fileNames) { _, which ->
+                val selectedFile = fileNames[which]
+                showFileActionDialog(selectedFile)
+            }
+        }
+        
+        builder.show()
     }
 
     private fun showFileActionDialog(fileName: String) {
@@ -532,7 +538,7 @@ class MainActivity : AppCompatActivity() {
                 if (file.delete()) {
                     Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show()
                     if (getCurrentFileName() == fileName) {
-                        saveCurrentFileName("battle_history")
+                        saveCurrentFileName("default_record")
                     }
                     refreshServiceAndUI()
                 }

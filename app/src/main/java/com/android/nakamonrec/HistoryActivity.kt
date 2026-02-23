@@ -35,7 +35,8 @@ class HistoryActivity : AppCompatActivity() {
         supportActionBar?.title = "戦績"
 
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        val currentFile = prefs.getString("last_file_name", "battle_history") ?: "battle_history"
+        // デフォルト名を default_record に変更
+        val currentFile = prefs.getString("last_file_name", "default_record") ?: "default_record"
 
         dataManager = BattleDataManager(this)
         dataManager.loadHistory(currentFile)
@@ -58,7 +59,6 @@ class HistoryActivity : AppCompatActivity() {
         binding.valTotalCount.text = getString(R.string.stats_count_format, stats.totalWins + stats.totalLosses)
         binding.valTotalWin.text = getString(R.string.stats_win_format, stats.totalWins)
         binding.valTotalLose.text = getString(R.string.stats_lose_format, stats.totalLosses)
-        // 修正: XML側の固定ラベルと重複しないよう数値のみにする
         binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
 
         // 各パーティ戦績の反映
@@ -86,7 +86,6 @@ class HistoryActivity : AppCompatActivity() {
                     binding.valP3Count.text = getString(R.string.stats_count_format, count)
                     binding.valP3Win.text = getString(R.string.stats_win_format, party.wins)
                     binding.valP3Lose.text = getString(R.string.stats_lose_format, party.losses)
-                    // 修正: P3の勝率・使用率を正しくP3のTextViewに代入
                     binding.valP3Rate.text = winRateStr
                     binding.valP3Usage.text = usageRateStr
                 }
