@@ -58,7 +58,7 @@ class HistoryActivity : AppCompatActivity() {
         binding.valTotalCount.text = getString(R.string.stats_count_format, stats.totalWins + stats.totalLosses)
         binding.valTotalWin.text = getString(R.string.stats_win_format, stats.totalWins)
         binding.valTotalLose.text = getString(R.string.stats_lose_format, stats.totalLosses)
-        binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
+        binding.valTotalRate.text = String.format(Locale.US, "勝率 %.1f%%", stats.winRate)
 
         // 各パーティ戦績の反映
         stats.partyStats.forEach { party ->
@@ -85,7 +85,7 @@ class HistoryActivity : AppCompatActivity() {
                     binding.valP3Count.text = getString(R.string.stats_count_format, count)
                     binding.valP3Win.text = getString(R.string.stats_win_format, party.wins)
                     binding.valP3Lose.text = getString(R.string.stats_lose_format, party.losses)
-                    binding.valP3Rate.text = winRateStr
+                    binding.valP1Rate.text = winRateStr
                     binding.valP3Usage.text = usageRateStr
                 }
             }
@@ -146,11 +146,14 @@ class HistoryActivity : AppCompatActivity() {
                 )
                 val winRateTextView = view.findViewById<TextView>(R.id.textWinRate)
                 winRateTextView.text = getString(R.string.rank_win_rate_format, String.format(Locale.US, "%.1f", data.winRate))
+                
+                // 勝率に応じた色付けルールの更新
                 when {
-                    data.winRate < 40.0 -> winRateTextView.setTextColor("#F09199".toColorInt())
-                    data.winRate > 60.0 -> winRateTextView.setTextColor("#90D7EC".toColorInt())
-                    else -> winRateTextView.setTextColor("#CCCCCC".toColorInt())
+                    data.winRate >= 80.0 -> winRateTextView.setTextColor("#F09199".toColorInt())
+                    data.winRate >= 50.0 -> winRateTextView.setTextColor("#CCCCCC".toColorInt())
+                    else -> winRateTextView.setTextColor("#90D7EC".toColorInt())
                 }
+
                 val imageView = view.findViewById<ImageView>(R.id.imageMonster)
                 val monsterData = dataManager.monsterMaster.find { it.name == data.name }
                 if (monsterData != null) {
@@ -181,9 +184,11 @@ class HistoryActivity : AppCompatActivity() {
                 if (sortedByAppearance) {
                     rankingList.sortBy { it.winRate }
                     sortButton.text = "出現数の多い順"
+                    dialog.setTitle("勝率ワーストランキング")
                 } else {
                     rankingList.sortByDescending { it.count }
                     sortButton.text = "勝率の低い順"
+                    dialog.setTitle("敵モンスター出現率ランキング")
                 }
                 sortedByAppearance = !sortedByAppearance
                 adapter.notifyDataSetChanged()

@@ -33,6 +33,9 @@
     <string name="btn_default">デフォルト</string>
     <string name="btn_auto">自動校正</string>
     <string name="btn_save_calibration">この位置で決定</string>
+    <string name="title_calibrate_dialog">キャプチャー画面の校正</string>
+    <string name="status_done">✅</string>
+    <string name="status_none">□</string>
 
     <!-- ランキング表示用 -->
     <string name="rank_appearance_format">出現: %1$d回 (%2$s%%)</string>
@@ -57,6 +60,14 @@
     <string name="toast_import_first">先に画像をインポートしてください</string>
     <string name="msg_imported">画像をインポートしました</string>
     <string name="msg_import_failed">インポートに失敗しました</string>
+    <string name="error_invalid_filename">ファイル名に使用できない文字が含まれています</string>
+    <string name="btn_import_image">画像をインポート</string>
+    <string name="btn_delete_image">画像を削除</string>
+    <string name="btn_start_calibrate">校正を開始</string>
+    <string name="msg_deleted">削除しました</string>
+    <string name="msg_confirm_delete_image">この画像を削除しますか？\n（校正済みの位置データは残ります）</string>
+    <string name="btn_delete">削除</string>
+    <string name="btn_cancel">キャンセル</string>
 
     <!-- Readme / Copyright -->
     <string name="readme_title">Readme / Copyright</string>

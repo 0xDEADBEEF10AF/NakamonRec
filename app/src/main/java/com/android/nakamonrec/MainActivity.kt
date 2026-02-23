@@ -183,7 +183,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             val status = TextView(this).apply {
-                text = if (File(filesDir, fileNames[i]).exists()) "✅" else "未"
+                val exists = File(filesDir, fileNames[i]).exists()
+                text = if (exists) getString(R.string.status_done) else getString(R.string.status_none)
                 setPadding(10, 0, 0, 0)
             }
 
@@ -192,22 +193,35 @@ class MainActivity : AppCompatActivity() {
             row.addView(status)
 
             row.setOnClickListener {
-                val options = arrayOf("ギャラリーからインポート", "位置合わせを開始")
+                // 修正後: インポート -> 削除 -> 校正
+                val options = arrayOf(
+                    getString(R.string.btn_import_image),
+                    getString(R.string.btn_delete_image),
+                    getString(R.string.btn_start_calibrate)
+                )
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(titles[i])
                     .setItems(options) { _, opt ->
-                        if (opt == 0) {
-                            pendingCalibrationFileName = fileNames[i]
-                            pickImageLauncher.launch("image/*")
-                        } else {
-                            if (File(filesDir, fileNames[i]).exists()) {
-                                val intent = Intent(this@MainActivity, CalibrationActivity::class.java).apply {
-                                    putExtra("EXTRA_MODE", modes[i])
-                                    putExtra("EXTRA_FILE_NAME", fileNames[i])
+                        when (opt) {
+                            0 -> { // インポート
+                                pendingCalibrationFileName = fileNames[i]
+                                pickImageLauncher.launch("image/*")
+                            }
+                            1 -> { // 削除
+                                if (File(filesDir, fileNames[i]).exists()) {
+                                    showDeleteImageConfirmDialog(fileNames[i])
                                 }
-                                startActivity(intent)
-                            } else {
-                                Toast.makeText(this@MainActivity, getString(R.string.toast_import_first), Toast.LENGTH_SHORT).show()
+                            }
+                            2 -> { // 校正
+                                if (File(filesDir, fileNames[i]).exists()) {
+                                    val intent = Intent(this@MainActivity, CalibrationActivity::class.java).apply {
+                                        putExtra("EXTRA_MODE", modes[i])
+                                        putExtra("EXTRA_FILE_NAME", fileNames[i])
+                                    }
+                                    startActivity(intent)
+                                } else {
+                                    Toast.makeText(this@MainActivity, getString(R.string.toast_import_first), Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }.show()
@@ -216,9 +230,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         calibrationSelectorDialog = AlertDialog.Builder(this)
-            .setTitle("端末設定の校正")
+            .setTitle(R.string.title_calibrate_dialog)
             .setView(container)
             .setNegativeButton("閉じる", null)
+            .show()
+    }
+
+    private fun showDeleteImageConfirmDialog(fileName: String) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.btn_delete_image)
+            .setMessage(R.string.msg_confirm_delete_image)
+            .setPositiveButton(R.string.btn_delete) { _, _ ->
+                val file = File(filesDir, fileName)
+                if (file.exists() && file.delete()) {
+                    Toast.makeText(this, getString(R.string.msg_deleted), Toast.LENGTH_SHORT).show()
+                    calibrationSelectorDialog?.dismiss()
+                    showCalibrationSelectorDialog() 
+                }
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
             .show()
     }
 
@@ -429,6 +459,12 @@ class MainActivity : AppCompatActivity() {
         createDocumentLauncher.launch(suggestedFileName)
     }
 
+    private fun isValidFileName(name: String): Boolean {
+        if (name.isEmpty()) return false
+        val invalidChars = charArrayOf('\\', '/', ':', '*', '?', '"', '<', '>', '|', '.')
+        return name.none { it in invalidChars }
+    }
+
     private fun showCreateFileDialog() {
         val editText = EditText(this)
         val defaultName = generateDefaultFileName()
@@ -440,7 +476,7 @@ class MainActivity : AppCompatActivity() {
             .setView(editText)
             .setPositiveButton("作成") { _, _ ->
                 val newName = editText.text.toString()
-                if (newName.isNotEmpty()) {
+                if (isValidFileName(newName)) {
                     val dm = BattleDataManager(this)
                     dm.currentFileName = newName
                     dm.resetHistory()
@@ -448,6 +484,8 @@ class MainActivity : AppCompatActivity() {
                     refreshServiceAndUI()
                     updateUI(MediaCaptureService.isRunning)
                     Toast.makeText(this, "「$newName」を作成しました", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, getString(R.string.error_invalid_filename), Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("キャンセル", null)
@@ -464,7 +502,7 @@ class MainActivity : AppCompatActivity() {
             .setView(editText)
             .setPositiveButton("変更") { _, _ ->
                 val newName = editText.text.toString()
-                if (newName.isNotEmpty() && newName != oldName) {
+                if (isValidFileName(newName) && newName != oldName) {
                     val oldFile = File(filesDir, "$oldName.json")
                     val newFile = File(filesDir, "$newName.json")
 
@@ -477,6 +515,8 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         Toast.makeText(this, "変更に失敗しました", Toast.LENGTH_SHORT).show()
                     }
+                } else if (!isValidFileName(newName)) {
+                    Toast.makeText(this, getString(R.string.error_invalid_filename), Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("キャンセル", null)
