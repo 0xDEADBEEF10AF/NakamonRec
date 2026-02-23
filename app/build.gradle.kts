@@ -25,6 +25,7 @@ android {
             )
         }
     }
+
     buildFeatures {
         viewBinding = true
     }
@@ -34,8 +35,21 @@ android {
     }
     packaging {
         jniLibs {
-            // ネイティブライブラリを圧縮せず、アライメントを維持したままパッケージングする
             useLegacyPackaging = false
+        }
+    }
+}
+
+// APK出力ファイル名のカスタマイズ (最新のAGP 9.0+ 対応)
+// 非推奨の AppExtension を使わず、androidComponents API を使用します
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val type = variant.buildType ?: "unknown"
+            val vName = android.defaultConfig.versionName ?: "1.0"
+            if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
+                output.outputFileName.set("NakamonRec_${vName}_${type}.apk")
+            }
         }
     }
 }
