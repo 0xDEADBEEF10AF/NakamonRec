@@ -1,0 +1,33 @@
+# Android Studio / IntelliJ 一時ファイル
+.idea/
+*.iml
+.gradle/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ビルド生成物
+build/
+app/build/
+
+# 今回作成した APK 出力フォルダ
+apks/
+
+# 画像アセット作成時のバックアップ等
+*.png.auto
+*.webp.auto
+
+# ログファイル
+*.log
+*_timing.txt
+
+# システムファイル
+.DS_Store
+
+gitignore
+# OpenCV モジュール用の中間生成物
+opencv/build/
+opencv/.cxx/
+opencv/libcxx_helper/.cxx/
+opencv/libcxx_helper/build/
