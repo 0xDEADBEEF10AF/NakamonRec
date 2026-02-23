@@ -58,7 +58,8 @@ class HistoryActivity : AppCompatActivity() {
         binding.valTotalCount.text = getString(R.string.stats_count_format, stats.totalWins + stats.totalLosses)
         binding.valTotalWin.text = getString(R.string.stats_win_format, stats.totalWins)
         binding.valTotalLose.text = getString(R.string.stats_lose_format, stats.totalLosses)
-        binding.valTotalRate.text = String.format(Locale.US, "勝率 %.1f%%", stats.winRate)
+        // 修正: XML側の固定ラベルと重複しないよう数値のみにする
+        binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
 
         // 各パーティ戦績の反映
         stats.partyStats.forEach { party ->
@@ -85,7 +86,8 @@ class HistoryActivity : AppCompatActivity() {
                     binding.valP3Count.text = getString(R.string.stats_count_format, count)
                     binding.valP3Win.text = getString(R.string.stats_win_format, party.wins)
                     binding.valP3Lose.text = getString(R.string.stats_lose_format, party.losses)
-                    binding.valP1Rate.text = winRateStr
+                    // 修正: P3の勝率・使用率を正しくP3のTextViewに代入
+                    binding.valP3Rate.text = winRateStr
                     binding.valP3Usage.text = usageRateStr
                 }
             }
@@ -147,7 +149,6 @@ class HistoryActivity : AppCompatActivity() {
                 val winRateTextView = view.findViewById<TextView>(R.id.textWinRate)
                 winRateTextView.text = getString(R.string.rank_win_rate_format, String.format(Locale.US, "%.1f", data.winRate))
                 
-                // 勝率に応じた色付けルールの更新
                 when {
                     data.winRate >= 80.0 -> winRateTextView.setTextColor("#F09199".toColorInt())
                     data.winRate >= 50.0 -> winRateTextView.setTextColor("#CCCCCC".toColorInt())
