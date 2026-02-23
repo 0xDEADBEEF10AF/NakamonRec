@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+# ビルド時の一時的なタイミングログ
+*_timing.txt
