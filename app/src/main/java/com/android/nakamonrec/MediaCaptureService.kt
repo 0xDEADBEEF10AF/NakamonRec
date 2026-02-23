@@ -37,6 +37,7 @@ class MediaCaptureService : Service() {
         private const val CHANNEL_ID = "capture_channel"
         const val ACTION_SERVICE_STOPPED = "com.android.nakamonrec.ACTION_SERVICE_STOPPED"
         const val ACTION_RELOAD_SETTINGS = "com.android.nakamonrec.ACTION_RELOAD_SETTINGS"
+        const val ACTION_RELOAD_HISTORY = "com.android.nakamonrec.ACTION_RELOAD_HISTORY"
         var isRunning = false
     }
 
@@ -54,9 +55,19 @@ class MediaCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_RELOAD_SETTINGS) {
-            reloadCalibrationData()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_RELOAD_SETTINGS -> {
+                reloadCalibrationData()
+                return START_NOT_STICKY
+            }
+            ACTION_RELOAD_HISTORY -> {
+                val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
+                val currentFile = prefs.getString("last_file_name", "default_record") ?: "default_record"
+                dataManager.loadHistory(currentFile)
+                updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦績データを更新しました")
+                Log.i("CaptureService", "📂 外部での編集を反映するため履歴を再ロードしました: $currentFile")
+                return START_NOT_STICKY
+            }
         }
 
         val bootNotif = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -71,7 +82,7 @@ class MediaCaptureService : Service() {
         }
 
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        val lastFile = prefs.getString("last_file_name", "battle_history") ?: "battle_history"
+        val lastFile = prefs.getString("last_file_name", "default_record") ?: "default_record"
         dataManager.loadHistory(lastFile)
         
         reloadCalibrationData()

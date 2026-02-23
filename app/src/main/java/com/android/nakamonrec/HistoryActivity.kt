@@ -1,6 +1,7 @@
 package com.android.nakamonrec
 
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -35,7 +36,6 @@ class HistoryActivity : AppCompatActivity() {
         supportActionBar?.title = "戦績"
 
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        // デフォルト名を default_record に変更
         val currentFile = prefs.getString("last_file_name", "default_record") ?: "default_record"
 
         dataManager = BattleDataManager(this)
@@ -338,6 +338,13 @@ class HistoryActivity : AppCompatActivity() {
     private fun updateAndSave(position: Int, newRecord: BattleRecord) {
         dataManager.history.records[position] = newRecord
         dataManager.saveHistory()
+        // バグ修正: サービスへ最新の履歴を再ロードするように通知を送る
+        if (MediaCaptureService.isRunning) {
+            val intent = Intent(this, MediaCaptureService::class.java).apply {
+                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+            }
+            startService(intent)
+        }
         setupUI()
     }
 
@@ -357,6 +364,13 @@ class HistoryActivity : AppCompatActivity() {
         if (record.result == "WIN") dataManager.history.totalWins-- else dataManager.history.totalLosses--
         dataManager.history.records.removeAt(position)
         dataManager.saveHistory()
+        // バグ修正: 削除時もサービスへ通知を送る
+        if (MediaCaptureService.isRunning) {
+            val intent = Intent(this, MediaCaptureService::class.java).apply {
+                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+            }
+            startService(intent)
+        }
         setupUI()
     }
 
@@ -369,6 +383,13 @@ class HistoryActivity : AppCompatActivity() {
         if (newRecord.result == "WIN") dataManager.history.totalWins++
         else dataManager.history.totalLosses++
         dataManager.saveHistory()
+        // バグ修正: レコード挿入時もサービスへ通知を送る
+        if (MediaCaptureService.isRunning) {
+            val intent = Intent(this, MediaCaptureService::class.java).apply {
+                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+            }
+            startService(intent)
+        }
         setupUI()
         Toast.makeText(this, "レコードを追加しました", Toast.LENGTH_SHORT).show()
         showEditRecordDialog(position + 1)
