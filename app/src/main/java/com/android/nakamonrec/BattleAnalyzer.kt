@@ -9,7 +9,6 @@ import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import java.io.File
 import java.util.Locale
-import androidx.core.graphics.createBitmap
 
 class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private val identifiedNames = arrayOfNulls<String>(8)
@@ -21,7 +20,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var loseTemplate: Mat? = null
     private var partySelectTemplate: Mat? = null
     
-    // マイクロスケール対応のキャッシュ構造: Map<MonsterName, List<ScaledMat>>
     private val scaledMonsterTemplates = mutableMapOf<String, List<Mat>>()
     private var vsTemplateScaled: Mat? = null
     private var winTemplateScaled: Mat? = null
@@ -30,8 +28,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var cachedScale = -1.0
 
     companion object {
-        // カスタムゲッターでワーニングを回避しつつデバッグ機能をオフにする
-        private val DEBUG: Boolean get() = false 
         private const val VS_THRESHOLD = 0.7
         private const val WIN_THRESHOLD = 0.4
         private const val LOSE_THRESHOLD = 0.4
@@ -39,14 +35,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         private const val PARTY_THRESHOLD = 0.45
     }
 
-    private data class ScanResult(val config: BoxConfig, val score: Double, val scale: Double)
+    data class ScanResult(val config: BoxConfig, val score: Double, val scale: Double)
 
     fun getWinTemplate(): Mat? = winTemplate
     fun getLoseTemplate(): Mat? = loseTemplate
 
     fun setCalibrationData(data: CalibrationData) {
         this.calibrationData = data
-        if (DEBUG) Log.i("BattleAnalyzer", "⚙️ 校正データを適用しました (uiScale: ${data.uiScale})")
         prepareScaledTemplates()
     }
 
@@ -54,21 +49,15 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val s = calibrationData.uiScale.toDouble()
         if (s == cachedScale) return
         
-        if (DEBUG) Log.i("BattleAnalyzer", "🔄 高品質テンプレートキャッシュを作成中... (Base Scale: $s)")
-        val startTime = System.currentTimeMillis()
-
-        // 全リソースの解放
         scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
         scaledMonsterTemplates.clear()
         
-        // マイクロスケール探索範囲 (98%, 100%, 102%)
         val microScales = listOf(s * 0.98, s * 1.0, s * 1.02)
         
         monsterMaster.forEach { data ->
             data.templateMat?.let { tpl ->
                 val variants = microScales.map { ms ->
                     val scaled = Mat()
-                    // INTER_CUBIC を使用して拡大時のエッジ鮮明度を維持
                     Imgproc.resize(tpl, scaled, Size(), ms, ms, Imgproc.INTER_CUBIC)
                     scaled
                 }
@@ -76,14 +65,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             }
         }
 
-        // 基本UIテンプレートのリサイズ
         vsTemplateScaled?.release(); vsTemplateScaled = vsTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         winTemplateScaled?.release(); winTemplateScaled = winTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         loseTemplateScaled?.release(); loseTemplateScaled = loseTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         partySelectTemplateScaled?.release(); partySelectTemplateScaled = partySelectTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
 
         cachedScale = s
-        if (DEBUG) Log.i("BattleAnalyzer", "✅ キャッシュ作成完了: ${System.currentTimeMillis() - startTime}ms")
     }
 
     fun loadTemplates(context: Context) {
@@ -300,8 +287,48 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return finalConfigs to bestScale
     }
 
+    fun isVsDetected(bitmap: Bitmap): Boolean {
+        return performColorMatchCached(bitmap, calibrationData.vsBox, vsTemplateScaled) > VS_THRESHOLD
+    }
+
+    fun checkBattleResult(bitmap: Bitmap): String? {
+        val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled)
+        if (winScore > WIN_THRESHOLD) return "WIN"
+        val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled)
+        if (loseScore > LOSE_THRESHOLD) return "LOSE"
+        return null
+    }
+
+    private fun performColorMatchCached(bitmap: Bitmap, config: BoxConfig, scaledTemplate: Mat?): Double {
+        if (scaledTemplate == null) return 0.0
+        val fullMat = Mat()
+        Utils.bitmapToMat(bitmap, fullMat)
+        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+        val imgW = fullMat.cols().toFloat()
+        val imgH = fullMat.rows().toFloat()
+        val centerX = (imgW * config.centerX).toInt()
+        val centerY = (imgH * config.centerY).toInt()
+        val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
+        val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
+        
+        var score = 0.0
+        try {
+            val roi = fullMat.submat(top, top + config.height, left, left + config.width)
+            if (scaledTemplate.cols() <= roi.cols() && scaledTemplate.rows() <= roi.rows()) {
+                val res = Mat()
+                Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
+                score = Core.minMaxLoc(res).maxVal
+                res.release()
+            }
+            roi.release()
+        } catch (_: Exception) {}
+        fullMat.release()
+        return score
+    }
+
     fun resetIdentification() { identifiedNames.fill(null) }
     fun isAllIdentified(): Boolean = identifiedNames.all { it != null }
+    fun isNoneIdentified(): Boolean = identifiedNames.all { it == null }
 
     fun identifyStepByStep(bitmap: Bitmap) {
         val fullMat = Mat()
@@ -313,21 +340,17 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         for (i in 0..7) {
             if (identifiedNames[i] != null) continue
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + 10, config.height + 10)
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + 20, config.height + 20)
             
             val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
             val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
             
             try {
                 val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
-                if (DEBUG) saveDebugMat(roi, "monster_$i")
-                
                 val result = findBestMonsterMatchMicroScales(roi)
                 if (result.score > MONSTER_THRESHOLD) {
                     identifiedNames[i] = result.name
-                    if (DEBUG) Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
-                } else if (DEBUG && result.score > 0.5) {
-                    Log.d("BattleAnalyzer", "接近 Slot[$i] ${result.name} (Score: ${String.format(Locale.US, "%.3f", result.score)})")
+                    Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
                 }
                 roi.release()
             } catch (_: Exception) {}
@@ -338,7 +361,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private fun findBestMonsterMatchMicroScales(roiMat: Mat): MatchResult {
         var bestScore = -1.0
         var bestName = ""
-        
         for (monster in monsterMaster) {
             val variants = scaledMonsterTemplates[monster.name] ?: continue
             for (scaledTpl in variants) {
@@ -365,73 +387,29 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return Pair(my, enemy)
     }
 
-    fun isVsDetected(bitmap: Bitmap): Boolean {
-        return performColorMatchCached(bitmap, calibrationData.vsBox, vsTemplateScaled, "vs") > VS_THRESHOLD
-    }
-
-    fun checkBattleResult(bitmap: Bitmap): String? {
-        val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, "win")
-        if (winScore > WIN_THRESHOLD) {
-            Log.i("BattleAnalyzer", "🏁 WIN detected! (Score: ${String.format(Locale.US, "%.3f", winScore)})")
-            return "WIN"
-        }
-        val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, "lose")
-        if (loseScore > LOSE_THRESHOLD) {
-            Log.i("BattleAnalyzer", "🏁 LOSE detected! (Score: ${String.format(Locale.US, "%.3f", loseScore)})")
-            return "LOSE"
-        }
-        return null
-    }
-
-    private fun performColorMatchCached(bitmap: Bitmap, config: BoxConfig, scaledTemplate: Mat?, debugLabel: String? = null): Double {
-        if (scaledTemplate == null) return 0.0
-        val fullMat = Mat()
-        Utils.bitmapToMat(bitmap, fullMat)
-        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
-        val imgW = fullMat.cols().toFloat()
-        val imgH = fullMat.rows().toFloat()
-        val centerX = (imgW * config.centerX).toInt()
-        val centerY = (imgH * config.centerY).toInt()
-        val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
-        val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
-        
-        var score = 0.0
-        try {
-            val roi = fullMat.submat(top, top + config.height, left, left + config.width)
-            if (DEBUG && debugLabel != null) saveDebugMat(roi, debugLabel)
-            if (scaledTemplate.cols() <= roi.cols() && scaledTemplate.rows() <= roi.rows()) {
-                val res = Mat()
-                Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
-                score = Core.minMaxLoc(res).maxVal
-                res.release()
-            }
-            roi.release()
-        } catch (_: Exception) {}
-        fullMat.release()
-        return score
-    }
-
-    private fun saveDebugMat(mat: Mat, label: String) {
-        val ctx = appContext ?: return
-        try {
-            val bitmap = createBitmap(mat.cols(), mat.rows())
-            Utils.matToBitmap(mat, bitmap)
-            val file = File(ctx.filesDir, "debug_$label.png")
-            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            bitmap.recycle()
-        } catch (_: Exception) {}
-    }
-
     fun detectSelectedParty(bitmap: Bitmap): Int {
         val scores = mutableListOf<Double>()
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
             val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width, config.height + 200)
-            scores.add(performColorMatchCached(bitmap, expandedConfig, partySelectTemplateScaled, "party$i"))
+            scores.add(performColorMatchCached(bitmap, expandedConfig, partySelectTemplateScaled))
         }
         val maxScore = scores.maxOrNull() ?: 0.0
         val maxIndex = scores.indexOf(maxScore)
         return if (maxScore >= PARTY_THRESHOLD) maxIndex else -1
+    }
+
+    fun saveDebugBitmap(bitmap: Bitmap, label: String) {
+        val ctx = appContext ?: return
+        try {
+            val file = File(ctx.filesDir, "debug_${label}.png")
+            file.outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            Log.i("BattleAnalyzer", "📸 デバッグ画像を保存しました: ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("BattleAnalyzer", "デバッグ画像の保存失敗: ${e.message}")
+        }
     }
 
     fun releaseTemplates() {

@@ -90,7 +90,6 @@ class CalibrationActivity : AppCompatActivity() {
     private fun runAutoCalibration() {
         val bitmap = sourceBitmap ?: return
         
-        // 進捗表示レイアウトを可視化
         binding.layoutProgress.visibility = View.VISIBLE
 
         executor.execute {
@@ -100,7 +99,7 @@ class CalibrationActivity : AppCompatActivity() {
                     val res = analyzer.autoCalibrateParty(bitmap)
                     if (res != null) {
                         newScale = res.second
-                        res.first.mapIndexed { i, config ->
+                        res.first.mapIndexed { i: Int, config: BoxConfig ->
                             CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}")
                         }
                     } else null
@@ -111,10 +110,10 @@ class CalibrationActivity : AppCompatActivity() {
                         newScale = autoData.uiScale
                         val list = mutableListOf<CalibrationView.CalibrationBox>()
                         list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS"))
-                        autoData.enemyPartyBoxes.forEachIndexed { i, b ->
+                        autoData.enemyPartyBoxes.forEachIndexed { i: Int, b: BoxConfig ->
                             list.add(CalibrationView.CalibrationBox(10+i, b.centerX, b.centerY, b.width, b.height, "敵${i+1}"))
                         }
-                        autoData.myPartyBoxes.forEachIndexed { i, b ->
+                        autoData.myPartyBoxes.forEachIndexed { i: Int, b: BoxConfig ->
                             list.add(CalibrationView.CalibrationBox(20+i, b.centerX, b.centerY, b.width, b.height, "自${i+1}"))
                         }
                         list
@@ -122,15 +121,17 @@ class CalibrationActivity : AppCompatActivity() {
                 }
                 "win" -> {
                     val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getWinTemplate(), false, 0.0f, 0.5f)
-                    resRes?.let {
-                        listOf(CalibrationView.CalibrationBox(0, it.first.centerX, it.first.centerY, it.first.width, it.first.height, getString(R.string.label_win_short)))
-                    }
+                    if (resRes != null) {
+                        val config = resRes.first
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short)))
+                    } else null
                 }
                 "lose" -> {
                     val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getLoseTemplate(), false, 0.0f, 0.5f)
-                    resRes?.let {
-                        listOf(CalibrationView.CalibrationBox(0, it.first.centerX, it.first.centerY, it.first.width, it.first.height, getString(R.string.label_lose_short)))
-                    }
+                    if (resRes != null) {
+                        val config = resRes.first
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short)))
+                    } else null
                 }
                 else -> null
             }
@@ -150,16 +151,16 @@ class CalibrationActivity : AppCompatActivity() {
 
     private fun displayBoxes(data: CalibrationData) {
         val boxes = when (mode) {
-            "party" -> data.partySelectBoxes.mapIndexed { i, config ->
+            "party" -> data.partySelectBoxes.mapIndexed { i: Int, config: BoxConfig ->
                 CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}")
             }
             "vs" -> {
                 val list = mutableListOf<CalibrationView.CalibrationBox>()
                 list.add(CalibrationView.CalibrationBox(0, data.vsBox.centerX, data.vsBox.centerY, data.vsBox.width, data.vsBox.height, "VS"))
-                data.enemyPartyBoxes.forEachIndexed { i, config ->
+                data.enemyPartyBoxes.forEachIndexed { i: Int, config: BoxConfig ->
                     list.add(CalibrationView.CalibrationBox(10 + i, config.centerX, config.centerY, config.width, config.height, "敵${i + 1}"))
                 }
-                data.myPartyBoxes.forEachIndexed { i, config ->
+                data.myPartyBoxes.forEachIndexed { i: Int, config: BoxConfig ->
                     list.add(CalibrationView.CalibrationBox(20 + i, config.centerX, config.centerY, config.width, config.height, "自${i + 1}"))
                 }
                 list
