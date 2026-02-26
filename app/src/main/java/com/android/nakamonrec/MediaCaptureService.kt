@@ -22,8 +22,12 @@ class MediaCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
-    private var handlerThread: HandlerThread? = null
-    private var backgroundHandler: Handler? = null
+    
+    private var captureThread: HandlerThread? = null
+    private var captureHandler: Handler? = null
+    private var analysisThread: HandlerThread? = null
+    private var analysisHandler: Handler? = null
+    
     private lateinit var dataManager: BattleDataManager
     private lateinit var analyzer: BattleAnalyzer
     private enum class State { IDLE, IN_BATTLE }
@@ -31,9 +35,8 @@ class MediaCaptureService : Service() {
     private var lastAnalysisTime = 0L
     private var latestBitmap: Bitmap? = null
     private var selectedPartyIndex = -1
-    
-    // セッション管理用：古い戦闘の解析を破棄するため
     private var currentSessionId = 0L
+    private var debugImageSavedInSession = false
 
     companion object {
         private const val NOTIFICATION_ID = 1001
@@ -51,8 +54,11 @@ class MediaCaptureService : Service() {
         analyzer = BattleAnalyzer(dataManager.monsterMaster)
         analyzer.loadTemplates(this)
 
-        handlerThread = HandlerThread("NakamonAnalyzerThread").apply { start() }
-        backgroundHandler = Handler(handlerThread!!.looper)
+        captureThread = HandlerThread("CaptureThread").apply { start() }
+        captureHandler = Handler(captureThread!!.looper)
+        
+        analysisThread = HandlerThread("AnalysisThread").apply { start() }
+        analysisHandler = Handler(analysisThread!!.looper)
 
         createNotificationChannel()
     }
@@ -86,7 +92,6 @@ class MediaCaptureService : Service() {
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
         val lastFile = prefs.getString("last_file_name", "default_record") ?: "default_record"
         dataManager.loadHistory(lastFile)
-        
         reloadCalibrationData()
 
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "待機中 ($lastFile)")
@@ -128,9 +133,7 @@ class MediaCaptureService : Service() {
         val density = metrics.densityDpi
 
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                stopSelf()
-            }
+            override fun onStop() { stopSelf() }
         }, Handler(Looper.getMainLooper()))
 
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
@@ -142,29 +145,44 @@ class MediaCaptureService : Service() {
 
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            val currentTime = System.currentTimeMillis()
-            if (currentTime - lastAnalysisTime < ANALYSIS_INTERVAL_MS) {
+            
+            val cleanBitmap = try {
+                processImageToBitmap(image)
+            } catch (_: Exception) {
                 image.close()
                 return@setOnImageAvailableListener
             }
-            lastAnalysisTime = currentTime
+            image.close()
 
-            try {
-                val cleanBitmap = processImageToBitmap(image)
-                synchronized(this) {
-                    latestBitmap?.recycle()
-                    latestBitmap = cleanBitmap
-                }
-                when (currentState) {
-                    State.IDLE -> handleIdleState(cleanBitmap)
-                    State.IN_BATTLE -> handleBattleState(cleanBitmap)
-                }
-            } catch (e: Exception) {
-                Log.e("CaptureDebug", "Error: ${e.message}")
-            } finally {
-                image.close()
+            synchronized(this) {
+                latestBitmap?.recycle()
+                latestBitmap = cleanBitmap
             }
-        }, backgroundHandler)
+
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastAnalysisTime >= ANALYSIS_INTERVAL_MS) {
+                lastAnalysisTime = currentTime
+                
+                val snapshot = synchronized(this) {
+                    if (latestBitmap != null && !latestBitmap!!.isRecycled) {
+                        Bitmap.createBitmap(latestBitmap!!)
+                    } else null
+                }
+                
+                snapshot?.let { bmp ->
+                    analysisHandler?.post {
+                        try {
+                            when (currentState) {
+                                State.IDLE -> handleIdleState(bmp)
+                                State.IN_BATTLE -> handleBattleState(bmp)
+                            }
+                        } finally {
+                            bmp.recycle()
+                        }
+                    }
+                }
+            }
+        }, captureHandler)
     }
 
     private fun processImageToBitmap(image: android.media.Image): Bitmap {
@@ -181,22 +199,17 @@ class MediaCaptureService : Service() {
     }
 
     private fun repeatScan(sessionId: Long, count: Int, delayMs: Long) {
-        // セッションが古い、または全員識別済みなら終了
         if (sessionId != currentSessionId || analyzer.isAllIdentified()) {
-            return
-        }
-
-        // 指定回数終了時に誰も見つかっていなければ、最後のビットマップを保存（デバッグ用）
-        if (count <= 0) {
-            if (analyzer.isNoneIdentified()) {
+            if (count <= 0 && sessionId == currentSessionId && !analyzer.isAllIdentified() && !debugImageSavedInSession) {
                 synchronized(this) {
-                    latestBitmap?.let { analyzer.saveDebugBitmap(it, "failure_8_slots_${System.currentTimeMillis()}") }
+                    latestBitmap?.let { analyzer.saveDebugBitmap(it, "incomplete_results_${System.currentTimeMillis()}") }
                 }
+                debugImageSavedInSession = true
             }
             return
         }
 
-        backgroundHandler?.post {
+        analysisHandler?.post {
             val bitmapToProcess: Bitmap? = synchronized(this) {
                 val current = latestBitmap
                 if (current != null && !current.isRecycled) Bitmap.createBitmap(current) else null
@@ -204,7 +217,6 @@ class MediaCaptureService : Service() {
             
             bitmapToProcess?.let { bitmap ->
                 try {
-                    // IDがまだ有効か再チェック
                     if (sessionId == currentSessionId) {
                         analyzer.identifyStepByStep(bitmap)
                     }
@@ -215,8 +227,7 @@ class MediaCaptureService : Service() {
                 }
             }
             
-            // 解析が終わってから、次の回をスケジュールする（大渋滞を防ぐ）
-            backgroundHandler?.postDelayed({
+            analysisHandler?.postDelayed({
                 repeatScan(sessionId, count - 1, delayMs)
             }, delayMs)
         }
@@ -224,18 +235,18 @@ class MediaCaptureService : Service() {
 
     private fun handleIdleState(bitmap: Bitmap) {
         val detected = analyzer.detectSelectedParty(bitmap)
-        if (detected != -1) {
-            selectedPartyIndex = detected
-        }
+        if (detected != -1) selectedPartyIndex = detected
+        
         if (analyzer.isVsDetected(bitmap)) {
-            // セッションIDを更新し、新しい解析ループを開始
+            analysisHandler?.removeCallbacksAndMessages(null)
+
             currentSessionId = System.currentTimeMillis()
+            debugImageSavedInSession = false
             currentState = State.IN_BATTLE
             analyzer.resetIdentification()
             val partyName = if (selectedPartyIndex != -1) "Party${selectedPartyIndex + 1}" else "?"
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始！ ($partyName)")
             
-            // 逐次実行のスキャンを開始
             repeatScan(currentSessionId, 40, 50L)
         }
     }
@@ -243,7 +254,10 @@ class MediaCaptureService : Service() {
     private fun handleBattleState(bitmap: Bitmap) {
         val result = analyzer.checkBattleResult(bitmap)
         if (result != null) {
-            // 戦闘終了時にセッションを無効化する
+            if (!analyzer.isAllIdentified() && !debugImageSavedInSession) {
+                analyzer.saveDebugBitmap(bitmap, "battle_ended_incomplete_${System.currentTimeMillis()}")
+                debugImageSavedInSession = true
+            }
             currentSessionId = 0
             finalizeBattle(result)
         }
@@ -292,7 +306,8 @@ class MediaCaptureService : Service() {
         imageReader?.close()
         mediaProjection?.stop()
         if (::analyzer.isInitialized) analyzer.releaseTemplates()
-        handlerThread?.quitSafely()
+        captureThread?.quitSafely()
+        analysisThread?.quitSafely()
         super.onDestroy()
     }
 
