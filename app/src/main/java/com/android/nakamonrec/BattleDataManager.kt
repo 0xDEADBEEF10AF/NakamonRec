@@ -9,7 +9,8 @@ import java.util.Locale
 
 class BattleDataManager(private val context: Context) {
     private val gson = Gson()
-    var currentFileName: String = "default_stats"
+    // デフォルト名を統一
+    var currentFileName: String = "default_record"
     var history: BattleHistory = BattleHistory()
     var monsterMaster: List<MonsterData> = emptyList()
 
@@ -63,15 +64,12 @@ class BattleDataManager(private val context: Context) {
         val totalCount = records.size
         val totalWinRate = if (totalCount > 0) (totalWins.toDouble() / totalCount) * 100 else 0.0
 
-        // パーティごとの集計 (0, 1, 2)
         val partyStats = (0..2).map { idx ->
             val pRecords = records.filter { it.partyIndex == idx }
             val pCount = pRecords.size
             val pWins = pRecords.count { it.result == "WIN" }
             val pLosses = pRecords.count { it.result == "LOSE" }
             val pWinRate = if (pCount > 0) (pWins.toDouble() / pCount) * 100 else 0.0
-            
-            // 使用率の計算 (そのパーティの戦闘数 / 全戦闘数)
             val pUsageRate = if (totalCount > 0) (pCount.toDouble() / totalCount) * 100 else 0.0
             
             PartyStat(idx, pWins, pLosses, pWinRate, pUsageRate)

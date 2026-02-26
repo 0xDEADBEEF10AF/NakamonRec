@@ -70,6 +70,14 @@
     <string name="btn_cancel">キャンセル</string>
     <string name="file_not_found_hint">なし（開始時に %1$s を作成）</string>
 
+    <!-- 統計画面のラベル用 -->
+    <string name="label_total_statistics">TOTAL STATISTICS</string>
+    <string name="label_total_win_rate">TOTAL WIN RATE</string>
+    <string name="label_matches_format">%1$d Matches</string>
+    <string name="label_win_lose_format">%1$dW - %2$dL</string>
+    <string name="label_usage_short_format">Use: %1$s</string>
+    <string name="label_recent_trend">RECENT TREND</string>
+
     <!-- Readme / Copyright -->
     <string name="readme_title">Readme / Copyright</string>
     <string name="readme_content">
@@ -93,8 +101,8 @@
 
         【推奨環境】\n
         ・OS：Android 7.0 以上\n
-        ・メモリ：4GB以上推奨（バックグラウンド解析のため）\n
-        ・動作確認済み：Pixel 10 Pro Fold（フル画面/2:3分割対応）\n\n
+        - メモリ：4GB以上推奨（バックグラウンド解析のため）\n
+        - 動作確認済み：Pixel 10 Pro Fold（フル画面/2:3分割対応）\n\n
 
         【注意事項】\n
         ・本アプリはファンによって制作された非公式のアプリであり、株式会社スクウェア・エニックスを代表とする公式とは直接の関係はありません。\n

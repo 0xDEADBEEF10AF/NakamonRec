@@ -2,6 +2,7 @@ package com.android.nakamonrec
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -26,6 +27,7 @@ import java.util.Locale
 class HistoryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHistoryBinding
     private lateinit var dataManager: BattleDataManager
+    private var filterPartyIndex: Int = -1 // -1: All, 0: P1, 1: P2, 2: P3
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,55 +43,76 @@ class HistoryActivity : AppCompatActivity() {
         dataManager = BattleDataManager(this)
         dataManager.loadHistory(currentFile)
 
-        binding.btnBack.setOnClickListener {
-            finish()
-        }
+        binding.btnBack.setOnClickListener { finish() }
+        binding.btnAnalyze.setOnClickListener { showAnalysisDialog() }
 
-        binding.btnAnalyze.setOnClickListener {
-            showAnalysisDialog()
-        }
+        // フィルタ用クリックイベント
+        binding.cardTotal.setOnClickListener { setFilter(-1) }
+        binding.cardP1.setOnClickListener { setFilter(0) }
+        binding.cardP2.setOnClickListener { setFilter(1) }
+        binding.cardP3.setOnClickListener { setFilter(2) }
 
         setupUI()
     }
 
+    private fun setFilter(index: Int) {
+        if (filterPartyIndex == index) return
+        filterPartyIndex = index
+        setupUI() // 再描画
+        val msg = if (index == -1) "全ての戦績を表示" else "パーティ${index + 1}の戦績でフィルタ中"
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
     private fun setupUI() {
         val stats = dataManager.getStatistics()
+        val allRecords = dataManager.history.records
+
+        updateCardSelectionUI()
 
         // 総合戦績の反映
-        binding.valTotalCount.text = getString(R.string.stats_count_format, stats.totalWins + stats.totalLosses)
-        binding.valTotalWin.text = getString(R.string.stats_win_format, stats.totalWins)
-        binding.valTotalLose.text = getString(R.string.stats_lose_format, stats.totalLosses)
         binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
+        binding.valTotalCount.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
+        binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
 
         // 各パーティ戦績の反映
         stats.partyStats.forEach { party ->
-            val count = party.wins + party.losses
             val winRateStr = String.format(Locale.US, "%.1f%%", party.winRate)
-            val usageRateStr = String.format(Locale.US, "%.1f%%", party.usageRate)
+            val usageRateStr = getString(R.string.label_usage_short_format, String.format(Locale.US, "%.1f%%", party.usageRate))
+            val winLoseStr = getString(R.string.label_win_lose_format, party.wins, party.losses)
             
+            val latestRecord = allRecords.lastOrNull { it.partyIndex == party.index }
+            val myParty = latestRecord?.myParty ?: listOf("", "", "", "")
+
             when (party.index) {
                 0 -> {
-                    binding.valP1Count.text = getString(R.string.stats_count_format, count)
-                    binding.valP1Win.text = getString(R.string.stats_win_format, party.wins)
-                    binding.valP1Lose.text = getString(R.string.stats_lose_format, party.losses)
                     binding.valP1Rate.text = winRateStr
                     binding.valP1Usage.text = usageRateStr
+                    binding.valP1WinLoseShort.text = winLoseStr
+                    updatePartyIcons(myParty, listOf(binding.imgP1M1, binding.imgP1M2, binding.imgP1M3, binding.imgP1M4))
                 }
                 1 -> {
-                    binding.valP2Count.text = getString(R.string.stats_count_format, count)
-                    binding.valP2Win.text = getString(R.string.stats_win_format, party.wins)
-                    binding.valP2Lose.text = getString(R.string.stats_lose_format, party.losses)
                     binding.valP2Rate.text = winRateStr
                     binding.valP2Usage.text = usageRateStr
+                    binding.valP2WinLoseShort.text = winLoseStr
+                    updatePartyIcons(myParty, listOf(binding.imgP2M1, binding.imgP2M2, binding.imgP2M3, binding.imgP2M4))
                 }
                 2 -> {
-                    binding.valP3Count.text = getString(R.string.stats_count_format, count)
-                    binding.valP3Win.text = getString(R.string.stats_win_format, party.wins)
-                    binding.valP3Lose.text = getString(R.string.stats_lose_format, party.losses)
                     binding.valP3Rate.text = winRateStr
                     binding.valP3Usage.text = usageRateStr
+                    binding.valP3WinLoseShort.text = winLoseStr
+                    updatePartyIcons(myParty, listOf(binding.imgP3M1, binding.imgP3M2, binding.imgP3M3, binding.imgP3M4))
                 }
             }
+        }
+
+        // グラフの更新
+        updateTrendsGraph(allRecords)
+
+        // リストのフィルタリング
+        val filteredRecords = if (filterPartyIndex == -1) {
+            allRecords
+        } else {
+            allRecords.filter { it.partyIndex == filterPartyIndex }
         }
 
         binding.recyclerViewHistory.apply {
@@ -97,15 +120,73 @@ class HistoryActivity : AppCompatActivity() {
             layoutManager.reverseLayout = true
             layoutManager.stackFromEnd = true
             this.layoutManager = layoutManager
-            this.adapter = BattleHistoryAdapter(dataManager.history.records, dataManager.monsterMaster) { position ->
-                showEditRecordDialog(position)
+            this.adapter = BattleHistoryAdapter(filteredRecords.toMutableList(), dataManager.monsterMaster) { position ->
+                val realIndex = allRecords.indexOf(filteredRecords[position])
+                showEditRecordDialog(realIndex)
+            }
+        }
+    }
+
+    private fun updateTrendsGraph(allRecords: List<BattleRecord>) {
+        val targetRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
+        
+        if (targetRecords.size < 2) {
+            binding.winRateGraph.visibility = View.INVISIBLE
+            return
+        }
+        binding.winRateGraph.visibility = View.VISIBLE
+
+        // 真の移動勝率ロジック (窓サイズ 20)
+        val movingRates = mutableListOf<Double>()
+        val windowSize = 20
+        
+        targetRecords.forEachIndexed { i, _ ->
+            val start = (i - windowSize + 1).coerceAtLeast(0)
+            val subList = targetRecords.subList(start, i + 1)
+            val wins = subList.count { it.result == "WIN" }
+            movingRates.add((wins.toDouble() / subList.size) * 100.0)
+        }
+
+        binding.winRateGraph.setData(movingRates)
+    }
+
+    private fun updateCardSelectionUI() {
+        val activeColor = "#555555".toColorInt()
+        val normalColor = "#333333".toColorInt()
+        val partyNormalColor = "#444444".toColorInt()
+
+        binding.cardTotal.setCardBackgroundColor(if (filterPartyIndex == -1) activeColor else normalColor)
+        binding.cardP1.setCardBackgroundColor(if (filterPartyIndex == 0) activeColor else partyNormalColor)
+        binding.cardP2.setCardBackgroundColor(if (filterPartyIndex == 1) activeColor else partyNormalColor)
+        binding.cardP3.setCardBackgroundColor(if (filterPartyIndex == 2) activeColor else partyNormalColor)
+    }
+
+    private fun updatePartyIcons(partyNames: List<String>, imageViews: List<ImageView>) {
+        imageViews.forEachIndexed { i, imageView ->
+            val monsterName = partyNames.getOrNull(i) ?: ""
+            val monsterData = dataManager.monsterMaster.find { it.name == monsterName }
+            if (monsterData != null) {
+                try {
+                    assets.open("templates/${monsterData.fileName}").use {
+                        imageView.setImageBitmap(BitmapFactory.decodeStream(it))
+                        imageView.visibility = View.VISIBLE
+                    }
+                } catch (_: Exception) {
+                    imageView.setImageResource(android.R.drawable.ic_menu_help)
+                    imageView.visibility = View.VISIBLE
+                }
+            } else {
+                imageView.setImageDrawable(null)
+                imageView.visibility = View.INVISIBLE
             }
         }
     }
 
     private fun showAnalysisDialog() {
-        val records = dataManager.history.records
-        if (records.isEmpty()) {
+        val allRecords = dataManager.history.records
+        val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
+        
+        if (filteredRecords.isEmpty()) {
             Toast.makeText(this, "データがありません", Toast.LENGTH_SHORT).show()
             return
         }
@@ -113,7 +194,7 @@ class HistoryActivity : AppCompatActivity() {
         val appearanceCount = mutableMapOf<String, Int>()
         val winAgainstCount = mutableMapOf<String, Int>()
 
-        records.forEach { record ->
+        filteredRecords.forEach { record ->
             record.enemyParty.filter { it.isNotEmpty() }.distinct().forEach { name ->
                 appearanceCount[name] = appearanceCount.getOrDefault(name, 0) + 1
                 if (record.result == "WIN") {
@@ -122,7 +203,7 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        val totalBattles = records.size
+        val totalBattles = filteredRecords.size
         val rankingList = appearanceCount.map { (name, count) ->
             val wins = winAgainstCount.getOrDefault(name, 0)
             val winRate = if (count > 0) (wins.toDouble() / count * 100) else 0.0
@@ -159,7 +240,7 @@ class HistoryActivity : AppCompatActivity() {
                 if (monsterData != null) {
                     try {
                         assets.open("templates/${monsterData.fileName}").use {
-                            imageView.setImageBitmap(android.graphics.BitmapFactory.decodeStream(it))
+                            imageView.setImageBitmap(BitmapFactory.decodeStream(it))
                         }
                     } catch (_: Exception) {
                         imageView.setImageResource(android.R.drawable.ic_menu_help)
@@ -170,8 +251,9 @@ class HistoryActivity : AppCompatActivity() {
         }
         listView.adapter = adapter
 
+        val titlePrefix = if (filterPartyIndex == -1) "全体" else "パーティ${filterPartyIndex + 1}"
         val dialog = AlertDialog.Builder(this)
-            .setTitle("敵モンスター出現率ランキング")
+            .setTitle("$titlePrefix: 敵モンスター出現率")
             .setView(listView)
             .setPositiveButton("閉じる", null)
             .setNeutralButton("勝率の低い順", null)
@@ -184,11 +266,11 @@ class HistoryActivity : AppCompatActivity() {
                 if (sortedByAppearance) {
                     rankingList.sortBy { it.winRate }
                     sortButton.text = "出現数の多い順"
-                    dialog.setTitle("勝率ワーストランキング")
+                    dialog.setTitle("$titlePrefix: 勝率ワースト")
                 } else {
                     rankingList.sortByDescending { it.count }
                     sortButton.text = "勝率の低い順"
-                    dialog.setTitle("敵モンスター出現率ランキング")
+                    dialog.setTitle("$titlePrefix: 敵モンスター出現率")
                 }
                 sortedByAppearance = !sortedByAppearance
                 adapter.notifyDataSetChanged()
@@ -197,12 +279,7 @@ class HistoryActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    data class MonsterRankData(
-        val name: String,
-        val count: Int,
-        val appearanceRate: Double,
-        val winRate: Double
-    )
+    data class MonsterRankData(val name: String, val count: Int, val appearanceRate: Double, val winRate: Double)
 
     private fun showEditRecordDialog(position: Int) {
         val record = dataManager.history.records[position]
@@ -254,16 +331,14 @@ class HistoryActivity : AppCompatActivity() {
         val allMonsters = record.myParty + record.enemyParty
         allMonsters.forEachIndexed { index, name ->
             val imageView = ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(100, 100).apply {
-                    setMargins(4, 0, 4, 0)
-                }
+                layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(4, 0, 4, 0) }
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundResource(if (index < 4) android.R.drawable.editbox_dropdown_light_frame else android.R.drawable.editbox_dropdown_dark_frame)
                 val monsterData = dataManager.monsterMaster.find { it.name == name }
                 if (monsterData != null) {
                     try {
                         assets.open("templates/${monsterData.fileName}").use {
-                            setImageBitmap(android.graphics.BitmapFactory.decodeStream(it))
+                            setImageBitmap(BitmapFactory.decodeStream(it))
                         }
                     } catch (_: Exception) {
                         setImageResource(android.R.drawable.ic_menu_help)
@@ -284,9 +359,7 @@ class HistoryActivity : AppCompatActivity() {
             }
             if (index == 4) {
                 val divider = View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(2, 60).apply {
-                        setMargins(10, 0, 10, 0)
-                    }
+                    layoutParams = LinearLayout.LayoutParams(2, 60).apply { setMargins(10, 0, 10, 0) }
                     setBackgroundColor(Color.GRAY)
                 }
                 container.addView(divider)
@@ -315,7 +388,7 @@ class HistoryActivity : AppCompatActivity() {
                     val monster = dataManager.monsterMaster[position]
                     try {
                         assets.open("templates/${monster.fileName}").use {
-                            imageView.setImageBitmap(android.graphics.BitmapFactory.decodeStream(it))
+                            imageView.setImageBitmap(BitmapFactory.decodeStream(it))
                         }
                     } catch (_: Exception) {
                         imageView.setImageResource(android.R.drawable.ic_menu_help)
@@ -338,7 +411,6 @@ class HistoryActivity : AppCompatActivity() {
     private fun updateAndSave(position: Int, newRecord: BattleRecord) {
         dataManager.history.records[position] = newRecord
         dataManager.saveHistory()
-        // バグ修正: サービスへ最新の履歴を再ロードするように通知を送る
         if (MediaCaptureService.isRunning) {
             val intent = Intent(this, MediaCaptureService::class.java).apply {
                 action = MediaCaptureService.ACTION_RELOAD_HISTORY
@@ -364,7 +436,6 @@ class HistoryActivity : AppCompatActivity() {
         if (record.result == "WIN") dataManager.history.totalWins-- else dataManager.history.totalLosses--
         dataManager.history.records.removeAt(position)
         dataManager.saveHistory()
-        // バグ修正: 削除時もサービスへ通知を送る
         if (MediaCaptureService.isRunning) {
             val intent = Intent(this, MediaCaptureService::class.java).apply {
                 action = MediaCaptureService.ACTION_RELOAD_HISTORY
@@ -383,7 +454,6 @@ class HistoryActivity : AppCompatActivity() {
         if (newRecord.result == "WIN") dataManager.history.totalWins++
         else dataManager.history.totalLosses++
         dataManager.saveHistory()
-        // バグ修正: レコード挿入時もサービスへ通知を送る
         if (MediaCaptureService.isRunning) {
             val intent = Intent(this, MediaCaptureService::class.java).apply {
                 action = MediaCaptureService.ACTION_RELOAD_HISTORY
