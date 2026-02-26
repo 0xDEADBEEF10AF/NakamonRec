@@ -555,6 +555,13 @@ class MainActivity : AppCompatActivity() {
                 val dm = BattleDataManager(this)
                 dm.loadHistory(fileName)
                 dm.resetHistory()
+                // バグ修正: サービスへ通知を送る
+                if (MediaCaptureService.isRunning) {
+                    val intent = Intent(this, MediaCaptureService::class.java).apply {
+                        action = MediaCaptureService.ACTION_RELOAD_HISTORY
+                    }
+                    startService(intent)
+                }
                 Toast.makeText(this, "データをクリアしました", Toast.LENGTH_SHORT).show()
                 updateUI(MediaCaptureService.isRunning)
             }
@@ -565,8 +572,10 @@ class MainActivity : AppCompatActivity() {
     private fun refreshServiceAndUI() {
         updateUI(MediaCaptureService.isRunning)
         if (MediaCaptureService.isRunning) {
-            val intent = Intent(this, MediaCaptureService::class.java)
-            ContextCompat.startForegroundService(this, intent)
+            val intent = Intent(this, MediaCaptureService::class.java).apply {
+                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+            }
+            startService(intent)
         }
     }
 }
