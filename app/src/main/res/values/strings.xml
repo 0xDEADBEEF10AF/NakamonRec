@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">なかもんれっく</string>
+    <string name="app_name">NakamonREC</string>
     <string name="app_version">Ver 1.0.0</string>
     <string name="btn_rec">REC</string>
     <string name="btn_stop">STOP</string>
