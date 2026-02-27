@@ -18,7 +18,7 @@
         app:layout_constraintTop_toTopOf="parent">
 
         <!-- 左側：総合戦績カード -->
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardTotal"
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -29,7 +29,9 @@
             android:foreground="?android:attr/selectableItemBackground"
             app:cardCornerRadius="16dp"
             app:cardElevation="4dp"
-            app:cardBackgroundColor="#333333">
+            app:cardBackgroundColor="#333333"
+            app:strokeWidth="0dp"
+            app:strokeColor="#AAAAAA">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -73,10 +75,10 @@
                     android:textSize="12sp"
                     android:text="@string/status_none"/>
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- 右側：トレンドグラフカード -->
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardGraph"
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -84,7 +86,9 @@
             android:layout_margin="4dp"
             app:cardCornerRadius="16dp"
             app:cardElevation="4dp"
-            app:cardBackgroundColor="#444444">
+            app:cardBackgroundColor="#333333"
+            app:strokeWidth="0dp"
+            app:strokeColor="#AAAAAA">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -97,7 +101,7 @@
                     android:layout_height="wrap_content"
                     android:layout_gravity="end"
                     android:text="@string/label_recent_trend"
-                    android:textColor="#AAAAAA"
+                    android:textColor="#666666"
                     android:textSize="11sp"
                     android:textStyle="bold"
                     android:layout_marginEnd="4dp"/>
@@ -108,7 +112,7 @@
                     android:layout_height="match_parent"
                     android:layout_marginTop="2dp" />
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
     <!-- パーティ別戦績エリア -->
@@ -124,7 +128,7 @@
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent">
 
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardP1"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -134,7 +138,10 @@
             android:focusable="true"
             android:foreground="?android:attr/selectableItemBackground"
             app:cardCornerRadius="10dp"
-            app:cardBackgroundColor="#444444">
+            app:cardBackgroundColor="#333333"
+            app:cardElevation="4dp"
+            app:strokeWidth="0dp"
+            app:strokeColor="#AAAAAA">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -157,9 +164,9 @@
                 <TextView android:id="@+id/valP1Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP1WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
 
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardP2"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -169,7 +176,10 @@
             android:focusable="true"
             android:foreground="?android:attr/selectableItemBackground"
             app:cardCornerRadius="10dp"
-            app:cardBackgroundColor="#444444">
+            app:cardBackgroundColor="#333333"
+            app:cardElevation="4dp"
+            app:strokeWidth="0dp"
+            app:strokeColor="#AAAAAA">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -192,9 +202,9 @@
                 <TextView android:id="@+id/valP2Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP2WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
 
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardP3"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -204,7 +214,10 @@
             android:focusable="true"
             android:foreground="?android:attr/selectableItemBackground"
             app:cardCornerRadius="10dp"
-            app:cardBackgroundColor="#444444">
+            app:cardBackgroundColor="#333333"
+            app:cardElevation="4dp"
+            app:strokeWidth="0dp"
+            app:strokeColor="#AAAAAA">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -227,7 +240,7 @@
                 <TextView android:id="@+id/valP3Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP3WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -241,32 +254,38 @@
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent" />
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+    <!-- 戻るボタン (背景を#333333に統一、マージンを調整して位置を下げ、アイコンを拡大) -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btnBack"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_margin="20dp"
-        android:text="@string/btn_back"
-        android:textColor="#FFFFFF"
-        app:icon="@android:drawable/ic_menu_revert"
-        app:iconTint="#FFFFFF"
-        app:backgroundTint="#444444"
+        android:layout_marginStart="24dp"
+        android:layout_marginBottom="12dp"
+        android:src="@android:drawable/ic_menu_revert"
+        app:maxImageSize="32dp"
+        app:tint="#FFFFFF"
+        app:backgroundTint="#333333"
+        app:fabSize="normal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintLeft_toLeftOf="parent"
-        app:elevation="8dp" />
+        app:elevation="8dp"
+        android:contentDescription="@string/btn_back" />
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+    <!-- 分析ボタン (背景を#333333に統一、マージンを調整して位置を下げ、アイコンを拡大) -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btnAnalyze"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_margin="20dp"
-        android:text="@string/btn_analyze"
-        android:textColor="#FFFFFF"
-        app:icon="@android:drawable/ic_menu_search"
-        app:iconTint="#FFFFFF"
-        app:backgroundTint="#444444"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="12dp"
+        android:src="@android:drawable/ic_menu_search"
+        app:maxImageSize="32dp"
+        app:tint="#FFFFFF"
+        app:backgroundTint="#333333"
+        app:fabSize="normal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintRight_toRightOf="parent"
-        app:elevation="8dp" />
+        app:elevation="8dp"
+        android:contentDescription="@string/btn_analyze" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

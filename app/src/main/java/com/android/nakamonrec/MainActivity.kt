@@ -123,7 +123,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        binding.btnManageFileName.setOnClickListener {
+        binding.cardCurrentFile.setOnClickListener {
             showFileSelectorDialog()
         }
 
@@ -200,18 +200,18 @@ class MainActivity : AppCompatActivity() {
                 )
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(titles[i])
-                    .setItems(options) { _, opt ->
-                        when (opt) {
-                            0 -> { // インポート
+                    .setItems(options) { _, which: Int ->
+                        when (which) {
+                            0 -> { 
                                 pendingCalibrationFileName = fileNames[i]
                                 pickImageLauncher.launch("image/*")
                             }
-                            1 -> { // 削除
+                            1 -> { 
                                 if (File(filesDir, fileNames[i]).exists()) {
                                     showDeleteImageConfirmDialog(fileNames[i])
                                 }
                             }
-                            2 -> { // 校正
+                            2 -> { 
                                 if (File(filesDir, fileNames[i]).exists()) {
                                     val intent = Intent(this@MainActivity, CalibrationActivity::class.java).apply {
                                         putExtra("EXTRA_MODE", modes[i])
@@ -287,12 +287,8 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         val filter = IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED)
-        ContextCompat.registerReceiver(
-            this,
-            serviceStopReceiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        // 修正: 確実にエラーが出ない形式を適用
+        ContextCompat.registerReceiver(this, serviceStopReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         updateUI(MediaCaptureService.isRunning)
     }
 
@@ -334,23 +330,33 @@ class MainActivity : AppCompatActivity() {
             binding.btnToggleService.apply {
                 text = getString(R.string.btn_stop)
                 backgroundTintList = ColorStateList.valueOf("#90D7EC".toColorInt())
+                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) // 縁を白っぽく
             }
+            binding.cardCurrentFile.strokeWidth = (2f * resources.displayMetrics.density).toInt()
+            binding.cardCurrentFile.strokeColor = "#90D7EC".toColorInt()
             startPulseAnimation()
         } else {
             binding.btnToggleService.apply {
                 text = getString(R.string.btn_rec)
                 backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt())
+                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) // 縁を白っぽく
             }
+            binding.cardCurrentFile.strokeWidth = (1f * resources.displayMetrics.density).toInt()
+            binding.cardCurrentFile.strokeColor = "#444444".toColorInt()
             stopPulseAnimation()
         }
 
         val currentName = getCurrentFileName()
-        val file = File(filesDir, "$currentName.json")
-        if (file.exists()) {
-            binding.textCurrentFile.text = getString(R.string.current_file_format, currentName)
-        } else {
-            binding.textCurrentFile.text = getString(R.string.current_file_format, getString(R.string.file_not_found_hint, currentName))
-        }
+        binding.textCurrentFile.text = getString(R.string.file_name_ext_format, currentName)
+
+        val dm = BattleDataManager(this)
+        dm.loadHistory(currentName)
+        val stats = dm.getStatistics()
+        
+        binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate)
+        // 修正: 〇 Matches 表記、かつ色とスタイルをファイル名に合わせる
+        binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
+        binding.valTotalWinLoseMain.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
     }
 
     private fun startPulseAnimation() {
@@ -399,8 +405,8 @@ class MainActivity : AppCompatActivity() {
         if (fileNames.isEmpty()) {
             builder.setMessage("保存されたファイルがありません。\n「新規作成」から新しく作成できます。")
         } else {
-            builder.setItems(fileNames) { _, which ->
-                val selectedFile = fileNames[which]
+            builder.setItems(fileNames) { _, whichIndex: Int ->
+                val selectedFile = fileNames[whichIndex]
                 showFileActionDialog(selectedFile)
             }
         }
@@ -411,8 +417,8 @@ class MainActivity : AppCompatActivity() {
     private fun showFileActionDialog(fileName: String) {
         AlertDialog.Builder(this)
             .setTitle("ファイル操作: $fileName")
-            .setItems(arrayOf("このファイルを使用する", "名前を変更する", "削除する", "CSVにエクスポート")) { _, which ->
-                when (which) {
+            .setItems(arrayOf("このファイルを使用する", "名前を変更する", "削除する", "CSVにエクスポート")) { _, whichIndex: Int ->
+                when (whichIndex) {
                     0 -> {
                         saveCurrentFileName(fileName)
                         Toast.makeText(this, getString(R.string.file_switched_toast, fileName), Toast.LENGTH_SHORT).show()
@@ -555,7 +561,6 @@ class MainActivity : AppCompatActivity() {
                 val dm = BattleDataManager(this)
                 dm.loadHistory(fileName)
                 dm.resetHistory()
-                // バグ修正: サービスへ通知を送る
                 if (MediaCaptureService.isRunning) {
                     val intent = Intent(this, MediaCaptureService::class.java).apply {
                         action = MediaCaptureService.ACTION_RELOAD_HISTORY

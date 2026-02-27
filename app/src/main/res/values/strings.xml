@@ -78,6 +78,9 @@
     <string name="label_usage_short_format">Use: %1$s</string>
     <string name="label_recent_trend">RECENT TREND</string>
 
+    <!-- 新規追加: メイン画面用 -->
+    <string name="file_name_ext_format">%1$s.json</string>
+
     <!-- Readme / Copyright -->
     <string name="readme_title">Readme / Copyright</string>
     <string name="readme_content">

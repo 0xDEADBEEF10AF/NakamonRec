@@ -4,67 +4,136 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#555555"
+    android:background="#222222"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     tools:context=".MainActivity">
 
-    <!-- 左上のバージョン表示 -->
+    <!-- バージョン表示 -->
     <TextView
         android:id="@+id/textVersion"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
-        android:layout_marginTop="48dp"
+        android:layout_marginTop="64dp"
         android:text="@string/app_version"
-        android:textColor="#CCCCCC"
-        android:textSize="12sp"
+        android:textColor="#666666"
+        android:textSize="14sp"
+        android:textStyle="bold"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintLeft_toLeftOf="parent" />
 
-    <!-- 右上のヘルプボタン -->
+    <!-- ヘルプボタン -->
     <ImageButton
         android:id="@+id/btnReadme"
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:layout_marginEnd="8dp"
-        android:layout_marginTop="32dp"
+        android:layout_marginTop="48dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:src="@android:drawable/ic_menu_help"
-        app:tint="#CCCCCC"
+        app:tint="#666666"
         android:contentDescription="@string/readme_title"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintRight_toRightOf="parent" />
 
-    <!-- タイトルロゴ -->
-    <TextView
-        android:id="@+id/textLogo"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/app_name"
-        android:textSize="32sp"
-        android:textStyle="bold"
-        android:textColor="#FFFFFF"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/centerLayout"
-        app:layout_constraintLeft_toLeftOf="parent"
-        app:layout_constraintRight_toRightOf="parent" />
-
+    <!-- 上部ヘッダー：ファイル管理 ＆ 校正 (比率 9 : 1.5) -->
     <LinearLayout
-        android:id="@+id/centerLayout"
+        android:id="@+id/layoutTopHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center"
-        android:orientation="vertical"
+        android:layout_marginTop="110dp"
+        android:layout_marginHorizontal="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:baselineAligned="false"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardCurrentFile"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="9"
+            android:layout_margin="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="#333333"
+            app:strokeWidth="1dp"
+            app:strokeColor="#444444">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:gravity="center_vertical">
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:src="@android:drawable/ic_menu_save"
+                    app:tint="#AAAAAA"
+                    android:contentDescription="@string/btn_manage" />
+                <TextView
+                    android:id="@+id/textCurrentFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    tools:text="default_record.json" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/btnCalibrate"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1.5"
+            android:layout_margin="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="#333333">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center">
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:src="@android:drawable/ic_menu_camera"
+                    app:tint="#AAAAAA"
+                    android:contentDescription="@string/btn_calibrate" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+
+    <!-- 中央：メインアクションエリア -->
+    <FrameLayout
+        android:id="@+id/centerLayout"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
         android:clipChildren="false"
         android:clipToPadding="false"
-        android:padding="20dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintLeft_toLeftOf="parent"
-        app:layout_constraintRight_toRightOf="parent">
+        android:layout_marginVertical="12dp"
+        app:layout_constraintTop_toBottomOf="@id/layoutTopHeader"
+        app:layout_constraintBottom_toTopOf="@id/layoutBottomButtons">
+
+        <com.android.nakamonrec.ArcTextView
+            android:layout_width="300dp"
+            android:layout_height="300dp"
+            android:layout_gravity="center" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggleService"
             android:layout_width="180dp"
             android:layout_height="180dp"
+            android:layout_gravity="center"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:text="@string/btn_rec"
@@ -73,137 +142,109 @@
             app:cornerRadius="90dp"
             android:textColor="#FFFFFF"
             android:backgroundTint="#F09199"
-            app:strokeWidth="8dp"
-            app:strokeColor="#FFFFFF"
-            android:elevation="12dp" />
-    </LinearLayout>
+            app:strokeWidth="6dp"
+            app:strokeColor="#CCFFFFFF"
+            android:elevation="12dp"
+            app:elevation="12dp" />
+    </FrameLayout>
 
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/footerGuideline"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        app:layout_constraintGuide_percent="0.68" />
-
-    <androidx.cardview.widget.CardView
+    <!-- 下部：戦績サマリー ＆ リセット -->
+    <LinearLayout
+        android:id="@+id/layoutBottomButtons"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="24dp"
-        app:cardBackgroundColor="#666666"
-        app:cardCornerRadius="24dp"
-        app:cardElevation="8dp"
-        app:layout_constraintTop_toBottomOf="@id/footerGuideline"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginBottom="64dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:baselineAligned="false"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:id="@+id/textCurrentFile"
+        <!-- 左側：戦績チェック ＆ サマリー (パディングを上部と統一) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/btnShowHistory"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="9"
+            android:layout_margin="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="6dp"
+            app:cardBackgroundColor="#333333">
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="@string/current_file_format"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:gravity="center"
-                tools:text="使用ファイル名: default_stats" />
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:gravity="center_vertical">
 
-            <GridLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:columnCount="2"
-                android:rowCount="2"
-                android:alignmentMode="alignMargins"
-                android:columnOrderPreserved="false">
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:src="@android:drawable/ic_menu_sort_by_size"
+                    app:tint="#FFFFFF"
+                    android:contentDescription="@string/btn_history" />
 
-                <!-- 左上: ファイル管理 -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnManageFileName"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="80dp"
-                    android:layout_rowWeight="1"
-                    android:layout_columnWeight="1"
-                    android:layout_margin="4dp"
-                    android:text="@string/btn_manage"
-                    android:textSize="12sp"
-                    android:textColor="#FFFFFF"
-                    app:icon="@android:drawable/ic_menu_preferences"
-                    app:iconSize="32dp"
-                    app:iconTint="#FFFFFF"
-                    app:iconGravity="top"
-                    app:iconPadding="4dp"
-                    app:backgroundTint="#555555"
-                    app:cornerRadius="12dp" />
-
-                <!-- 右上: キャプチャ校正 -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCalibrate"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="80dp"
-                    android:layout_rowWeight="1"
-                    android:layout_columnWeight="1"
-                    android:layout_margin="4dp"
-                    android:text="@string/btn_calibrate"
-                    android:textSize="12sp"
-                    android:textColor="#FFFFFF"
-                    app:icon="@android:drawable/ic_menu_camera"
-                    app:iconSize="32dp"
-                    app:iconTint="#FFFFFF"
-                    app:iconGravity="top"
-                    app:iconPadding="4dp"
-                    app:backgroundTint="#555555"
-                    app:cornerRadius="12dp" />
-
-                <!-- 左下: 戦績チェック -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnShowHistory"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="80dp"
-                    android:layout_rowWeight="1"
-                    android:layout_columnWeight="1"
-                    android:layout_margin="4dp"
-                    android:text="@string/btn_history"
-                    android:textSize="12sp"
-                    android:textColor="#FFFFFF"
-                    app:icon="@android:drawable/ic_menu_sort_by_size"
-                    app:iconSize="32dp"
-                    app:iconTint="#FFFFFF"
-                    app:iconGravity="top"
-                    app:iconPadding="4dp"
-                    app:backgroundTint="#555555"
-                    app:cornerRadius="12dp" />
-
-                <!-- 右下: データリセット -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnResetHistory"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="80dp"
-                    android:layout_rowWeight="1"
-                    android:layout_columnWeight="1"
-                    android:layout_margin="4dp"
-                    android:text="@string/btn_reset"
-                    android:textSize="12sp"
+                <!-- テキストスタイルを白・太字・16spに統一 -->
+                <TextView
+                    android:id="@+id/valTotalRateMain"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
                     android:textColor="#F09199"
-                    app:icon="@android:drawable/ic_menu_delete"
-                    app:iconSize="32dp"
-                    app:iconTint="#F09199"
-                    app:iconGravity="top"
-                    app:iconPadding="4dp"
-                    app:backgroundTint="#555555"
-                    app:cornerRadius="12dp" />
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    tools:text="--.-%" />
 
-            </GridLayout>
-        </LinearLayout>
-    </androidx.cardview.widget.CardView>
+                <TextView
+                    android:id="@+id/valTotalCountMain"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    tools:text="0 Matches" />
+
+                <TextView
+                    android:id="@+id/valTotalWinLoseMain"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    tools:text="0W - 0L" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 右側：データリセット -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/btnResetHistory"
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1.5"
+            android:layout_margin="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="6dp"
+            app:cardBackgroundColor="#333333">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center">
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:src="@android:drawable/ic_menu_delete"
+                    app:tint="#F09199"
+                    android:contentDescription="@string/btn_reset" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

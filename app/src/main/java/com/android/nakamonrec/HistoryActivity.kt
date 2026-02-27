@@ -5,6 +5,8 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Bundle
+import android.transition.AutoTransition
+import android.transition.TransitionManager
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -17,6 +19,7 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.card.MaterialCardView
 import androidx.core.graphics.toColorInt
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.android.nakamonrec.databinding.ActivityHistoryBinding
@@ -28,6 +31,7 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHistoryBinding
     private lateinit var dataManager: BattleDataManager
     private var filterPartyIndex: Int = -1 // -1: All, 0: P1, 1: P2, 2: P3
+    private lateinit var historyAdapter: BattleHistoryAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,13 +56,36 @@ class HistoryActivity : AppCompatActivity() {
         binding.cardP2.setOnClickListener { setFilter(1) }
         binding.cardP3.setOnClickListener { setFilter(2) }
 
+        initRecyclerView()
         setupUI()
+    }
+
+    private fun initRecyclerView() {
+        historyAdapter = BattleHistoryAdapter(mutableListOf(), dataManager.monsterMaster) { position ->
+            val allRecords = dataManager.history.records
+            val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
+            val realIndex = allRecords.indexOf(filteredRecords[position])
+            showEditRecordDialog(realIndex)
+        }
+        binding.recyclerViewHistory.apply {
+            val lm = LinearLayoutManager(this@HistoryActivity)
+            lm.reverseLayout = true
+            lm.stackFromEnd = true
+            layoutManager = lm
+            adapter = historyAdapter
+        }
     }
 
     private fun setFilter(index: Int) {
         if (filterPartyIndex == index) return
+        
+        // レイアウト変更のアニメーションを開始
+        val transition = AutoTransition().apply { duration = 250 }
+        TransitionManager.beginDelayedTransition(binding.root as ViewGroup, transition)
+        
         filterPartyIndex = index
-        setupUI() // 再描画
+        setupUI()
+        
         val msg = if (index == -1) "全ての戦績を表示" else "パーティ${index + 1}の戦績でフィルタ中"
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
@@ -69,12 +96,12 @@ class HistoryActivity : AppCompatActivity() {
 
         updateCardSelectionUI()
 
-        // 総合戦績の反映
+        // 総合戦績
         binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
         binding.valTotalCount.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
         binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
 
-        // 各パーティ戦績の反映
+        // 各パーティ戦績
         stats.partyStats.forEach { party ->
             val winRateStr = String.format(Locale.US, "%.1f%%", party.winRate)
             val usageRateStr = getString(R.string.label_usage_short_format, String.format(Locale.US, "%.1f%%", party.usageRate))
@@ -105,60 +132,53 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        // グラフの更新
         updateTrendsGraph(allRecords)
 
         // リストのフィルタリング
-        val filteredRecords = if (filterPartyIndex == -1) {
-            allRecords
-        } else {
-            allRecords.filter { it.partyIndex == filterPartyIndex }
-        }
-
-        binding.recyclerViewHistory.apply {
-            val layoutManager = LinearLayoutManager(this@HistoryActivity)
-            layoutManager.reverseLayout = true
-            layoutManager.stackFromEnd = true
-            this.layoutManager = layoutManager
-            this.adapter = BattleHistoryAdapter(filteredRecords.toMutableList(), dataManager.monsterMaster) { position ->
-                val realIndex = allRecords.indexOf(filteredRecords[position])
-                showEditRecordDialog(realIndex)
-            }
-        }
+        val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
+        historyAdapter.updateData(filteredRecords)
     }
 
     private fun updateTrendsGraph(allRecords: List<BattleRecord>) {
         val targetRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
-        
         if (targetRecords.size < 2) {
             binding.winRateGraph.visibility = View.INVISIBLE
             return
         }
         binding.winRateGraph.visibility = View.VISIBLE
-
-        // 真の移動勝率ロジック (窓サイズ 20)
+        
         val movingRates = mutableListOf<Double>()
         val windowSize = 20
-        
         targetRecords.forEachIndexed { i, _ ->
             val start = (i - windowSize + 1).coerceAtLeast(0)
             val subList = targetRecords.subList(start, i + 1)
             val wins = subList.count { it.result == "WIN" }
             movingRates.add((wins.toDouble() / subList.size) * 100.0)
         }
-
         binding.winRateGraph.setData(movingRates)
     }
 
     private fun updateCardSelectionUI() {
-        val activeColor = "#555555".toColorInt()
-        val normalColor = "#333333".toColorInt()
-        val partyNormalColor = "#444444".toColorInt()
+        // 全カードに対して、選択状態に応じた「縁取り」と「ポップアップ」を適用
+        setCardStyle(binding.cardTotal, filterPartyIndex == -1)
+        setCardStyle(binding.cardP1, filterPartyIndex == 0)
+        setCardStyle(binding.cardP2, filterPartyIndex == 1)
+        setCardStyle(binding.cardP3, filterPartyIndex == 2)
+    }
 
-        binding.cardTotal.setCardBackgroundColor(if (filterPartyIndex == -1) activeColor else normalColor)
-        binding.cardP1.setCardBackgroundColor(if (filterPartyIndex == 0) activeColor else partyNormalColor)
-        binding.cardP2.setCardBackgroundColor(if (filterPartyIndex == 1) activeColor else partyNormalColor)
-        binding.cardP3.setCardBackgroundColor(if (filterPartyIndex == 2) activeColor else partyNormalColor)
+    private fun setCardStyle(card: MaterialCardView, isSelected: Boolean) {
+        val density = resources.displayMetrics.density
+        if (isSelected) {
+            // 選択時: 縁取り(3dp)を出し、わずかに拡大
+            card.strokeWidth = (3f * density).toInt()
+            card.animate().scaleX(1.05f).scaleY(1.05f).setDuration(200).start()
+            card.cardElevation = 12f * density
+        } else {
+            // 非選択時: 縁取りを消し、等倍に戻す
+            card.strokeWidth = 0
+            card.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start()
+            card.cardElevation = 4f * density
+        }
     }
 
     private fun updatePartyIcons(partyNames: List<String>, imageViews: List<ImageView>) {
@@ -185,24 +205,18 @@ class HistoryActivity : AppCompatActivity() {
     private fun showAnalysisDialog() {
         val allRecords = dataManager.history.records
         val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
-        
         if (filteredRecords.isEmpty()) {
             Toast.makeText(this, "データがありません", Toast.LENGTH_SHORT).show()
             return
         }
-
         val appearanceCount = mutableMapOf<String, Int>()
         val winAgainstCount = mutableMapOf<String, Int>()
-
         filteredRecords.forEach { record ->
             record.enemyParty.filter { it.isNotEmpty() }.distinct().forEach { name ->
                 appearanceCount[name] = appearanceCount.getOrDefault(name, 0) + 1
-                if (record.result == "WIN") {
-                    winAgainstCount[name] = winAgainstCount.getOrDefault(name, 0) + 1
-                }
+                if (record.result == "WIN") winAgainstCount[name] = winAgainstCount.getOrDefault(name, 0) + 1
             }
         }
-
         val totalBattles = filteredRecords.size
         val rankingList = appearanceCount.map { (name, count) ->
             val wins = winAgainstCount.getOrDefault(name, 0)
@@ -221,36 +235,25 @@ class HistoryActivity : AppCompatActivity() {
                 val data = rankingList[position]
                 view.findViewById<TextView>(R.id.textRank).text = String.format(Locale.US, "%d", position + 1)
                 view.findViewById<TextView>(R.id.textMonsterName).text = data.name
-                view.findViewById<TextView>(R.id.textAppearance).text = getString(
-                    R.string.rank_appearance_format,
-                    data.count,
-                    String.format(Locale.US, "%.1f", data.appearanceRate)
-                )
+                view.findViewById<TextView>(R.id.textAppearance).text = getString(R.string.rank_appearance_format, data.count, String.format(Locale.US, "%.1f", data.appearanceRate))
                 val winRateTextView = view.findViewById<TextView>(R.id.textWinRate)
                 winRateTextView.text = getString(R.string.rank_win_rate_format, String.format(Locale.US, "%.1f", data.winRate))
-                
                 when {
                     data.winRate >= 80.0 -> winRateTextView.setTextColor("#F09199".toColorInt())
                     data.winRate >= 50.0 -> winRateTextView.setTextColor("#CCCCCC".toColorInt())
                     else -> winRateTextView.setTextColor("#90D7EC".toColorInt())
                 }
-
                 val imageView = view.findViewById<ImageView>(R.id.imageMonster)
                 val monsterData = dataManager.monsterMaster.find { it.name == data.name }
                 if (monsterData != null) {
                     try {
-                        assets.open("templates/${monsterData.fileName}").use {
-                            imageView.setImageBitmap(BitmapFactory.decodeStream(it))
-                        }
-                    } catch (_: Exception) {
-                        imageView.setImageResource(android.R.drawable.ic_menu_help)
-                    }
+                        assets.open("templates/${monsterData.fileName}").use { imageView.setImageBitmap(BitmapFactory.decodeStream(it)) }
+                    } catch (_: Exception) { imageView.setImageResource(android.R.drawable.ic_menu_help) }
                 }
                 return view
             }
         }
         listView.adapter = adapter
-
         val titlePrefix = if (filterPartyIndex == -1) "全体" else "パーティ${filterPartyIndex + 1}"
         val dialog = AlertDialog.Builder(this)
             .setTitle("$titlePrefix: 敵モンスター出現率")
@@ -258,7 +261,6 @@ class HistoryActivity : AppCompatActivity() {
             .setPositiveButton("閉じる", null)
             .setNeutralButton("勝率の低い順", null)
             .create()
-
         dialog.setOnShowListener {
             val sortButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
             var sortedByAppearance = true
