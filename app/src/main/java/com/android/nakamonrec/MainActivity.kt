@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.media.projection.MediaProjectionManager
@@ -28,13 +29,17 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.graphics.toColorInt
+import androidx.core.net.toUri
 import com.android.nakamonrec.databinding.ActivityMainBinding
+import com.google.gson.Gson
 import org.opencv.android.OpenCVLoader
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var pendingCalibrationFileName: String? = null
     private var calibrationSelectorDialog: AlertDialog? = null
+
+    data class VersionInfo(val versionCode: Int, val versionName: String, val updateUrl: String)
 
     private val serviceStopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -97,6 +104,31 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        var currentVersionCode = 0
+        try {
+            val pInfo = if (Build.VERSION.SDK_INT >= 33) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            val versionName = pInfo.versionName
+            currentVersionCode = if (Build.VERSION.SDK_INT >= 28) {
+                pInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode
+            }
+            binding.textVersion.text = getString(R.string.app_version, versionName, currentVersionCode)
+        } catch (_: Exception) {
+            binding.textVersion.text = getString(R.string.ver_unknown)
+        }
+
+        binding.textVersion.setOnClickListener {
+            Toast.makeText(this, getString(R.string.msg_checking_update), Toast.LENGTH_SHORT).show()
+            checkForUpdates(currentVersionCode, isManual = true)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
         }
@@ -140,6 +172,47 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateUI(MediaCaptureService.isRunning)
+
+        if (currentVersionCode > 0) {
+            checkForUpdates(currentVersionCode, isManual = false)
+        }
+    }
+
+    private fun checkForUpdates(currentCode: Int, isManual: Boolean) {
+        thread {
+            try {
+                val url = "https://raw.githubusercontent.com/0xDEADBEEF10AF/NakamonRec/master/version.json"
+                val json = URL(url).readText()
+                val latest = Gson().fromJson(json, VersionInfo::class.java)
+
+                Handler(Looper.getMainLooper()).post {
+                    if (latest.versionCode > currentCode) {
+                        showUpdateDialog(latest)
+                    } else if (isManual) {
+                        Toast.makeText(this, getString(R.string.msg_latest_version), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Update", "Check failed: ${e.message}")
+                if (isManual) {
+                    Handler(Looper.getMainLooper()).post {
+                        Toast.makeText(this, getString(R.string.msg_update_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showUpdateDialog(latest: VersionInfo) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.msg_update_available))
+            .setMessage(getString(R.string.msg_update_desc, latest.versionName))
+            .setPositiveButton(getString(R.string.btn_update)) { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW, latest.updateUrl.toUri())
+                startActivity(intent)
+            }
+            .setNegativeButton(getString(R.string.btn_later), null)
+            .show()
     }
 
     private fun showCalibrationSelectorDialog() {
@@ -200,8 +273,8 @@ class MainActivity : AppCompatActivity() {
                 )
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(titles[i])
-                    .setItems(options) { _, which: Int ->
-                        when (which) {
+                    .setItems(options) { _, whichIndex: Int ->
+                        when (whichIndex) {
                             0 -> { 
                                 pendingCalibrationFileName = fileNames[i]
                                 pickImageLauncher.launch("image/*")
@@ -233,6 +306,55 @@ class MainActivity : AppCompatActivity() {
             .setView(container)
             .setNegativeButton("閉じる", null)
             .show()
+    }
+
+    private fun showDeleteConfirmDialog(fileName: String) {
+        AlertDialog.Builder(this)
+            .setTitle("ファイルの削除")
+            .setMessage("「$fileName」を削除しますか？\nこの操作は取り消せません。")
+            .setPositiveButton("削除") { _, _ ->
+                val file = File(filesDir, "$fileName.json")
+                if (file.delete()) {
+                    Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show()
+                    if (getCurrentFileName() == fileName) {
+                        saveCurrentFileName("default_record")
+                    }
+                    refreshServiceAndUI()
+                }
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
+    }
+
+    private fun showResetHistoryConfirmDialog(fileName: String) {
+        AlertDialog.Builder(this)
+            .setTitle("データのクリア")
+            .setMessage("「$fileName」の戦績データをすべて削除しますか？\n(ファイル自体は削除されません)")
+            .setPositiveButton("クリア") { _, _ ->
+                val dm = BattleDataManager(this)
+                dm.loadHistory(fileName)
+                dm.resetHistory()
+                if (MediaCaptureService.isRunning) {
+                    val intent = Intent(this, MediaCaptureService::class.java).apply {
+                        action = MediaCaptureService.ACTION_RELOAD_HISTORY
+                    }
+                    startService(intent)
+                }
+                Toast.makeText(this, "データをクリアしました", Toast.LENGTH_SHORT).show()
+                updateUI(MediaCaptureService.isRunning)
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
+    }
+
+    private fun refreshServiceAndUI() {
+        updateUI(MediaCaptureService.isRunning)
+        if (MediaCaptureService.isRunning) {
+            val intent = Intent(this, MediaCaptureService::class.java).apply {
+                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+            }
+            startService(intent)
+        }
     }
 
     private fun showDeleteImageConfirmDialog(fileName: String) {
@@ -287,7 +409,6 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         val filter = IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED)
-        // 修正: 確実にエラーが出ない形式を適用
         ContextCompat.registerReceiver(this, serviceStopReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         updateUI(MediaCaptureService.isRunning)
     }
@@ -330,7 +451,7 @@ class MainActivity : AppCompatActivity() {
             binding.btnToggleService.apply {
                 text = getString(R.string.btn_stop)
                 backgroundTintList = ColorStateList.valueOf("#90D7EC".toColorInt())
-                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) // 縁を白っぽく
+                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt())
             }
             binding.cardCurrentFile.strokeWidth = (2f * resources.displayMetrics.density).toInt()
             binding.cardCurrentFile.strokeColor = "#90D7EC".toColorInt()
@@ -339,7 +460,7 @@ class MainActivity : AppCompatActivity() {
             binding.btnToggleService.apply {
                 text = getString(R.string.btn_rec)
                 backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt())
-                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) // 縁を白っぽく
+                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt())
             }
             binding.cardCurrentFile.strokeWidth = (1f * resources.displayMetrics.density).toInt()
             binding.cardCurrentFile.strokeColor = "#444444".toColorInt()
@@ -354,7 +475,6 @@ class MainActivity : AppCompatActivity() {
         val stats = dm.getStatistics()
         
         binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate)
-        // 修正: 〇 Matches 表記、かつ色とスタイルをファイル名に合わせる
         binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
         binding.valTotalWinLoseMain.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
     }
@@ -535,52 +655,4 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showDeleteConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this)
-            .setTitle("ファイルの削除")
-            .setMessage("「$fileName」を削除しますか？\nこの操作は取り消せません。")
-            .setPositiveButton("削除") { _, _ ->
-                val file = File(filesDir, "$fileName.json")
-                if (file.delete()) {
-                    Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show()
-                    if (getCurrentFileName() == fileName) {
-                        saveCurrentFileName("default_record")
-                    }
-                    refreshServiceAndUI()
-                }
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
-    }
-
-    private fun showResetHistoryConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this)
-            .setTitle("データのクリア")
-            .setMessage("「$fileName」の戦績データをすべて削除しますか？\n(ファイル自体は削除されません)")
-            .setPositiveButton("クリア") { _, _ ->
-                val dm = BattleDataManager(this)
-                dm.loadHistory(fileName)
-                dm.resetHistory()
-                if (MediaCaptureService.isRunning) {
-                    val intent = Intent(this, MediaCaptureService::class.java).apply {
-                        action = MediaCaptureService.ACTION_RELOAD_HISTORY
-                    }
-                    startService(intent)
-                }
-                Toast.makeText(this, "データをクリアしました", Toast.LENGTH_SHORT).show()
-                updateUI(MediaCaptureService.isRunning)
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
-    }
-
-    private fun refreshServiceAndUI() {
-        updateUI(MediaCaptureService.isRunning)
-        if (MediaCaptureService.isRunning) {
-            val intent = Intent(this, MediaCaptureService::class.java).apply {
-                action = MediaCaptureService.ACTION_RELOAD_HISTORY
-            }
-            startService(intent)
-        }
-    }
 }

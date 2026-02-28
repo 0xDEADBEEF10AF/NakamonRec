@@ -2,16 +2,23 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// Gitのコミット総数を取得する
+val gitCommitCount = providers.exec {
+    commandLine("git", "rev-list", "--count", "HEAD")
+}.standardOutput.asText.map { it.trim().toInt() }.getOrElse(1)
+
 android {
     namespace = "com.android.nakamonrec"
-    compileSdk = 36 // ライブラリの要求に合わせて 36 に戻す
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.android.nakamonrec"
         minSdk = 24
-        targetSdk = 35 // 実行環境の互換性のために 35 (Android 15) に設定
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 35
+        
+        // ★自動インクリメント設定
+        versionCode = gitCommitCount
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
