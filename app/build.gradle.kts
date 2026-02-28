@@ -1,11 +1,14 @@
+import java.io.ByteArrayOutputStream
+
 plugins {
     alias(libs.plugins.android.application)
 }
 
 // Gitのコミット総数を取得する
-val gitCommitCount = providers.exec {
+val gitCommitCountProvider = providers.exec {
     commandLine("git", "rev-list", "--count", "HEAD")
-}.standardOutput.asText.map { it.trim().toInt() }.getOrElse(1)
+}
+val gitCommitCount = gitCommitCountProvider.standardOutput.asText.map { it.trim().toInt() }.getOrElse(1)
 
 android {
     namespace = "com.android.nakamonrec"
@@ -16,7 +19,7 @@ android {
         minSdk = 24
         targetSdk = 35
         
-        // ★自動インクリメント設定
+        // ★自動インクリメント：コミット総数をバージョンコードに使用
         versionCode = gitCommitCount
         versionName = "1.1.0"
 
@@ -45,6 +48,35 @@ android {
             useLegacyPackaging = false
         }
     }
+}
+
+// ★新機能：ビルド時に version.json を自動更新するタスク
+tasks.register("updateVersionJson") {
+    group = "versioning"
+    description = "Updates version.json with the current versionCode and versionName"
+    
+    doLast {
+        val vCode = android.defaultConfig.versionCode ?: 1
+        val vName = android.defaultConfig.versionName ?: "1.0.0"
+        val updateUrl = "https://github.com/0xDEADBEEF10AF/NakamonRec/releases"
+        
+        val jsonContent = """
+            {
+              "versionCode": $vCode,
+              "versionName": "$vName",
+              "updateUrl": "$updateUrl"
+            }
+        """.trimIndent()
+        
+        val versionFile = File(rootProject.projectDir, "version.json")
+        versionFile.writeText(jsonContent)
+        println("✅ version.json has been updated: Code $vCode, Name $vName")
+    }
+}
+
+// assembleタスク（ビルド）の後に自動で実行されるように紐付け
+tasks.matching { it.name.startsWith("assemble") }.configureEach {
+    finalizedBy("updateVersionJson")
 }
 
 // APKの自動コピー＆リネーム設定
