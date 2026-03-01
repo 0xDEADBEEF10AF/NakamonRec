@@ -24,3 +24,5 @@ apks/
 *.apk
 *.log
 *_timing.txt
+
+version.json
