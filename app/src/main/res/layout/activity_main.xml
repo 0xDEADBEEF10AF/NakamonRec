@@ -9,7 +9,7 @@
     android:clipToPadding="false"
     tools:context=".MainActivity">
 
-    <!-- バージョン表示 -->
+    <!-- バージョン表示 (上端から64dp) -->
     <TextView
         android:id="@+id/textVersion"
         android:layout_width="wrap_content"
@@ -23,7 +23,7 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintLeft_toLeftOf="parent" />
 
-    <!-- ヘルプボタン -->
+    <!-- ヘルプボタン (上端から48dp) -->
     <ImageButton
         android:id="@+id/btnReadme"
         android:layout_width="48dp"
@@ -37,7 +37,7 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintRight_toRightOf="parent" />
 
-    <!-- 上部ヘッダー：ファイル管理 ＆ 校正 (比率 9 : 1.5) -->
+    <!-- 上部ヘッダー：ファイル管理 ＆ 校正 -->
     <LinearLayout
         android:id="@+id/layoutTopHeader"
         android:layout_width="match_parent"
@@ -62,29 +62,22 @@
             app:cardElevation="4dp"
             app:cardBackgroundColor="#333333"
             app:strokeWidth="1dp"
-            app:strokeColor="#444444">
-            <LinearLayout
+            app:strokeColor="#444444"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <TextView
+                android:id="@+id/textCurrentFile"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:gravity="center_vertical">
-                <ImageView
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:src="@android:drawable/ic_menu_save"
-                    app:tint="#AAAAAA"
-                    android:contentDescription="@string/btn_manage" />
-                <TextView
-                    android:id="@+id/textCurrentFile"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#FFFFFF"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    tools:text="default_record.json" />
-            </LinearLayout>
+                app:drawableStartCompat="@android:drawable/ic_menu_save"
+                android:drawablePadding="12dp"
+                app:drawableTint="#AAAAAA"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                tools:text="default_record.json" />
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.card.MaterialCardView
@@ -160,7 +153,6 @@
         android:baselineAligned="false"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- 左側：戦績チェック ＆ サマリー (パディングを上部と統一) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnShowHistory"
             android:layout_width="0dp"
@@ -173,6 +165,7 @@
             app:cardCornerRadius="12dp"
             app:cardElevation="6dp"
             app:cardBackgroundColor="#333333">
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
@@ -180,21 +173,15 @@
                 android:paddingHorizontal="16dp"
                 android:gravity="center_vertical">
 
-                <ImageView
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:src="@android:drawable/ic_menu_sort_by_size"
-                    app:tint="#FFFFFF"
-                    android:contentDescription="@string/btn_history" />
-
-                <!-- テキストスタイルを白・太字・16spに統一 -->
                 <TextView
                     android:id="@+id/valTotalRateMain"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    app:drawableStartCompat="@android:drawable/ic_menu_sort_by_size"
+                    android:drawablePadding="12dp"
+                    app:drawableTint="#FFFFFF"
                     android:textColor="#F09199"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:textStyle="bold"
                     tools:text="--.-%" />
 
@@ -220,7 +207,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- 右側：データリセット -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnResetHistory"
             android:layout_width="0dp"

@@ -32,6 +32,8 @@ import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import com.android.nakamonrec.databinding.ActivityMainBinding
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
+import com.google.gson.reflect.TypeToken
 import org.opencv.android.OpenCVLoader
 import java.io.File
 import java.io.FileOutputStream
@@ -48,7 +50,12 @@ class MainActivity : AppCompatActivity() {
     private var pendingCalibrationFileName: String? = null
     private var calibrationSelectorDialog: AlertDialog? = null
 
-    data class VersionInfo(val versionCode: Int, val versionName: String, val updateUrl: String)
+    // GitHub API応答用データ構造 (SerializedNameでAPIのキー名とKotlinの変数名を紐付け)
+    data class GithubRelease(
+        @SerializedName("tag_name") val tagName: String,
+        val name: String,
+        @SerializedName("html_url") val htmlUrl: String
+    )
 
     private val serviceStopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -104,7 +111,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        var currentVersionCode = 0
+        // バージョン表示 (nameのみ)
+        var currentVersionName = ""
         try {
             val pInfo = if (Build.VERSION.SDK_INT >= 33) {
                 packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
@@ -112,21 +120,15 @@ class MainActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(packageName, 0)
             }
-            val versionName = pInfo.versionName
-            currentVersionCode = if (Build.VERSION.SDK_INT >= 28) {
-                pInfo.longVersionCode.toInt()
-            } else {
-                @Suppress("DEPRECATION")
-                pInfo.versionCode
-            }
-            binding.textVersion.text = getString(R.string.app_version, versionName, currentVersionCode)
+            currentVersionName = pInfo.versionName ?: "1.0.0"
+            binding.textVersion.text = getString(R.string.app_version, currentVersionName)
         } catch (_: Exception) {
             binding.textVersion.text = getString(R.string.ver_unknown)
         }
 
         binding.textVersion.setOnClickListener {
             Toast.makeText(this, getString(R.string.msg_checking_update), Toast.LENGTH_SHORT).show()
-            checkForUpdates(currentVersionCode, isManual = true)
+            checkForUpdates(currentVersionName, isManual = true)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -173,23 +175,33 @@ class MainActivity : AppCompatActivity() {
 
         updateUI(MediaCaptureService.isRunning)
 
-        if (currentVersionCode > 0) {
-            checkForUpdates(currentVersionCode, isManual = false)
+        if (currentVersionName.isNotEmpty()) {
+            checkForUpdates(currentVersionName, isManual = false)
         }
     }
 
-    private fun checkForUpdates(currentCode: Int, isManual: Boolean) {
+    private fun checkForUpdates(currentName: String, isManual: Boolean) {
         thread {
             try {
-                val url = "https://raw.githubusercontent.com/0xDEADBEEF10AF/NakamonRec/master/version.json"
-                val json = URL(url).readText()
-                val latest = Gson().fromJson(json, VersionInfo::class.java)
+                val url = "https://api.github.com/repos/0xDEADBEEF10AF/NakamonRec/releases"
+                val connection = URL(url).openConnection()
+                connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                
+                val json = connection.getInputStream().bufferedReader().use { it.readText() }
+                val listType = object : TypeToken<List<GithubRelease>>() {}.type
+                val releases: List<GithubRelease> = Gson().fromJson(json, listType)
+                
+                if (releases.isNotEmpty()) {
+                    val latest = releases[0]
+                    val latestName = latest.tagName.replace("v", "").trim()
+                    val cleanCurrentName = currentName.replace("v", "").trim()
 
-                Handler(Looper.getMainLooper()).post {
-                    if (latest.versionCode > currentCode) {
-                        showUpdateDialog(latest)
-                    } else if (isManual) {
-                        Toast.makeText(this, getString(R.string.msg_latest_version), Toast.LENGTH_SHORT).show()
+                    Handler(Looper.getMainLooper()).post {
+                        if (isNewerVersion(latestName, cleanCurrentName)) {
+                            showUpdateDialog(latest.name, latest.htmlUrl)
+                        } else if (isManual) {
+                            Toast.makeText(this, getString(R.string.msg_latest_version), Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -203,12 +215,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showUpdateDialog(latest: VersionInfo) {
+    private fun isNewerVersion(latest: String, current: String): Boolean {
+        val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
+        val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
+        val length = maxOf(latestParts.size, currentParts.size)
+        for (i in 0 until length) {
+            val l = latestParts.getOrElse(i) { 0 }
+            val c = currentParts.getOrElse(i) { 0 }
+            if (l > c) return true
+            if (l < c) return false
+        }
+        return false
+    }
+
+    private fun showUpdateDialog(title: String, updateUrl: String) {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.msg_update_available))
-            .setMessage(getString(R.string.msg_update_desc, latest.versionName))
+            .setMessage(getString(R.string.msg_update_desc, title))
             .setPositiveButton(getString(R.string.btn_update)) { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW, latest.updateUrl.toUri())
+                val intent = Intent(Intent.ACTION_VIEW, updateUrl.toUri())
                 startActivity(intent)
             }
             .setNegativeButton(getString(R.string.btn_later), null)
@@ -271,7 +296,7 @@ class MainActivity : AppCompatActivity() {
                     getString(R.string.btn_delete_image),
                     getString(R.string.btn_start_calibrate)
                 )
-                AlertDialog.Builder(this@MainActivity)
+                AlertDialog.Builder(this)
                     .setTitle(titles[i])
                     .setItems(options) { _, whichIndex: Int ->
                         when (whichIndex) {
@@ -655,4 +680,8 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
+    }
 }

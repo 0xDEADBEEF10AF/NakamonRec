@@ -1,5 +1,3 @@
-import java.io.ByteArrayOutputStream
-
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -19,8 +17,9 @@ android {
         minSdk = 24
         targetSdk = 35
         
-        // ★自動インクリメント：コミット総数をバージョンコードに使用
+        // 内部管理用の番号（コミット数に連動）
         versionCode = gitCommitCount
+        // ユーザーに見えるバージョン名（手動で更新）
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -48,35 +47,6 @@ android {
             useLegacyPackaging = false
         }
     }
-}
-
-// ★新機能：ビルド時に version.json を自動更新するタスク
-tasks.register("updateVersionJson") {
-    group = "versioning"
-    description = "Updates version.json with the current versionCode and versionName"
-    
-    doLast {
-        val vCode = android.defaultConfig.versionCode ?: 1
-        val vName = android.defaultConfig.versionName ?: "1.0.0"
-        val updateUrl = "https://github.com/0xDEADBEEF10AF/NakamonRec/releases"
-        
-        val jsonContent = """
-            {
-              "versionCode": $vCode,
-              "versionName": "$vName",
-              "updateUrl": "$updateUrl"
-            }
-        """.trimIndent()
-        
-        val versionFile = File(rootProject.projectDir, "version.json")
-        versionFile.writeText(jsonContent)
-        println("✅ version.json has been updated: Code $vCode, Name $vName")
-    }
-}
-
-// assembleタスク（ビルド）の後に自動で実行されるように紐付け
-tasks.matching { it.name.startsWith("assemble") }.configureEach {
-    finalizedBy("updateVersionJson")
 }
 
 // APKの自動コピー＆リネーム設定
