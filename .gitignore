@@ -24,3 +24,8 @@ apks/
 *.apk
 *.log
 *_timing.txt
+
+# Keystore files (Security)
+debug.keystore
+*.keystore
+*.jks

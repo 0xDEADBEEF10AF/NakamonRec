@@ -328,7 +328,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun resetIdentification() { identifiedNames.fill(null) }
     fun isAllIdentified(): Boolean = identifiedNames.all { it != null }
-    fun isNoneIdentified(): Boolean = identifiedNames.all { it == null }
 
     fun identifyStepByStep(bitmap: Bitmap) {
         val fullMat = Mat()

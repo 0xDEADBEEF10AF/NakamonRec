@@ -173,6 +173,7 @@
                 android:paddingHorizontal="16dp"
                 android:gravity="center_vertical">
 
+                <!-- 修正: gravityをcenter_verticalに戻し、視覚的な高さを中央に揃える -->
                 <TextView
                     android:id="@+id/valTotalRateMain"
                     android:layout_width="wrap_content"
@@ -183,6 +184,8 @@
                     android:textColor="#F09199"
                     android:textSize="18sp"
                     android:textStyle="bold"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
                     tools:text="--.-%" />
 
                 <TextView
@@ -193,6 +196,8 @@
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
                     tools:text="0 Matches" />
 
                 <TextView
@@ -203,6 +208,8 @@
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
                     tools:text="0W - 0L" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

@@ -1,3 +1,5 @@
+import java.io.ByteArrayOutputStream
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -10,24 +12,39 @@ val gitCommitCount = gitCommitCountProvider.standardOutput.asText.map { it.trim(
 
 android {
     namespace = "com.android.nakamonrec"
-    compileSdk = 36
+    // ★Android 14実機インストールのために安定版の35を使用
+    compileSdk = 35 
+
+    signingConfigs {
+        getByName("debug") {
+            // プロジェクトルートにあるdebug.keystoreを参照
+            // 注意: ターミナルで keytool コマンドを実行して作成しておく必要があります
+            storeFile = file("../debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
 
     defaultConfig {
         applicationId = "com.android.nakamonrec"
         minSdk = 24
         targetSdk = 35
         
-        // 内部管理用の番号（コミット数に連動）
         versionCode = gitCommitCount
-        // ユーザーに見えるバージョン名（手動で更新）
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
+            // リリース版にも同じデバッグ署名を適用して上書き・インストールを可能にする
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
