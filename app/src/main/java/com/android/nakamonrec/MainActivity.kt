@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.util.Log
 import android.view.Gravity
 import android.widget.EditText
@@ -50,7 +51,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingCalibrationFileName: String? = null
     private var calibrationSelectorDialog: AlertDialog? = null
 
-    // GitHub API応答用データ構造 (SerializedNameでAPIのキー名とKotlinの変数名を紐付け)
+    // GitHub API応答用
     data class GithubRelease(
         @SerializedName("tag_name") val tagName: String,
         val name: String,
@@ -88,6 +89,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // CSVインポート用ランチャー
+    private val pickCsvLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let { importHistoryFromCsv(it) }
+    }
+
     private val createDocumentLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         uri?.let {
             csvContentToSave?.let { content ->
@@ -107,11 +113,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // バージョン表示 (nameのみ)
         var currentVersionName = ""
         try {
             val pInfo = if (Build.VERSION.SDK_INT >= 33) {
@@ -135,16 +139,11 @@ class MainActivity : AppCompatActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
         }
 
-        if (OpenCVLoader.initLocal()) {
-            Log.i("OpenCV", "OpenCV loaded successfully")
-        } else {
-            Log.e("OpenCV", "OpenCV load failed")
-        }
+        if (OpenCVLoader.initLocal()) Log.i("OpenCV", "OpenCV loaded successfully")
 
         binding.btnToggleService.setOnClickListener {
             if (MediaCaptureService.isRunning) {
-                stopCaptureService()
-                updateUI(false)
+                stopCaptureService(); updateUI(false)
             } else {
                 isResetRequested = false
                 val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -152,32 +151,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.btnShowHistory.setOnClickListener {
-            val intent = Intent(this, HistoryActivity::class.java)
-            startActivity(intent)
-        }
-
-        binding.cardCurrentFile.setOnClickListener {
-            showFileSelectorDialog()
-        }
-
-        binding.btnResetHistory.setOnClickListener {
-            showResetHistoryConfirmDialog(getCurrentFileName())
-        }
-
-        binding.btnReadme.setOnClickListener {
-            showReadmeDialog()
-        }
-
-        binding.btnCalibrate.setOnClickListener {
-            showCalibrationSelectorDialog()
-        }
+        binding.btnShowHistory.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
+        binding.cardCurrentFile.setOnClickListener { showFileSelectorDialog() }
+        binding.btnResetHistory.setOnClickListener { showResetHistoryConfirmDialog(getCurrentFileName()) }
+        binding.btnReadme.setOnClickListener { showReadmeDialog() }
+        binding.btnCalibrate.setOnClickListener { showCalibrationSelectorDialog() }
 
         updateUI(MediaCaptureService.isRunning)
-
-        if (currentVersionName.isNotEmpty()) {
-            checkForUpdates(currentVersionName, isManual = false)
-        }
+        if (currentVersionName.isNotEmpty()) checkForUpdates(currentVersionName, isManual = false)
     }
 
     private fun checkForUpdates(currentName: String, isManual: Boolean) {
@@ -186,31 +167,20 @@ class MainActivity : AppCompatActivity() {
                 val url = "https://api.github.com/repos/0xDEADBEEF10AF/NakamonRec/releases"
                 val connection = URL(url).openConnection()
                 connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                
                 val json = connection.getInputStream().bufferedReader().use { it.readText() }
                 val listType = object : TypeToken<List<GithubRelease>>() {}.type
                 val releases: List<GithubRelease> = Gson().fromJson(json, listType)
-                
                 if (releases.isNotEmpty()) {
                     val latest = releases[0]
                     val latestName = latest.tagName.replace("v", "").trim()
                     val cleanCurrentName = currentName.replace("v", "").trim()
-
                     Handler(Looper.getMainLooper()).post {
-                        if (isNewerVersion(latestName, cleanCurrentName)) {
-                            showUpdateDialog(latest.name, latest.htmlUrl)
-                        } else if (isManual) {
-                            Toast.makeText(this, getString(R.string.msg_latest_version), Toast.LENGTH_SHORT).show()
-                        }
+                        if (isNewerVersion(latestName, cleanCurrentName)) showUpdateDialog(latest.name, latest.htmlUrl)
+                        else if (isManual) Toast.makeText(this, getString(R.string.msg_latest_version), Toast.LENGTH_SHORT).show()
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("Update", "Check failed: ${e.message}")
-                if (isManual) {
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(this, getString(R.string.msg_update_failed), Toast.LENGTH_SHORT).show()
-                    }
-                }
+            } catch (_: Exception) {
+                if (isManual) Handler(Looper.getMainLooper()).post { Toast.makeText(this, getString(R.string.msg_update_failed), Toast.LENGTH_SHORT).show() }
             }
         }
     }
@@ -218,431 +188,184 @@ class MainActivity : AppCompatActivity() {
     private fun isNewerVersion(latest: String, current: String): Boolean {
         val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
         val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
-        val length = maxOf(latestParts.size, currentParts.size)
-        for (i in 0 until length) {
-            val l = latestParts.getOrElse(i) { 0 }
-            val c = currentParts.getOrElse(i) { 0 }
-            if (l > c) return true
-            if (l < c) return false
+        for (i in 0 until maxOf(latestParts.size, currentParts.size)) {
+            val l = latestParts.getOrElse(i) { 0 }; val c = currentParts.getOrElse(i) { 0 }
+            if (l > c) return true; if (l < c) return false
         }
         return false
     }
 
     private fun showUpdateDialog(title: String, updateUrl: String) {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.msg_update_available))
-            .setMessage(getString(R.string.msg_update_desc, title))
-            .setPositiveButton(getString(R.string.btn_update)) { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW, updateUrl.toUri())
-                startActivity(intent)
-            }
-            .setNegativeButton(getString(R.string.btn_later), null)
-            .show()
-    }
-
-    private fun showCalibrationSelectorDialog() {
-        val titles = arrayOf("パーティ選択画面", "VS画面", "勝利画面", "敗北画面")
-        val fileNames = arrayOf("base_party.png", "base_vs.png", "base_win.png", "base_lose.png")
-        val modes = arrayOf("party", "vs", "win", "lose")
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 20, 40, 20)
-        }
-
-        for (i in titles.indices) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 10, 0, 10)
-                gravity = Gravity.CENTER_VERTICAL
-                isClickable = true
-                setBackgroundResource(android.R.drawable.list_selector_background)
-            }
-
-            val thumb = ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(120, 120)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(0xFF333333.toInt())
-                val file = File(filesDir, fileNames[i])
-                if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                    setImageBitmap(bitmap)
-                } else {
-                    setImageResource(android.R.drawable.ic_menu_gallery)
-                }
-            }
-
-            val label = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                text = titles[i]
-                setPadding(20, 0, 0, 0)
-                textSize = 16f
-                setTextColor(0xFFFFFFFF.toInt())
-            }
-
-            val status = TextView(this).apply {
-                val exists = File(filesDir, fileNames[i]).exists()
-                text = if (exists) getString(R.string.status_done) else getString(R.string.status_none)
-                setPadding(10, 0, 0, 0)
-            }
-
-            row.addView(thumb)
-            row.addView(label)
-            row.addView(status)
-
-            row.setOnClickListener {
-                val options = arrayOf(
-                    getString(R.string.btn_import_image),
-                    getString(R.string.btn_delete_image),
-                    getString(R.string.btn_start_calibrate)
-                )
-                AlertDialog.Builder(this)
-                    .setTitle(titles[i])
-                    .setItems(options) { _, whichIndex: Int ->
-                        when (whichIndex) {
-                            0 -> { 
-                                pendingCalibrationFileName = fileNames[i]
-                                pickImageLauncher.launch("image/*")
-                            }
-                            1 -> { 
-                                if (File(filesDir, fileNames[i]).exists()) {
-                                    showDeleteImageConfirmDialog(fileNames[i])
-                                }
-                            }
-                            2 -> { 
-                                if (File(filesDir, fileNames[i]).exists()) {
-                                    val intent = Intent(this@MainActivity, CalibrationActivity::class.java).apply {
-                                        putExtra("EXTRA_MODE", modes[i])
-                                        putExtra("EXTRA_FILE_NAME", fileNames[i])
-                                    }
-                                    startActivity(intent)
-                                } else {
-                                    Toast.makeText(this@MainActivity, getString(R.string.toast_import_first), Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    }.show()
-            }
-            container.addView(row)
-        }
-
-        calibrationSelectorDialog = AlertDialog.Builder(this)
-            .setTitle(R.string.title_calibrate_dialog)
-            .setView(container)
-            .setNegativeButton("閉じる", null)
-            .show()
-    }
-
-    private fun showDeleteConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this)
-            .setTitle("ファイルの削除")
-            .setMessage("「$fileName」を削除しますか？\nこの操作は取り消せません。")
-            .setPositiveButton("削除") { _, _ ->
-                val file = File(filesDir, "$fileName.json")
-                if (file.delete()) {
-                    Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show()
-                    if (getCurrentFileName() == fileName) {
-                        saveCurrentFileName("default_record")
-                    }
-                    refreshServiceAndUI()
-                }
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
-    }
-
-    private fun showResetHistoryConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this)
-            .setTitle("データのクリア")
-            .setMessage("「$fileName」の戦績データをすべて削除しますか？\n(ファイル自体は削除されません)")
-            .setPositiveButton("クリア") { _, _ ->
-                val dm = BattleDataManager(this)
-                dm.loadHistory(fileName)
-                dm.resetHistory()
-                if (MediaCaptureService.isRunning) {
-                    val intent = Intent(this, MediaCaptureService::class.java).apply {
-                        action = MediaCaptureService.ACTION_RELOAD_HISTORY
-                    }
-                    startService(intent)
-                }
-                Toast.makeText(this, "データをクリアしました", Toast.LENGTH_SHORT).show()
-                updateUI(MediaCaptureService.isRunning)
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
-    }
-
-    private fun refreshServiceAndUI() {
-        updateUI(MediaCaptureService.isRunning)
-        if (MediaCaptureService.isRunning) {
-            val intent = Intent(this, MediaCaptureService::class.java).apply {
-                action = MediaCaptureService.ACTION_RELOAD_HISTORY
-            }
-            startService(intent)
-        }
-    }
-
-    private fun showDeleteImageConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.btn_delete_image)
-            .setMessage(R.string.msg_confirm_delete_image)
-            .setPositiveButton(R.string.btn_delete) { _, _ ->
-                val file = File(filesDir, fileName)
-                if (file.exists() && file.delete()) {
-                    Toast.makeText(this, getString(R.string.msg_deleted), Toast.LENGTH_SHORT).show()
-                    calibrationSelectorDialog?.dismiss()
-                    showCalibrationSelectorDialog() 
-                }
-            }
-            .setNegativeButton(R.string.btn_cancel, null)
-            .show()
-    }
-
-    private fun importImageForCalibration(uri: Uri, destFileName: String): Boolean {
-        return try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                val destFile = File(filesDir, destFileName)
-                FileOutputStream(destFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    private fun showReadmeDialog() {
-        val scrollView = ScrollView(this)
-        val textView = TextView(this).apply {
-            text = getString(R.string.readme_content)
-            textSize = 13f
-            setPadding(60, 40, 60, 40)
-            setLineSpacing(0f, 1.2f)
-            setTextColor("#CCCCCC".toColorInt())
-        }
-        scrollView.addView(textView)
-
-        AlertDialog.Builder(this)
-            .setTitle(R.string.readme_title)
-            .setView(scrollView)
-            .setPositiveButton("閉じる", null)
-            .show()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        val filter = IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED)
-        ContextCompat.registerReceiver(this, serviceStopReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        updateUI(MediaCaptureService.isRunning)
-    }
-
-    override fun onStop() {
-        super.onStop()
-        unregisterReceiver(serviceStopReceiver)
-    }
-
-    private fun startCaptureService(resultCode: Int, data: Intent, reset: Boolean) {
-        val serviceIntent = Intent(this, MediaCaptureService::class.java).apply {
-            putExtra("RESULT_CODE", resultCode)
-            putExtra("DATA", data)
-            putExtra("RESET_STATS", reset)
-        }
-        ContextCompat.startForegroundService(this, serviceIntent)
-        updateUI(true)
-    }
-
-    private fun stopCaptureService() {
-        val serviceIntent = Intent(this, MediaCaptureService::class.java)
-        stopService(serviceIntent)
-        updateUI(false)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        updateUI(MediaCaptureService.isRunning)
-    }
-
-    private fun generateDefaultFileName(): String {
-        val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault())
-        return "record_${sdf.format(Date())}"
-    }
-
-    private var pulseAnimation: ObjectAnimator? = null
-
-    private fun updateUI(isRunning: Boolean) {
-        if (isRunning) {
-            binding.btnToggleService.apply {
-                text = getString(R.string.btn_stop)
-                backgroundTintList = ColorStateList.valueOf("#90D7EC".toColorInt())
-                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt())
-            }
-            binding.cardCurrentFile.strokeWidth = (2f * resources.displayMetrics.density).toInt()
-            binding.cardCurrentFile.strokeColor = "#90D7EC".toColorInt()
-            startPulseAnimation()
-        } else {
-            binding.btnToggleService.apply {
-                text = getString(R.string.btn_rec)
-                backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt())
-                strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt())
-            }
-            binding.cardCurrentFile.strokeWidth = (1f * resources.displayMetrics.density).toInt()
-            binding.cardCurrentFile.strokeColor = "#444444".toColorInt()
-            stopPulseAnimation()
-        }
-
-        val currentName = getCurrentFileName()
-        binding.textCurrentFile.text = getString(R.string.file_name_ext_format, currentName)
-
-        val dm = BattleDataManager(this)
-        dm.loadHistory(currentName)
-        val stats = dm.getStatistics()
-        
-        binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate)
-        binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
-        binding.valTotalWinLoseMain.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
-    }
-
-    private fun startPulseAnimation() {
-        if (pulseAnimation != null) return
-        pulseAnimation = ObjectAnimator.ofPropertyValuesHolder(
-            binding.btnToggleService,
-            PropertyValuesHolder.ofFloat("scaleX", 1.0f, 1.05f),
-            PropertyValuesHolder.ofFloat("scaleY", 1.0f, 1.05f)
-        ).apply {
-            duration = 800
-            repeatCount = ObjectAnimator.INFINITE
-            repeatMode = ObjectAnimator.REVERSE
-            start()
-        }
-    }
-
-    private fun stopPulseAnimation() {
-        pulseAnimation?.cancel()
-        pulseAnimation = null
-        binding.btnToggleService.scaleX = 1.0f
-        binding.btnToggleService.scaleY = 1.0f
-    }
-
-    private fun getCurrentFileName(): String {
-        val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        return prefs.getString("last_file_name", "default_record") ?: "default_record"
-    }
-
-    private fun saveCurrentFileName(name: String) {
-        getSharedPreferences("NakamonPrefs", MODE_PRIVATE).edit {
-            putString("last_file_name", name)
-        }
+        AlertDialog.Builder(this).setTitle(getString(R.string.msg_update_available)).setMessage(getString(R.string.msg_update_desc, title))
+            .setPositiveButton(getString(R.string.btn_update)) { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, updateUrl.toUri())) }
+            .setNegativeButton(getString(R.string.btn_later), null).show()
     }
 
     private fun showFileSelectorDialog() {
         val files = filesDir.listFiles { file -> file.extension == "json" && file.name != "monsters.json" }
         val fileNames = files?.map { it.nameWithoutExtension }?.toTypedArray() ?: arrayOf()
-
-        val builder = AlertDialog.Builder(this)
-            .setTitle("ファイルを選択")
-            .setNeutralButton("新規作成") { _, _ ->
-                showCreateFileDialog()
-            }
-            .setNegativeButton("閉じる", null)
-
-        if (fileNames.isEmpty()) {
-            builder.setMessage("保存されたファイルがありません。\n「新規作成」から新しく作成できます。")
-        } else {
-            builder.setItems(fileNames) { _, whichIndex: Int ->
-                val selectedFile = fileNames[whichIndex]
-                showFileActionDialog(selectedFile)
-            }
-        }
         
+        // あなたのデバイスでの正解物理配置を固定 [左端: Neutral] [中央: Negative] [右端: Positive]
+        val builder = AlertDialog.Builder(this).setTitle("ファイルを選択")
+            .setNeutralButton("新規作成") { _, _ -> showCreateFileDialog() }
+            .setNegativeButton("CSVインポート") { _, _ -> pickCsvLauncher.launch("text/*") }
+            .setPositiveButton("閉じる", null)
+
+        if (fileNames.isNotEmpty()) {
+            builder.setItems(fileNames) { _, idx -> showFileActionDialog(fileNames[idx]) }
+        } else {
+            builder.setMessage("保存されたファイルがありません。")
+        }
         builder.show()
     }
 
-    private fun showFileActionDialog(fileName: String) {
-        AlertDialog.Builder(this)
-            .setTitle("ファイル操作: $fileName")
-            .setItems(arrayOf("このファイルを使用する", "名前を変更する", "削除する", "CSVにエクスポート")) { _, whichIndex: Int ->
-                when (whichIndex) {
-                    0 -> {
-                        saveCurrentFileName(fileName)
-                        Toast.makeText(this, getString(R.string.file_switched_toast, fileName), Toast.LENGTH_SHORT).show()
-                        refreshServiceAndUI()
-                    }
-                    1 -> showRenameDialog(fileName)
-                    2 -> showDeleteConfirmDialog(fileName)
-                    3 -> exportHistoryToCsv(fileName)
+    private fun importHistoryFromCsv(uri: Uri) {
+        try {
+            var csvFileName = "imported_record"
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst()) csvFileName = cursor.getString(nameIndex).substringBeforeLast(".")
+            }
+            val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return
+            val lines = content.split(Regex("\\r?\\n")).filter { it.isNotBlank() }
+            if (lines.size <= 6) return 
+
+            val dm = BattleDataManager(this).apply { currentFileName = csvFileName; resetHistory() }
+            var importedCount = 0
+            lines.drop(6).forEach { line -> 
+                val parts = line.split(",").map { it.trim().removeSurrounding("\"") }
+                if (parts.size >= 11) {
+                    val timestamp = parts[0]; val result = parts[1]; val partyName = parts[2]
+                    val partyIndex = partyName.replace(Regex("[^0-9]"), "").toIntOrNull()?.minus(1) ?: 0
+                    val myParty = listOf(parts[3], parts[4], parts[5], parts[6]); val enemyParty = listOf(parts[7], parts[8], parts[9], parts[10])
+                    dm.history.records.add(BattleRecord(timestamp, result, partyIndex, myParty, enemyParty))
+                    if (result == "WIN") dm.history.totalWins++ else dm.history.totalLosses++
+                    importedCount++
                 }
             }
-            .show()
+            dm.saveHistory(); saveCurrentFileName(csvFileName); refreshServiceAndUI()
+            Toast.makeText(this, "「$csvFileName.json」として${importedCount}件をインポートしました", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) { Toast.makeText(this, "インポートに失敗しました: ${e.message}", Toast.LENGTH_LONG).show() }
+    }
+
+    private fun showFileActionDialog(fileName: String) {
+        AlertDialog.Builder(this).setTitle("ファイル操作: $fileName")
+            .setItems(arrayOf("このファイルを使用する", "名前を変更する", "削除する", "CSVにエクスポート")) { _, idx ->
+                when (idx) {
+                    0 -> { saveCurrentFileName(fileName); Toast.makeText(this, getString(R.string.file_switched_toast, fileName), Toast.LENGTH_SHORT).show(); refreshServiceAndUI() }
+                    1 -> showRenameDialog(fileName); 2 -> showDeleteConfirmDialog(fileName); 3 -> exportHistoryToCsv(fileName)
+                }
+            }.show()
     }
 
     private fun exportHistoryToCsv(fileName: String) {
-        val dm = BattleDataManager(this)
-        dm.loadHistory(fileName)
-
-        val stats = dm.getStatistics()
-        val records = dm.history.records
+        val dm = BattleDataManager(this).apply { loadHistory(fileName) }
         val csvBuilder = StringBuilder()
-
-        val totalMatches = stats.totalWins + stats.totalLosses
-        val overallSummary = "総合戦績,${totalMatches}戦 ${stats.totalWins}勝 ${stats.totalLosses}敗 (勝率${String.format(Locale.US, "%.1f", stats.winRate)}%)"
-        csvBuilder.appendLine(overallSummary)
-
-        stats.partyStats.forEach { partyStat ->
-            val partyMatches = partyStat.wins + partyStat.losses
-            val partySummary = "パーティ${partyStat.index + 1}戦績,${partyMatches}戦 ${partyStat.wins}勝 ${partyStat.losses}敗 (勝率${String.format(Locale.US, "%.1f", partyStat.winRate)}%)"
-            csvBuilder.appendLine(partySummary)
+        csvBuilder.appendLine("総合戦績,${dm.history.records.size}戦 ${dm.history.totalWins}勝 ${dm.history.totalLosses}敗")
+        (0..2).forEach { idx ->
+            val pRecs = dm.history.records.filter { it.partyIndex == idx }
+            val pWins = pRecs.count { it.result == "WIN" }
+            csvBuilder.appendLine("パーティ${idx + 1}戦績,${pRecs.size}戦 ${pWins}勝 ${pRecs.size - pWins}敗")
         }
-
-        csvBuilder.appendLine("\n" + "\"戦闘終了時刻\",\"勝敗\",\"選択パーティ\",\"自分1\",\"自分2\",\"自分3\",\"自分4\",\"相手1\",\"相手2\",\"相手3\",\"相手4\"")
-
-        records.forEach { record ->
-            val partyName = "パーティ${record.partyIndex + 1}"
-            val my1 = record.myParty.getOrElse(0) { "" }
-            val my2 = record.myParty.getOrElse(1) { "" }
-            val my3 = record.myParty.getOrElse(2) { "" }
-            val my4 = record.myParty.getOrElse(3) { "" }
-            val en1 = record.enemyParty.getOrElse(0) { "" }
-            val en2 = record.enemyParty.getOrElse(1) { "" }
-            val en3 = record.enemyParty.getOrElse(2) { "" }
-            val en4 = record.enemyParty.getOrElse(3) { "" }
-            val line = "\"${record.timestamp}\",\"${record.result}\",\"$partyName\",\"$my1\",\"$my2\",\"$my3\",\"$my4\",\"$en1\",\"$en2\",\"$en3\",\"$en4\""
-            csvBuilder.appendLine(line)
+        csvBuilder.appendLine("\n\"戦闘終了時刻\",\"勝敗\",\"選択パーティ\",\"自分1\",\"自分2\",\"自分3\",\"自分4\",\"相手1\",\"相手2\",\"相手3\",\"相手4\"")
+        dm.history.records.forEach { r ->
+            csvBuilder.appendLine("\"${r.timestamp}\",\"${r.result}\",\"パーティ${r.partyIndex + 1}\",\"${r.myParty.getOrElse(0){""}}\",\"${r.myParty.getOrElse(1){""}}\",\"${r.myParty.getOrElse(2){""}}\",\"${r.myParty.getOrElse(3){""}}\",\"${r.enemyParty.getOrElse(0){""}}\",\"${r.enemyParty.getOrElse(1){""}}\",\"${r.enemyParty.getOrElse(2){""}}\",\"${r.enemyParty.getOrElse(3){""}}\"")
         }
-
-        csvContentToSave = csvBuilder.toString()
-        val suggestedFileName = "${fileName}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.csv"
-        createDocumentLauncher.launch(suggestedFileName)
+        csvContentToSave = csvBuilder.toString(); createDocumentLauncher.launch("${fileName}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.csv")
     }
 
-    private fun isValidFileName(name: String): Boolean {
-        if (name.isEmpty()) return false
-        val invalidChars = charArrayOf('\\', '/', ':', '*', '?', '"', '<', '>', '|', '.')
-        return name.none { it in invalidChars }
+    private fun showCalibrationSelectorDialog() {
+        val titles = arrayOf("パーティ選択画面", "VS画面", "勝利画面", "敗北画面"); val fileNames = arrayOf("base_party.png", "base_vs.png", "base_win.png", "base_lose.png"); val modes = arrayOf("party", "vs", "win", "lose")
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
+        for (i in titles.indices) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 10, 0, 10); gravity = Gravity.CENTER_VERTICAL; isClickable = true; setBackgroundResource(android.R.drawable.list_selector_background) }
+            val thumb = ImageView(this).apply { layoutParams = LinearLayout.LayoutParams(120, 120); scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF333333.toInt())
+                val file = File(filesDir, fileNames[i]); if (file.exists()) setImageBitmap(BitmapFactory.decodeFile(file.absolutePath)) else setImageResource(android.R.drawable.ic_menu_gallery)
+            }
+            row.addView(thumb); row.addView(TextView(this).apply { text = titles[i]; setPadding(20, 0, 0, 0); textSize = 16f; setTextColor(0xFFFFFFFF.toInt()) })
+            row.setOnClickListener {
+                AlertDialog.Builder(this@MainActivity).setTitle(titles[i]).setItems(arrayOf("画像をインポート", "画像を削除", "校正を開始")) { _, idx ->
+                    when (idx) {
+                        0 -> { pendingCalibrationFileName = fileNames[i]; pickImageLauncher.launch("image/*") }
+                        1 -> { if (File(filesDir, fileNames[i]).exists()) showDeleteImageConfirmDialog(fileNames[i]) }
+                        2 -> { if (File(filesDir, fileNames[i]).exists()) startActivity(Intent(this@MainActivity, CalibrationActivity::class.java).apply { putExtra("EXTRA_MODE", modes[i]); putExtra("EXTRA_FILE_NAME", fileNames[i]) }) else Toast.makeText(this@MainActivity, "先に画像をインポートしてください", Toast.LENGTH_SHORT).show() }
+                    }
+                }.show()
+            }
+            container.addView(row)
+        }
+        calibrationSelectorDialog = AlertDialog.Builder(this).setTitle("キャプチャー画面の校正").setView(container).setNegativeButton("閉じる", null).show()
     }
+
+    private fun showDeleteConfirmDialog(fileName: String) {
+        AlertDialog.Builder(this).setTitle("ファイルの削除").setMessage("「$fileName」を削除しますか？")
+            .setPositiveButton("削除") { _, _ -> if (File(filesDir, "$fileName.json").delete()) { Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show(); if (getCurrentFileName() == fileName) saveCurrentFileName("default_record"); refreshServiceAndUI() } }.setNegativeButton("キャンセル", null).show()
+    }
+
+    private fun showResetHistoryConfirmDialog(fileName: String) {
+        AlertDialog.Builder(this).setTitle("データのクリア").setMessage("「$fileName」の戦績データをすべて削除しますか？")
+            .setPositiveButton("クリア") { _, _ -> val dm = BattleDataManager(this); dm.loadHistory(fileName); dm.resetHistory(); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY }); Toast.makeText(this, "データをクリアしました", Toast.LENGTH_SHORT).show(); updateUI(MediaCaptureService.isRunning) }.setNegativeButton("キャンセル", null).show()
+    }
+
+    private fun refreshServiceAndUI() {
+        updateUI(MediaCaptureService.isRunning); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY })
+    }
+
+    private fun showDeleteImageConfirmDialog(fileName: String) {
+        AlertDialog.Builder(this).setTitle("画像を削除").setMessage("この画像を削除しますか？").setPositiveButton("削除") { _, _ -> if (File(filesDir, fileName).delete()) { Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show(); calibrationSelectorDialog?.dismiss(); showCalibrationSelectorDialog() } }.setNegativeButton("キャンセル", null).show()
+    }
+
+    private fun importImageForCalibration(uri: Uri, destFileName: String): Boolean {
+        return try { contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(File(filesDir, destFileName)).use { output -> input.copyTo(output) } }; true } catch (_: Exception) { false }
+    }
+
+    private fun showReadmeDialog() {
+        val scrollView = ScrollView(this); val textView = TextView(this).apply { text = getString(R.string.readme_content); textSize = 13f; setPadding(60, 40, 60, 40); setLineSpacing(0f, 1.2f); setTextColor("#CCCCCC".toColorInt()) }
+        scrollView.addView(textView); AlertDialog.Builder(this).setTitle(R.string.readme_title).setView(scrollView).setPositiveButton("閉じる", null).show()
+    }
+
+    override fun onStart() { super.onStart(); ContextCompat.registerReceiver(this, serviceStopReceiver, IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED), ContextCompat.RECEIVER_NOT_EXPORTED); updateUI(MediaCaptureService.isRunning) }
+    override fun onStop() { super.onStop(); unregisterReceiver(serviceStopReceiver) }
+    private fun startCaptureService(resultCode: Int, data: Intent, reset: Boolean) { val serviceIntent = Intent(this, MediaCaptureService::class.java).apply { putExtra("RESULT_CODE", resultCode); putExtra("DATA", data); putExtra("RESET_STATS", reset) }; ContextCompat.startForegroundService(this, serviceIntent); updateUI(true) }
+    private fun stopCaptureService() { stopService(Intent(this, MediaCaptureService::class.java)); updateUI(false) }
+    override fun onResume() { super.onResume(); updateUI(MediaCaptureService.isRunning) }
+    private fun generateDefaultFileName(): String = "record_${SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault()).format(Date())}"
+
+    private var pulseAnimation: ObjectAnimator? = null
+    private fun updateUI(isRunning: Boolean) {
+        if (isRunning) { binding.btnToggleService.apply { text = getString(R.string.btn_stop); backgroundTintList = ColorStateList.valueOf("#90D7EC".toColorInt()); strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) }; binding.cardCurrentFile.apply { strokeWidth = (2f * resources.displayMetrics.density).toInt(); strokeColor = "#90D7EC".toColorInt() }; startPulseAnimation() }
+        else { binding.btnToggleService.apply { text = getString(R.string.btn_rec); backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt()); strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) }; binding.cardCurrentFile.apply { strokeWidth = (1f * resources.displayMetrics.density).toInt(); strokeColor = "#444444".toColorInt() }; stopPulseAnimation() }
+        val currentName = getCurrentFileName(); binding.textCurrentFile.text = getString(R.string.file_name_ext_format, currentName)
+        val stats = BattleDataManager(this).apply { loadHistory(currentName) }.getStatistics()
+        binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate); binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses); binding.valTotalWinLoseMain.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
+    }
+
+    private fun startPulseAnimation() { if (pulseAnimation != null) return; pulseAnimation = ObjectAnimator.ofPropertyValuesHolder(binding.btnToggleService, PropertyValuesHolder.ofFloat("scaleX", 1.0f, 1.05f), PropertyValuesHolder.ofFloat("scaleY", 1.0f, 1.05f)).apply { duration = 800; repeatCount = ObjectAnimator.INFINITE; repeatMode = ObjectAnimator.REVERSE; start() } }
+    private fun stopPulseAnimation() { pulseAnimation?.cancel(); pulseAnimation = null; binding.btnToggleService.apply { scaleX = 1.0f; scaleY = 1.0f } }
+    private fun getCurrentFileName(): String = getSharedPreferences("NakamonPrefs", MODE_PRIVATE).getString("last_file_name", "default_record") ?: "default_record"
+    private fun saveCurrentFileName(name: String) = getSharedPreferences("NakamonPrefs", MODE_PRIVATE).edit { putString("last_file_name", name) }
+    private fun isValidFileName(name: String): Boolean = name.isNotEmpty() && name.none { it in charArrayOf('\\', '/', ':', '*', '?', '"', '<', '>', '|', '.') }
 
     private fun showCreateFileDialog() {
-        val editText = EditText(this)
-        val defaultName = generateDefaultFileName()
-        editText.setText(defaultName)
-        editText.selectAll()
-
+        val editText = EditText(this).apply {
+            setText(generateDefaultFileName())
+            selectAll()
+        }
         AlertDialog.Builder(this)
             .setTitle("新規ファイル名を入力")
             .setView(editText)
             .setPositiveButton("作成") { _, _ ->
                 val newName = editText.text.toString()
                 if (isValidFileName(newName)) {
-                    val dm = BattleDataManager(this)
-                    dm.currentFileName = newName
-                    dm.resetHistory()
+                    BattleDataManager(this).apply {
+                        currentFileName = newName
+                        resetHistory()
+                    }
                     saveCurrentFileName(newName)
                     refreshServiceAndUI()
-                    updateUI(MediaCaptureService.isRunning)
                     Toast.makeText(this, "「$newName」を作成しました", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this, getString(R.string.error_invalid_filename), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("キャンセル", null)
@@ -650,38 +373,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showRenameDialog(oldName: String) {
-        val editText = EditText(this)
-        editText.setText(oldName)
-        editText.selectAll()
-
-        AlertDialog.Builder(this)
-            .setTitle("新しい名前を入力")
-            .setView(editText)
-            .setPositiveButton("変更") { _, _ ->
-                val newName = editText.text.toString()
-                if (isValidFileName(newName) && newName != oldName) {
-                    val oldFile = File(filesDir, "$oldName.json")
-                    val newFile = File(filesDir, "$newName.json")
-
-                    if (oldFile.renameTo(newFile)) {
-                        if (getCurrentFileName() == oldName) {
-                            saveCurrentFileName(newName)
-                        }
-                        Toast.makeText(this, "名前を変更しました", Toast.LENGTH_SHORT).show()
-                        refreshServiceAndUI()
-                    } else {
-                        Toast.makeText(this, "変更に失敗しました", Toast.LENGTH_SHORT).show()
-                    }
-                } else if (!isValidFileName(newName)) {
-                    Toast.makeText(this, getString(R.string.error_invalid_filename), Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
+        val editText = EditText(this).apply { setText(oldName); selectAll() }
+        AlertDialog.Builder(this).setTitle("新しい名前を入力").setView(editText).setPositiveButton("変更") { _, _ -> val newName = editText.text.toString()
+            if (isValidFileName(newName) && newName != oldName) {
+                if (File(filesDir, "$oldName.json").renameTo(File(filesDir, "$newName.json"))) {
+                    if (getCurrentFileName() == oldName) saveCurrentFileName(newName); Toast.makeText(this, "名前を変更しました", Toast.LENGTH_SHORT).show(); refreshServiceAndUI()
+                } else Toast.makeText(this, "変更に失敗しました", Toast.LENGTH_SHORT).show()
+            } else Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
+        }.setNegativeButton("キャンセル", null).show()
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        finish()
-        return true
-    }
+    override fun onSupportNavigateUp(): Boolean { finish(); return true }
 }
