@@ -1,5 +1,3 @@
-import java.io.ByteArrayOutputStream
-
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -18,7 +16,6 @@ android {
     signingConfigs {
         getByName("debug") {
             // プロジェクトルートにあるdebug.keystoreを参照
-            // 注意: ターミナルで keytool コマンドを実行して作成しておく必要があります
             storeFile = file("../debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -35,6 +32,11 @@ android {
         versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ★APKサイズ削減：実機スマホに必要なアーキテクチャのみに絞り込む（x86系を除外）
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     buildTypes {
