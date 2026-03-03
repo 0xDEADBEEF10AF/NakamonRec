@@ -232,7 +232,7 @@ class MainActivity : AppCompatActivity() {
 
             val dm = BattleDataManager(this).apply { currentFileName = csvFileName; resetHistory() }
             var importedCount = 0
-            lines.drop(6).forEach { line -> 
+            lines.drop(5).forEach { line ->
                 val parts = line.split(",").map { it.trim().removeSurrounding("\"") }
                 if (parts.size >= 11) {
                     val timestamp = parts[0]; val result = parts[1]; val partyName = parts[2]
