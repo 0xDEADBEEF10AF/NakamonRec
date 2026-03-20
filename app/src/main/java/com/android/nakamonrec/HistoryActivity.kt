@@ -249,6 +249,9 @@ class HistoryActivity : AppCompatActivity() {
                     try {
                         assets.open("templates/${monsterData.fileName}").use { imageView.setImageBitmap(BitmapFactory.decodeStream(it)) }
                     } catch (_: Exception) { imageView.setImageResource(android.R.drawable.ic_menu_help) }
+                } else {
+                    // ★Viewのリサイクル対策：マスターデータに無い（「？」など）場合は明示的にクエスチョンマークを表示
+                    imageView.setImageResource(android.R.drawable.ic_menu_help)
                 }
                 return view
             }
