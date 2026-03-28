@@ -45,6 +45,44 @@
     <string name="rank_appearance_format">出現: %1$d回 (%2$s%%)</string>
     <string name="rank_win_rate_format">勝率: %1$s%%</string>
 
+    <!-- モード・フィルタ用 -->
+    <string name="mode_edit">編集モード</string>
+    <string name="mode_filter">フィルタモード</string>
+    <string name="filter_all">ALL</string>
+    <string name="filter_win_only">WIN</string>
+    <string name="filter_lose_only">LOSE</string>
+    <string name="label_filtering_enemy">Filter:</string>
+    <string name="btn_clear_filter">CLEAR</string>
+    <string name="msg_filter_added">フィルタに追加: %1$s</string>
+    <string name="msg_filter_full">フィルタは最大4体までです</string>
+    <string name="msg_filter_all">全ての戦績を表示</string>
+    <string name="msg_filter_party_format">パーティ%1$dの戦績でフィルタ中</string>
+    <string name="dialog_title_result_filter">勝敗フィルタ</string>
+    <string name="label_filter_win_rate">FILTER WIN RATE</string>
+
+    <!-- 分析ダイアログ用 -->
+    <string name="analysis_label_all">全体</string>
+    <string name="analysis_label_party_format">パーティ%1$d</string>
+    <string name="analysis_title_appearance_format">%1$s: 敵モンスター出現率</string>
+    <string name="analysis_title_win_rate_worst_format">%1$s: 勝率ワースト</string>
+    <string name="btn_close">閉じる</string>
+    <string name="btn_sort_appearance">出現数の多い順</string>
+    <string name="btn_sort_win_rate_worst">勝率の低い順</string>
+    <string name="msg_no_data">データがありません</string>
+
+    <!-- レコード編集用 -->
+    <string name="edit_record_title">レコードの編集</string>
+    <string name="edit_option_toggle_result">勝敗を修正 (%1$s)</string>
+    <string name="edit_option_change_party">選択パーティを修正 (現在: P%1$d)</string>
+    <string name="edit_option_change_monsters">使用モンスターを修正</string>
+    <string name="edit_option_delete">この1戦を削除</string>
+    <string name="edit_option_insert_after">この1戦の次に戦績を追加</string>
+    <string name="edit_party_title">正しいパーティを選択</string>
+    <string name="label_party_name_format">パーティ %1$d</string>
+    <string name="edit_monster_title">修正するモンスターをタップ</string>
+    <string name="picker_monster_title">モンスターを選択</string>
+    <string name="msg_record_added">レコードを追加しました</string>
+
     <!-- 校正用ガイド -->
     <string name="calibrate_guide_party">パーティ枠の左上角の位置に枠を合わせてください</string>
     <string name="calibrate_guide_vs">「VS」ロゴと、各モンスターの顔の位置に枠を合わせてください</string>

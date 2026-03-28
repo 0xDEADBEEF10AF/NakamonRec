@@ -15,8 +15,18 @@ import androidx.recyclerview.widget.RecyclerView
 class BattleHistoryAdapter(
     private var records: MutableList<BattleRecord>,
     private val monsterMaster: List<MonsterData>,
-    private val onLongClick: (Int) -> Unit
+    private val onLongClick: (Int) -> Unit,
+    private val onResultClick: () -> Unit,
+    private val onMonsterClick: (String) -> Unit
 ) : RecyclerView.Adapter<BattleHistoryAdapter.ViewHolder>() {
+
+    var isFilterMode: Boolean = false
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyItemRangeChanged(0, itemCount)
+            }
+        }
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val result: TextView = view.findViewById(R.id.textResult)
@@ -26,13 +36,11 @@ class BattleHistoryAdapter(
         val layoutEnemyMonsters: LinearLayout = view.findViewById(R.id.layoutEnemyMonsters)
     }
 
-    // データをアニメーション付きで更新するためのメソッド
     fun updateData(newRecords: List<BattleRecord>) {
         val diffCallback = object : DiffUtil.Callback() {
             override fun getOldListSize(): Int = records.size
             override fun getNewListSize(): Int = newRecords.size
             override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-                // タイムスタンプと内容が一致すれば同じアイテムとみなす
                 return records[oldItemPosition].timestamp == newRecords[newItemPosition].timestamp
             }
             override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
@@ -58,16 +66,23 @@ class BattleHistoryAdapter(
         holder.party.text = context.getString(R.string.party_label_format, record.partyIndex + 1)
         holder.time.text = record.timestamp
 
-        setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty)
-        setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty)
-        
-        holder.itemView.setOnLongClickListener {
-            onLongClick(position)
-            true
+        // モードに応じたクリック設定
+        if (isFilterMode) {
+            holder.result.setOnClickListener { onResultClick() }
+            holder.itemView.setOnLongClickListener(null)
+        } else {
+            holder.result.setOnClickListener(null)
+            holder.itemView.setOnLongClickListener {
+                onLongClick(position)
+                true
+            }
         }
+
+        setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, false)
+        setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, isFilterMode)
     }
 
-    private fun setupMonsterIcons(context: Context, layout: LinearLayout, monsterNames: List<String>) {
+    private fun setupMonsterIcons(context: Context, layout: LinearLayout, monsterNames: List<String>, clickable: Boolean) {
         layout.removeAllViews()
         val iconSize = (28 * context.resources.displayMetrics.density).toInt()
 
@@ -89,6 +104,15 @@ class BattleHistoryAdapter(
             } catch (_: Exception) {
                 imageView.setImageResource(android.R.drawable.ic_menu_help)
             }
+
+            if (clickable && name.isNotEmpty()) {
+                imageView.setOnClickListener { onMonsterClick(name) }
+                imageView.setBackgroundResource(android.R.drawable.editbox_dropdown_light_frame)
+            } else {
+                imageView.setOnClickListener(null)
+                imageView.background = null
+            }
+
             layout.addView(imageView)
         }
     }

@@ -17,7 +17,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import androidx.core.graphics.toColorInt
@@ -31,6 +30,10 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHistoryBinding
     private lateinit var dataManager: BattleDataManager
     private var filterPartyIndex: Int = -1 // -1: All, 0: P1, 1: P2, 2: P3
+    private var filterResult: String? = null // null: All, "WIN", "LOSE"
+    private val filterMonsters = mutableListOf<String>()
+    private var isFilterMode = false
+    
     private lateinit var historyAdapter: BattleHistoryAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +42,7 @@ class HistoryActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.title = "戦績"
+        supportActionBar?.title = getString(R.string.title_history)
 
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
         val currentFile = prefs.getString("last_file_name", "default_record") ?: "default_record"
@@ -50,7 +53,20 @@ class HistoryActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
         binding.btnAnalyze.setOnClickListener { showAnalysisDialog() }
 
-        // フィルタ用クリックイベント
+        // モード切替ボタンの初期化 (最初はEditモードなのでFilterアイコンを出す)
+        binding.btnModeToggle.text = ""
+        binding.btnModeToggle.setIconResource(android.R.drawable.ic_menu_sort_by_size)
+        binding.btnModeToggle.setOnClickListener { toggleMode() }
+
+        // フィルタ解除ボタン
+        binding.btnClearFilter.setOnClickListener {
+            filterMonsters.clear()
+            filterResult = null
+            updateFilterStatusUI()
+            setupUI()
+        }
+
+        // 既存のパーティフィルタ
         binding.cardTotal.setOnClickListener { setFilter(-1) }
         binding.cardP1.setOnClickListener { setFilter(0) }
         binding.cardP2.setOnClickListener { setFilter(1) }
@@ -61,12 +77,18 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun initRecyclerView() {
-        historyAdapter = BattleHistoryAdapter(mutableListOf(), dataManager.monsterMaster) { position ->
-            val allRecords = dataManager.history.records
-            val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
-            val realIndex = allRecords.indexOf(filteredRecords[position])
-            showEditRecordDialog(realIndex)
-        }
+        historyAdapter = BattleHistoryAdapter(
+            mutableListOf(),
+            dataManager.monsterMaster,
+            onLongClick = { position ->
+                val allRecords = dataManager.history.records
+                val filtered = getFilteredRecords(allRecords)
+                val realIndex = allRecords.indexOf(filtered[position])
+                showEditRecordDialog(realIndex)
+            },
+            onResultClick = { showResultFilterDialog() },
+            onMonsterClick = { monsterName -> addMonsterFilter(monsterName) }
+        )
         binding.recyclerViewHistory.apply {
             val lm = LinearLayoutManager(this@HistoryActivity)
             lm.reverseLayout = true
@@ -76,55 +98,195 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleMode() {
+        isFilterMode = !isFilterMode
+        historyAdapter.isFilterMode = isFilterMode
+        
+        // ボタンには「次に切り替わるモード」のアイコンを表示する
+        if (isFilterMode) {
+            binding.btnModeToggle.setIconResource(android.R.drawable.ic_menu_edit)
+        } else {
+            binding.btnModeToggle.setIconResource(android.R.drawable.ic_menu_sort_by_size)
+        }
+        // モード切替時に統計表示を更新
+        setupUI()
+    }
+
+    private fun addMonsterFilter(name: String) {
+        if (filterMonsters.contains(name)) return
+        if (filterMonsters.size >= 4) return
+        
+        filterMonsters.add(name)
+        updateFilterStatusUI()
+        setupUI()
+    }
+
+    private fun updateFilterStatusUI() {
+        if (filterMonsters.isEmpty() && filterResult == null) {
+            binding.layoutFilterStatus.visibility = View.GONE
+            return
+        }
+        binding.layoutFilterStatus.visibility = View.VISIBLE
+        binding.layoutFilterChips.removeAllViews()
+        
+        // 勝敗フィルタの状態もチップとして表示
+        filterResult?.let { result ->
+            val textView = TextView(this).apply {
+                text = if (result == "WIN") "WIN" else "LOSE"
+                setTextColor(Color.YELLOW)
+                textSize = 10f
+                setBackgroundResource(R.drawable.bg_filter_bar)
+                setPadding(16, 4, 16, 4)
+                val params = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                params.setMargins(4, 0, 4, 0)
+                layoutParams = params
+                setOnClickListener {
+                    filterResult = null
+                    updateFilterStatusUI()
+                    setupUI()
+                }
+            }
+            binding.layoutFilterChips.addView(textView)
+        }
+
+        filterMonsters.forEach { name ->
+            val textView = TextView(this).apply {
+                text = name
+                setTextColor(Color.WHITE)
+                textSize = 10f
+                setBackgroundResource(R.drawable.bg_filter_bar) // 簡易的な背景
+                setPadding(16, 4, 16, 4)
+                val params = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                params.setMargins(4, 0, 4, 0)
+                layoutParams = params
+                setOnClickListener {
+                    filterMonsters.remove(name)
+                    updateFilterStatusUI()
+                    setupUI()
+                }
+            }
+            binding.layoutFilterChips.addView(textView)
+        }
+    }
+
+    private fun showResultFilterDialog() {
+        val items = arrayOf(getString(R.string.filter_all), getString(R.string.filter_win_only), getString(R.string.filter_lose_only))
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_title_result_filter)
+            .setItems(items) { _, which ->
+                filterResult = when (which) {
+                    1 -> "WIN"
+                    2 -> "LOSE"
+                    else -> null
+                }
+                updateFilterStatusUI()
+                setupUI()
+            }
+            .show()
+    }
+
     private fun setFilter(index: Int) {
         if (filterPartyIndex == index) return
-        
-        // レイアウト変更のアニメーションを開始
         val transition = AutoTransition().apply { duration = 250 }
         TransitionManager.beginDelayedTransition(binding.root as ViewGroup, transition)
         
         filterPartyIndex = index
         setupUI()
-        
-        val msg = if (index == -1) "全ての戦績を表示" else "パーティ${index + 1}の戦績でフィルタ中"
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun getFilteredRecords(allRecords: List<BattleRecord>): List<BattleRecord> {
+        return allRecords.filter { record ->
+            val matchParty = filterPartyIndex == -1 || record.partyIndex == filterPartyIndex
+            val matchResult = filterResult == null || record.result == filterResult
+            val matchMonsters = if (filterMonsters.isEmpty()) true else {
+                filterMonsters.all { fName -> record.enemyParty.contains(fName) }
+            }
+            matchParty && matchResult && matchMonsters
+        }
     }
 
     private fun setupUI() {
-        val stats = dataManager.getStatistics()
         val allRecords = dataManager.history.records
+        
+        // --- 1. 左上カード (TOTAL / FILTER) の更新 ---
+        if (isFilterMode) {
+            // フィルタモード：フィルタ条件（勝敗・モンスター）に一致する「全パーティ合計」の統計
+            val filteredTotalRecords = allRecords.filter { record ->
+                (filterResult == null || record.result == filterResult) &&
+                (filterMonsters.isEmpty() || filterMonsters.all { it in record.enemyParty })
+            }
+            val wins = filteredTotalRecords.count { it.result == "WIN" }
+            val losses = filteredTotalRecords.count { it.result == "LOSE" }
+            val totalCount = wins + losses
+            val rate = if (totalCount > 0) (wins.toDouble() / totalCount * 100.0) else 0.0
 
-        updateCardSelectionUI()
+            binding.textTotalLabel.text = getString(R.string.label_filter_win_rate)
+            binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", rate)
+            binding.valTotalCount.text = getString(R.string.label_matches_format, totalCount)
+            binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, wins, losses)
+        } else {
+            // 編集モード：常に絶対的な全体統計を表示
+            val stats = dataManager.getStatistics()
+            binding.textTotalLabel.text = getString(R.string.label_total_win_rate)
+            binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
+            binding.valTotalCount.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
+            binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
+        }
 
-        // 総合戦績
-        binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
-        binding.valTotalCount.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
-        binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
-
-        // 各パーティ戦績
-        stats.partyStats.forEach { party ->
-            val winRateStr = String.format(Locale.US, "%.1f%%", party.winRate)
-            val usageRateStr = getString(R.string.label_usage_short_format, String.format(Locale.US, "%.1f%%", party.usageRate))
-            val winLoseStr = getString(R.string.label_win_lose_format, party.wins, party.losses)
+        // --- 2. 各パーティカードの更新 ---
+        val globalStats = dataManager.getStatistics()
+        for (i in 0..2) {
+            val partyRecords = allRecords.filter { it.partyIndex == i }
             
-            val latestRecord = allRecords.lastOrNull { it.partyIndex == party.index }
+            val (wins, losses, rate) = if (isFilterMode) {
+                // フィルタモード：このパーティのうち、条件に一致するものを抽出
+                val filtered = partyRecords.filter { record ->
+                    (filterResult == null || record.result == filterResult) &&
+                    (filterMonsters.isEmpty() || filterMonsters.all { it in record.enemyParty })
+                }
+                val w = filtered.count { it.result == "WIN" }
+                val l = filtered.count { it.result == "LOSE" }
+                val t = w + l
+                val r = if (t > 0) (w.toDouble() / t * 100.0) else 0.0
+                Triple(w, l, r)
+            } else {
+                // 編集モード：このパーティの全期間戦績
+                val w = partyRecords.count { it.result == "WIN" }
+                val l = partyRecords.count { it.result == "LOSE" }
+                val t = w + l
+                val r = if (t > 0) (w.toDouble() / t * 100.0) else 0.0
+                Triple(w, l, r)
+            }
+
+            val rateStr = String.format(Locale.US, "%.1f%%", rate)
+            val winLoseStr = getString(R.string.label_win_lose_format, wins, losses)
+            val partyStat = globalStats.partyStats.find { it.index == i }
+            val usageRateStr = getString(R.string.label_usage_short_format, String.format(Locale.US, "%.1f%%", partyStat?.usageRate ?: 0.0))
+
+            val latestRecord = allRecords.lastOrNull { it.partyIndex == i }
             val myParty = latestRecord?.myParty ?: listOf("", "", "", "")
 
-            when (party.index) {
+            when (i) {
                 0 -> {
-                    binding.valP1Rate.text = winRateStr
+                    binding.valP1Rate.text = rateStr
                     binding.valP1Usage.text = usageRateStr
                     binding.valP1WinLoseShort.text = winLoseStr
                     updatePartyIcons(myParty, listOf(binding.imgP1M1, binding.imgP1M2, binding.imgP1M3, binding.imgP1M4))
                 }
                 1 -> {
-                    binding.valP2Rate.text = winRateStr
+                    binding.valP2Rate.text = rateStr
                     binding.valP2Usage.text = usageRateStr
                     binding.valP2WinLoseShort.text = winLoseStr
                     updatePartyIcons(myParty, listOf(binding.imgP2M1, binding.imgP2M2, binding.imgP2M3, binding.imgP2M4))
                 }
                 2 -> {
-                    binding.valP3Rate.text = winRateStr
+                    binding.valP3Rate.text = rateStr
                     binding.valP3Usage.text = usageRateStr
                     binding.valP3WinLoseShort.text = winLoseStr
                     updatePartyIcons(myParty, listOf(binding.imgP3M1, binding.imgP3M2, binding.imgP3M3, binding.imgP3M4))
@@ -132,21 +294,19 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        updateTrendsGraph(allRecords)
-
-        // リストのフィルタリング
-        val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
-        historyAdapter.updateData(filteredRecords)
+        // --- 3. リストとグラフの更新 ---
+        val filteredRecordsForList = getFilteredRecords(allRecords)
+        updateTrendsGraph(filteredRecordsForList)
+        historyAdapter.updateData(filteredRecordsForList)
+        updateCardSelectionUI()
     }
 
-    private fun updateTrendsGraph(allRecords: List<BattleRecord>) {
-        val targetRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
+    private fun updateTrendsGraph(targetRecords: List<BattleRecord>) {
         if (targetRecords.size < 2) {
             binding.winRateGraph.visibility = View.INVISIBLE
             return
         }
         binding.winRateGraph.visibility = View.VISIBLE
-        
         val movingRates = mutableListOf<Double>()
         val windowSize = 20
         targetRecords.forEachIndexed { i, _ ->
@@ -159,7 +319,6 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun updateCardSelectionUI() {
-        // 全カードに対して、選択状態に応じた「縁取り」と「ポップアップ」を適用
         setCardStyle(binding.cardTotal, filterPartyIndex == -1)
         setCardStyle(binding.cardP1, filterPartyIndex == 0)
         setCardStyle(binding.cardP2, filterPartyIndex == 1)
@@ -169,12 +328,12 @@ class HistoryActivity : AppCompatActivity() {
     private fun setCardStyle(card: MaterialCardView, isSelected: Boolean) {
         val density = resources.displayMetrics.density
         if (isSelected) {
-            // 選択時: 縁取り(3dp)を出し、わずかに拡大
+            // 選択時：青色の太枠(3dp)とわずかに拡大
             card.strokeWidth = (3f * density).toInt()
+            card.strokeColor = "#AAAAAA".toColorInt()
             card.animate().scaleX(1.05f).scaleY(1.05f).setDuration(200).start()
             card.cardElevation = 12f * density
         } else {
-            // 非選択時: 縁取りを消し、等倍に戻す
             card.strokeWidth = 0
             card.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start()
             card.cardElevation = 4f * density
@@ -204,11 +363,9 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun showAnalysisDialog() {
         val allRecords = dataManager.history.records
-        val filteredRecords = if (filterPartyIndex == -1) allRecords else allRecords.filter { it.partyIndex == filterPartyIndex }
-        if (filteredRecords.isEmpty()) {
-            Toast.makeText(this, "データがありません", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val filteredRecords = getFilteredRecords(allRecords)
+        if (filteredRecords.isEmpty()) return
+        
         val appearanceCount = mutableMapOf<String, Int>()
         val winAgainstCount = mutableMapOf<String, Int>()
         filteredRecords.forEach { record ->
@@ -217,11 +374,11 @@ class HistoryActivity : AppCompatActivity() {
                 if (record.result == "WIN") winAgainstCount[name] = winAgainstCount.getOrDefault(name, 0) + 1
             }
         }
-        val totalBattles = filteredRecords.size
+        val totalCount = filteredRecords.size
         val rankingList = appearanceCount.map { (name, count) ->
             val wins = winAgainstCount.getOrDefault(name, 0)
             val winRate = if (count > 0) (wins.toDouble() / count * 100) else 0.0
-            val appearanceRate = (count.toDouble() / totalBattles * 100)
+            val appearanceRate = (count.toDouble() / totalCount * 100)
             MonsterRankData(name, count, appearanceRate, winRate)
         }.sortedByDescending { it.count }.toMutableList()
 
@@ -250,19 +407,18 @@ class HistoryActivity : AppCompatActivity() {
                         assets.open("templates/${monsterData.fileName}").use { imageView.setImageBitmap(BitmapFactory.decodeStream(it)) }
                     } catch (_: Exception) { imageView.setImageResource(android.R.drawable.ic_menu_help) }
                 } else {
-                    // ★Viewのリサイクル対策：マスターデータに無い（「？」など）場合は明示的にクエスチョンマークを表示
                     imageView.setImageResource(android.R.drawable.ic_menu_help)
                 }
                 return view
             }
         }
         listView.adapter = adapter
-        val titlePrefix = if (filterPartyIndex == -1) "全体" else "パーティ${filterPartyIndex + 1}"
+        val titlePrefix = if (filterPartyIndex == -1) getString(R.string.analysis_label_all) else getString(R.string.analysis_label_party_format, filterPartyIndex + 1)
         val dialog = AlertDialog.Builder(this)
-            .setTitle("$titlePrefix: 敵モンスター出現率")
+            .setTitle(getString(R.string.analysis_title_appearance_format, titlePrefix))
             .setView(listView)
-            .setPositiveButton("閉じる", null)
-            .setNeutralButton("勝率の低い順", null)
+            .setPositiveButton(R.string.btn_close, null)
+            .setNeutralButton(R.string.btn_sort_win_rate_worst, null)
             .create()
         dialog.setOnShowListener {
             val sortButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
@@ -270,12 +426,12 @@ class HistoryActivity : AppCompatActivity() {
             sortButton.setOnClickListener {
                 if (sortedByAppearance) {
                     rankingList.sortBy { it.winRate }
-                    sortButton.text = "出現数の多い順"
-                    dialog.setTitle("$titlePrefix: 勝率ワースト")
+                    sortButton.text = getString(R.string.btn_sort_appearance)
+                    dialog.setTitle(getString(R.string.analysis_title_win_rate_worst_format, titlePrefix))
                 } else {
                     rankingList.sortByDescending { it.count }
-                    sortButton.text = "勝率の低い順"
-                    dialog.setTitle("$titlePrefix: 敵モンスター出現率")
+                    sortButton.text = getString(R.string.btn_sort_win_rate_worst)
+                    dialog.setTitle(getString(R.string.analysis_title_appearance_format, titlePrefix))
                 }
                 sortedByAppearance = !sortedByAppearance
                 adapter.notifyDataSetChanged()
@@ -289,14 +445,14 @@ class HistoryActivity : AppCompatActivity() {
     private fun showEditRecordDialog(position: Int) {
         val record = dataManager.history.records[position]
         val options = arrayOf(
-            "勝敗を修正 (${if (record.result == "WIN") "→LOSE" else "→WIN"})",
-            "選択パーティを修正 (現在: P${record.partyIndex + 1})",
-            "使用モンスターを修正",
-            "この1戦を削除",
-            "この1戦の次に戦績を追加"
+            getString(R.string.edit_option_toggle_result, if (record.result == "WIN") "→LOSE" else "→WIN"),
+            getString(R.string.edit_option_change_party, record.partyIndex + 1),
+            getString(R.string.edit_option_change_monsters),
+            getString(R.string.edit_option_delete),
+            getString(R.string.edit_option_insert_after)
         )
         AlertDialog.Builder(this)
-            .setTitle("レコードの編集")
+            .setTitle(R.string.edit_record_title)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> toggleResult(position)
@@ -309,13 +465,17 @@ class HistoryActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showPartyEditSelector(position: Int) {
-        val parties = arrayOf("パーティ 1", "パーティ 2", "パーティ 3")
+    private fun showPartyEditSelector(recordPos: Int) {
+        val parties = arrayOf(
+            getString(R.string.label_party_name_format, 1),
+            getString(R.string.label_party_name_format, 2),
+            getString(R.string.label_party_name_format, 3)
+        )
         AlertDialog.Builder(this)
-            .setTitle("正しいパーティを選択")
+            .setTitle(R.string.edit_party_title)
             .setItems(parties) { _, which ->
-                val record = dataManager.history.records[position]
-                updateAndSave(position, record.copy(partyIndex = which))
+                val record = dataManager.history.records[recordPos]
+                updateAndSave(recordPos, record.copy(partyIndex = which))
             }
             .show()
     }
@@ -330,7 +490,7 @@ class HistoryActivity : AppCompatActivity() {
         }
         scroll.addView(container)
         val dialog = AlertDialog.Builder(this)
-            .setTitle("修正するモンスターをタップ")
+            .setTitle(R.string.edit_monster_title)
             .setView(scroll)
             .create()
         val allMonsters = record.myParty + record.enemyParty
@@ -403,7 +563,7 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         val dialog = AlertDialog.Builder(this)
-            .setTitle("モンスターを選択")
+            .setTitle(R.string.picker_monster_title)
             .setView(gridView)
             .create()
         gridView.setOnItemClickListener { _, _, position, _ ->
@@ -466,7 +626,6 @@ class HistoryActivity : AppCompatActivity() {
             startService(intent)
         }
         setupUI()
-        Toast.makeText(this, "レコードを追加しました", Toast.LENGTH_SHORT).show()
         showEditRecordDialog(position + 1)
     }
 
