@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 戦績リスト項目 (大画面用) -->
+    <dimen name="battle_history_icon_size">28dp</dimen>
+    <dimen name="battle_history_text_result">16sp</dimen>
+    <dimen name="battle_history_text_sub">12sp</dimen>
+    <dimen name="battle_history_side_width_left">60dp</dimen>
+    <dimen name="battle_history_side_width_right">80dp</dimen>
+
+    <!-- パーティサマリー (大画面用) -->
+    <dimen name="party_summary_icon_size">22dp</dimen>
+    <dimen name="party_summary_text_rate">18sp</dimen>
+    <dimen name="top_header_height">140dp</dimen>
+
+    <!-- メイン画面 (大画面用) -->
+    <dimen name="main_filename_text_size">16sp</dimen>
+    <dimen name="main_summary_rate_text_size">18sp</dimen>
+    <dimen name="main_summary_text_size">16sp</dimen>
+    <dimen name="main_summary_padding">16dp</dimen>
+    <dimen name="main_summary_gap">12dp</dimen>
+</resources>

@@ -16,7 +16,7 @@
 
         <!-- 左側: 勝敗とパーティ番号 (縦並び) -->
         <LinearLayout
-            android:layout_width="60dp"
+            android:layout_width="@dimen/battle_history_side_width_left"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center">
@@ -25,14 +25,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textStyle="bold"
-                android:textSize="16sp"
+                android:textSize="@dimen/battle_history_text_result"
                 android:textColor="#FFFFFF" />
             <TextView
                 android:id="@+id/textParty"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textStyle="bold"
-                android:textSize="12sp"
+                android:textSize="@dimen/battle_history_text_sub"
                 android:textColor="#FFFFFF" />
         </LinearLayout>
 
@@ -42,8 +42,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginStart="8dp">
+            android:gravity="center"
+            android:layout_marginHorizontal="4dp">
 
             <LinearLayout
                 android:id="@+id/layoutMyMonsters"
@@ -56,8 +56,8 @@
                 android:layout_height="wrap_content"
                 android:text="@string/label_vs"
                 android:textColor="#FFFFFF"
-                android:layout_marginHorizontal="4dp"
-                android:textSize="12sp"
+                android:layout_marginHorizontal="2dp"
+                android:textSize="@dimen/battle_history_text_sub"
                 android:textStyle="bold" />
 
             <LinearLayout
@@ -70,13 +70,13 @@
         <!-- 右側: 日時 (2行表示想定) -->
         <TextView
             android:id="@+id/textTimestamp"
-            android:layout_width="80dp"
+            android:layout_width="@dimen/battle_history_side_width_right"
             android:layout_height="wrap_content"
             android:gravity="end"
             android:textStyle="bold"
-            android:textSize="12sp"
+            android:textSize="@dimen/battle_history_text_sub"
             android:textColor="#FFFFFF"
-            android:layout_marginStart="4dp" />
+            android:layout_marginStart="2dp" />
 
     </LinearLayout>
 </androidx.cardview.widget.CardView>

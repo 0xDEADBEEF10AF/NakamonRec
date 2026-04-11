@@ -84,12 +84,12 @@ class BattleHistoryAdapter(
 
     private fun setupMonsterIcons(context: Context, layout: LinearLayout, monsterNames: List<String>, clickable: Boolean) {
         layout.removeAllViews()
-        val iconSize = (28 * context.resources.displayMetrics.density).toInt()
+        val iconSize = context.resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
 
         monsterNames.forEach { name ->
             val imageView = ImageView(context)
             val params = LinearLayout.LayoutParams(iconSize, iconSize)
-            params.setMargins(2, 0, 2, 0)
+            params.setMargins(1, 0, 1, 0)
             imageView.layoutParams = params
             imageView.scaleType = ImageView.ScaleType.CENTER_CROP
 

@@ -11,7 +11,7 @@
     <LinearLayout
         android:id="@+id/layoutTopHeader"
         android:layout_width="match_parent"
-        android:layout_height="140dp"
+        android:layout_height="@dimen/top_header_height"
         android:layout_marginTop="48dp"
         android:layout_marginHorizontal="8dp"
         android:orientation="horizontal"
@@ -38,7 +38,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:padding="12dp"
+                android:padding="8dp"
                 android:gravity="center">
 
                 <TextView
@@ -47,7 +47,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/label_total_win_rate"
                     android:textColor="#AAAAAA"
-                    android:textSize="11sp"
+                    android:textSize="10sp"
                     android:textStyle="bold"
                     android:letterSpacing="0.1"/>
 
@@ -56,7 +56,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="#F09199"
-                    android:textSize="28sp"
+                    android:textSize="24sp"
                     android:textStyle="bold"
                     android:text="@string/status_none"/>
 
@@ -123,7 +123,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginHorizontal="8dp"
+        android:layout_marginHorizontal="4dp"
         android:layout_marginTop="4dp"
         android:baselineAligned="false"
         app:layout_constraintTop_toBottomOf="@id/layoutTopHeader"
@@ -148,21 +148,21 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="8dp"
+                android:padding="4dp"
                 android:gravity="center">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p1" android:textColor="#FFFFFF" android:textSize="12sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p1" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold"/>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center"
-                    android:layout_marginVertical="6dp">
-                    <ImageView android:id="@+id/imgP1M1" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
-                    <ImageView android:id="@+id/imgP1M2" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
-                    <ImageView android:id="@+id/imgP1M3" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
-                    <ImageView android:id="@+id/imgP1M4" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
+                    android:layout_marginVertical="4dp">
+                    <ImageView android:id="@+id/imgP1M1" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
+                    <ImageView android:id="@+id/imgP1M2" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
+                    <ImageView android:id="@+id/imgP1M3" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
+                    <ImageView android:id="@+id/imgP1M4" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
                 </LinearLayout>
-                <TextView android:id="@+id/valP1Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="18sp" android:textStyle="bold" android:text="@string/status_none"/>
+                <TextView android:id="@+id/valP1Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="@dimen/party_summary_text_rate" android:textStyle="bold" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP1Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP1WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
@@ -186,21 +186,21 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="8dp"
+                android:padding="4dp"
                 android:gravity="center">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p2" android:textColor="#FFFFFF" android:textSize="12sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p2" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold"/>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center"
-                    android:layout_marginVertical="6dp">
-                    <ImageView android:id="@+id/imgP2M1" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
-                    <ImageView android:id="@+id/imgP2M2" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
-                    <ImageView android:id="@+id/imgP2M3" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
-                    <ImageView android:id="@+id/imgP2M4" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
+                    android:layout_marginVertical="4dp">
+                    <ImageView android:id="@+id/imgP2M1" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
+                    <ImageView android:id="@+id/imgP2M2" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
+                    <ImageView android:id="@+id/imgP2M3" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
+                    <ImageView android:id="@+id/imgP2M4" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
                 </LinearLayout>
-                <TextView android:id="@+id/valP2Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="18sp" android:textStyle="bold" android:text="@string/status_none"/>
+                <TextView android:id="@+id/valP2Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="@dimen/party_summary_text_rate" android:textStyle="bold" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP2Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP2WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
@@ -224,21 +224,21 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="8dp"
+                android:padding="4dp"
                 android:gravity="center">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p3" android:textColor="#FFFFFF" android:textSize="12sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p3" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold"/>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center"
-                    android:layout_marginVertical="6dp">
-                    <ImageView android:id="@+id/imgP3M1" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
-                    <ImageView android:id="@+id/imgP3M2" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
-                    <ImageView android:id="@+id/imgP3M3" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
-                    <ImageView android:id="@+id/imgP3M4" android:layout_width="22dp" android:layout_height="22dp" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
+                    android:layout_marginVertical="4dp">
+                    <ImageView android:id="@+id/imgP3M1" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
+                    <ImageView android:id="@+id/imgP3M2" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
+                    <ImageView android:id="@+id/imgP3M3" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
+                    <ImageView android:id="@+id/imgP3M4" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
                 </LinearLayout>
-                <TextView android:id="@+id/valP3Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="18sp" android:textStyle="bold" android:text="@string/status_none"/>
+                <TextView android:id="@+id/valP3Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="@dimen/party_summary_text_rate" android:textStyle="bold" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP3Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
                 <TextView android:id="@+id/valP3WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>

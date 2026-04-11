@@ -52,7 +52,7 @@
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardCurrentFile"
             android:layout_width="0dp"
-            android:layout_height="64dp"
+            android:layout_height="56dp"
             android:layout_weight="9"
             android:layout_margin="4dp"
             android:clickable="true"
@@ -70,20 +70,22 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="12dp"
                 app:drawableStartCompat="@android:drawable/ic_menu_save"
-                android:drawablePadding="12dp"
+                android:drawablePadding="8dp"
                 app:drawableTint="#AAAAAA"
                 android:textColor="#FFFFFF"
-                android:textSize="16sp"
+                android:textSize="@dimen/main_filename_text_size"
                 android:textStyle="bold"
+                android:singleLine="true"
+                android:ellipsize="middle"
                 tools:text="default_record.json" />
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnCalibrate"
             android:layout_width="0dp"
-            android:layout_height="64dp"
+            android:layout_height="56dp"
             android:layout_weight="1.5"
             android:layout_margin="4dp"
             android:clickable="true"
@@ -156,7 +158,7 @@
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnShowHistory"
             android:layout_width="0dp"
-            android:layout_height="64dp"
+            android:layout_height="56dp"
             android:layout_weight="9"
             android:layout_margin="4dp"
             android:clickable="true"
@@ -170,54 +172,66 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="horizontal"
-                android:paddingHorizontal="16dp"
-                android:gravity="center_vertical">
+                android:paddingHorizontal="@dimen/main_summary_padding"
+                android:gravity="center">
 
-                <!-- 修正: gravityをcenter_verticalに戻し、視覚的な高さを中央に揃える -->
                 <TextView
                     android:id="@+id/valTotalRateMain"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     app:drawableStartCompat="@android:drawable/ic_menu_sort_by_size"
-                    android:drawablePadding="12dp"
+                    android:drawablePadding="4dp"
                     app:drawableTint="#FFFFFF"
                     android:textColor="#F09199"
-                    android:textSize="18sp"
+                    android:textSize="@dimen/main_summary_rate_text_size"
                     android:textStyle="bold"
-                    android:gravity="center_vertical"
+                    android:gravity="center"
                     android:includeFontPadding="false"
-                    tools:text="--.-%" />
+                    app:autoSizeTextType="uniform"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeMaxTextSize="@dimen/main_summary_rate_text_size"
+                    android:lines="1"
+                    tools:text="100.0%" />
 
                 <TextView
                     android:id="@+id/valTotalCountMain"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
                     android:textColor="#FFFFFF"
-                    android:textSize="16sp"
+                    android:textSize="@dimen/main_summary_text_size"
                     android:textStyle="bold"
-                    android:gravity="center_vertical"
+                    android:gravity="center"
                     android:includeFontPadding="false"
-                    tools:text="0 Matches" />
+                    app:autoSizeTextType="uniform"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeMaxTextSize="@dimen/main_summary_text_size"
+                    android:lines="1"
+                    tools:text="123 Matches" />
 
                 <TextView
                     android:id="@+id/valTotalWinLoseMain"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
                     android:textColor="#FFFFFF"
-                    android:textSize="16sp"
+                    android:textSize="@dimen/main_summary_text_size"
                     android:textStyle="bold"
-                    android:gravity="center_vertical"
+                    android:gravity="center"
                     android:includeFontPadding="false"
-                    tools:text="0W - 0L" />
+                    app:autoSizeTextType="uniform"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeMaxTextSize="@dimen/main_summary_text_size"
+                    android:lines="1"
+                    tools:text="99W - 24L" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnResetHistory"
             android:layout_width="0dp"
-            android:layout_height="64dp"
+            android:layout_height="56dp"
             android:layout_weight="1.5"
             android:layout_margin="4dp"
             android:clickable="true"

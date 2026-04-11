@@ -357,13 +357,19 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("作成") { _, _ ->
                 val newName = editText.text.toString()
                 if (isValidFileName(newName)) {
-                    BattleDataManager(this).apply {
-                        currentFileName = newName
-                        resetHistory()
+                    val file = File(filesDir, "$newName.json")
+                    if (file.exists()) {
+                        AlertDialog.Builder(this)
+                            .setTitle("ファイルが既に存在します")
+                            .setMessage("「$newName」は既に存在します。上書きして戦績をリセットしますか？")
+                            .setPositiveButton("上書き") { _, _ ->
+                                createNewFile(newName)
+                            }
+                            .setNegativeButton("キャンセル", null)
+                            .show()
+                    } else {
+                        createNewFile(newName)
                     }
-                    saveCurrentFileName(newName)
-                    refreshServiceAndUI()
-                    Toast.makeText(this, "「$newName」を作成しました", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
                 }
@@ -372,15 +378,63 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun createNewFile(name: String) {
+        BattleDataManager(this).apply {
+            currentFileName = name
+            resetHistory()
+        }
+        saveCurrentFileName(name)
+        refreshServiceAndUI()
+        Toast.makeText(this, "「$name」を作成しました", Toast.LENGTH_SHORT).show()
+    }
+
     private fun showRenameDialog(oldName: String) {
         val editText = EditText(this).apply { setText(oldName); selectAll() }
-        AlertDialog.Builder(this).setTitle("新しい名前を入力").setView(editText).setPositiveButton("変更") { _, _ -> val newName = editText.text.toString()
-            if (isValidFileName(newName) && newName != oldName) {
-                if (File(filesDir, "$oldName.json").renameTo(File(filesDir, "$newName.json"))) {
-                    if (getCurrentFileName() == oldName) saveCurrentFileName(newName); Toast.makeText(this, "名前を変更しました", Toast.LENGTH_SHORT).show(); refreshServiceAndUI()
-                } else Toast.makeText(this, "変更に失敗しました", Toast.LENGTH_SHORT).show()
-            } else Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
-        }.setNegativeButton("キャンセル", null).show()
+        AlertDialog.Builder(this)
+            .setTitle("新しい名前を入力")
+            .setView(editText)
+            .setPositiveButton("変更") { _, _ ->
+                val newName = editText.text.toString()
+                if (isValidFileName(newName) && newName != oldName) {
+                    val newFile = File(filesDir, "$newName.json")
+                    if (newFile.exists()) {
+                        AlertDialog.Builder(this)
+                            .setTitle("ファイルが既に存在します")
+                            .setMessage("「$newName」は既に存在します。上書き（既存のデータを消去して置換）しますか？")
+                            .setPositiveButton("上書き") { _, _ ->
+                                performRename(oldName, newName)
+                            }
+                            .setNegativeButton("キャンセル", null)
+                            .show()
+                    } else {
+                        performRename(oldName, newName)
+                    }
+                } else if (newName != oldName) {
+                    Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
+    }
+
+    private fun performRename(oldName: String, newName: String) {
+        val oldFile = File(filesDir, "$oldName.json")
+        val newFile = File(filesDir, "$newName.json")
+        
+        // 上書きの場合は先に削除
+        if (newFile.exists()) {
+            newFile.delete()
+        }
+        
+        if (oldFile.renameTo(newFile)) {
+            if (getCurrentFileName() == oldName) {
+                saveCurrentFileName(newName)
+            }
+            Toast.makeText(this, "名前を変更しました", Toast.LENGTH_SHORT).show()
+            refreshServiceAndUI()
+        } else {
+            Toast.makeText(this, "変更に失敗しました", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean { finish(); return true }
