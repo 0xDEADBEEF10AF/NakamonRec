@@ -28,7 +28,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var cachedScale = -1.0
 
     companion object {
-        private const val VS_THRESHOLD = 0.7
+        private const val VS_THRESHOLD = 0.4
         private const val WIN_THRESHOLD = 0.4
         private const val LOSE_THRESHOLD = 0.4
         private const val MONSTER_THRESHOLD = 0.7
@@ -175,7 +175,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         Utils.bitmapToMat(sceneBitmap, fullMat)
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
 
-        val vsRes = findTemplateWithScale(fullMat, vsTemplate, false, 0.3f, 0.7f) ?: return null
+        val vsRes = findTemplateWithScale(fullMat, vsTemplate, true, 0.3f, 0.8f) ?: return null
         val vsScale = vsRes.scale
         val vsBox = vsRes.config
 
