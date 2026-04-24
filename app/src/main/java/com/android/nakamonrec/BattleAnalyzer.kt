@@ -411,6 +411,26 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         }
     }
 
+    fun detectVsScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, vsTemplateScaled)
+    fun detectWinScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, winTemplateScaled)
+    fun detectLoseScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, loseTemplateScaled)
+    fun detectPartyScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, partySelectTemplateScaled)
+    fun detectMonsterScore(bitmap: Bitmap, config: BoxConfig): Double {
+        val mat = Mat()
+        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2RGB)
+        val imgW = mat.cols().toFloat()
+        val imgH = mat.rows().toFloat()
+        val centerX = (imgW * config.centerX).toInt()
+        val centerY = (imgH * config.centerY).toInt()
+        val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
+        val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
+        val roi = mat.submat(top, top + config.height, left, left + config.width)
+        val res = findBestMonsterMatchMicroScales(roi)
+        roi.release(); mat.release()
+        return res.score
+    }
+
     fun releaseTemplates() {
         monsterMaster.forEach { it.templateMat?.release() }
         vsTemplate?.release(); winTemplate?.release(); loseTemplate?.release(); partySelectTemplate?.release()

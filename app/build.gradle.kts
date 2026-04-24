@@ -20,6 +20,8 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
@@ -29,7 +31,7 @@ android {
         targetSdk = 35
         
         versionCode = gitCommitCount
-        versionName = "1.4.1"
+        versionName = "1.4.1e"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -46,7 +46,8 @@ class CalibrationView @JvmOverloads constructor(
         var centerY: Float,
         var width: Int,
         var height: Int,
-        val label: String
+        val label: String,
+        var score: Double = -1.0
     )
 
     private val boxes = mutableListOf<CalibrationBox>()
@@ -123,6 +124,11 @@ class CalibrationView @JvmOverloads constructor(
             
             canvas.drawRect(reusableRect, paintRect)
             canvas.drawText(box.label, reusableRect.left, reusableRect.top - 10f, paintText)
+            
+            if (box.score >= 0) {
+                val scoreText = String.format(java.util.Locale.US, "%.3f", box.score)
+                canvas.drawText(scoreText, reusableRect.right, reusableRect.bottom + 35f, paintText)
+            }
         }
     }
 
