@@ -102,14 +102,14 @@ class CalibrationView @JvmOverloads constructor(
             
             // 探索範囲の可視化
             if (box.label.startsWith("P")) {
-                // パーティ選択枠：上下100pxずつの大きなバッファ
-                val marginY = 100f * scaleY
-                bufferRect.set(reusableRect.left, reusableRect.top - marginY, reusableRect.right, reusableRect.bottom + marginY)
+                // パーティ選択枠：上下左右20pxずつのバッファ (BattleAnalyzerのpad=20と同期)
+                val margin = 20f * scaleX
+                bufferRect.set(reusableRect.left - margin, reusableRect.top - margin, reusableRect.right + margin, reusableRect.bottom + margin)
                 canvas.drawRect(bufferRect, paintBufferFill)
                 canvas.drawRect(bufferRect, paintBufferStroke)
             } else if (box.label.contains("自") || box.label.contains("敵")) {
-                // モンスター枠：上下左右5pxずつの微細なバッファ
-                val margin = 5f * scaleX
+                // モンスター枠：上下左右20pxずつのバッファ (BattleAnalyzerのpad=20と同期)
+                val margin = 20f * scaleX
                 bufferRect.set(reusableRect.left - margin, reusableRect.top - margin, reusableRect.right + margin, reusableRect.bottom + margin)
                 canvas.drawRect(bufferRect, paintBufferFill)
                 canvas.drawRect(bufferRect, paintBufferStroke)

@@ -85,9 +85,9 @@ data class CalibrationData(
     ),
     // パーティ選択
     var partySelectBoxes: List<BoxConfig> = listOf(
-        BoxConfig(30f / 1080f, 1030f / 2364f, 50, 100),
-        BoxConfig(30f / 1080f, 1430f / 2364f, 50, 100),
-        BoxConfig(30f / 1080f, 1830f / 2364f, 50, 100)
+        BoxConfig(850f / 1080f, 1030f / 2364f, 50, 100),
+        BoxConfig(850f / 1080f, 1430f / 2364f, 50, 100),
+        BoxConfig(850f / 1080f, 1830f / 2364f, 50, 100)
     ),
     // 勝敗判定 (WINとLOSEを個別に管理)
     var winBox: BoxConfig = BoxConfig(540f / 1080f, 720f / 2364f, 1000, 400),

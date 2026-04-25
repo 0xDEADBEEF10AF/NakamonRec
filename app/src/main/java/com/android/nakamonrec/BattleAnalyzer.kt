@@ -389,8 +389,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             if (identifiedNames[i] != null) continue
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
             
-            // uiScaleに基づいた相対的なパディング (+10相当をスケール)
-            val pad = (10 * calibrationData.uiScale).toInt()
+            // 水平・垂直の両方向にパディング (+20相当をスケール)
+            val pad = (20 * calibrationData.uiScale).toInt()
             val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
             
             val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
@@ -441,11 +441,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     fun detectSelectedParty(bitmap: Bitmap): Int {
         val scores = mutableListOf<Double>()
         val template = partyCustomTemplateScaled ?: partySelectTemplateScaled
-        // 縦方向にスキャン範囲を広げる (uiScaleの40倍 = スクロール耐性)
-        val padH = (40 * calibrationData.uiScale).toInt()
+        // 水平・垂直の両方向にスキャン範囲を広げる (uiScaleの20倍 = スクロール・ズレ耐性)
+        val pad = (20 * calibrationData.uiScale).toInt()
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width, config.height + padH)
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
             scores.add(performColorMatchCached(bitmap, expandedConfig, template))
         }
         val maxScore = scores.maxOrNull() ?: 0.0
