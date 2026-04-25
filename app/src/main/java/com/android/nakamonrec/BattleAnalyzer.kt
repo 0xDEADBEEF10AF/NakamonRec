@@ -39,6 +39,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         private const val LOSE_THRESHOLD = 0.4
         private const val MONSTER_THRESHOLD = 0.7
         private const val PARTY_THRESHOLD = 0.45
+        
+        /**
+         * ROI（探索範囲）を広げるためのパディング値（ピクセル）。
+         */
+        const val ROI_PAD_MONSTER = 20
+        const val ROI_PAD_PARTY_H = 10  // 水平方向は狭く
+        const val ROI_PAD_PARTY_V = 50  // 垂直方向は広く（スクロール耐性のため縦長に）
     }
 
     data class ScanResult(val config: BoxConfig, val score: Double, val scale: Double)
@@ -389,8 +396,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             if (identifiedNames[i] != null) continue
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
             
-            // 水平・垂直の両方向にパディング (+20相当をスケール)
-            val pad = (20 * calibrationData.uiScale).toInt()
+            // モンスター用パディング
+            val pad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
             val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
             
             val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
@@ -439,18 +446,47 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun detectSelectedParty(bitmap: Bitmap): Int {
-        val scores = mutableListOf<Double>()
-        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled
-        // 水平・垂直の両方向にスキャン範囲を広げる (uiScaleの20倍 = スクロール・ズレ耐性)
-        val pad = (20 * calibrationData.uiScale).toInt()
+        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return -1
+
+        val fullMat = Mat()
+        Utils.bitmapToMat(bitmap, fullMat)
+        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+
+        val imgW = fullMat.cols().toFloat()
+        val imgH = fullMat.rows().toFloat()
+
+        var bestIndex = -1
+        var maxScore = -1.0
+        
+        val padH = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
+        val padV = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
+
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
-            scores.add(performColorMatchCached(bitmap, expandedConfig, template))
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + padH * 2, config.height + padV * 2)
+
+            val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
+            val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
+            
+            try {
+                val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
+                if (template.cols() <= roi.cols() && template.rows() <= roi.rows()) {
+                    val res = Mat()
+                    Imgproc.matchTemplate(roi, template, res, Imgproc.TM_CCOEFF_NORMED)
+                    val score = Core.minMaxLoc(res).maxVal
+                    res.release()
+
+                    if (score > maxScore) {
+                        maxScore = score
+                        bestIndex = i
+                    }
+                }
+                roi.release()
+            } catch (_: Exception) {}
         }
-        val maxScore = scores.maxOrNull() ?: 0.0
-        val maxIndex = scores.indexOf(maxScore)
-        return if (maxScore >= PARTY_THRESHOLD) maxIndex else -1
+        fullMat.release()
+
+        return if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
     }
 
     fun saveDebugBitmap(bitmap: Bitmap, label: String) {
@@ -475,13 +511,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     fun detectWinScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, winTemplateScaled)
     fun detectLoseScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, loseTemplateScaled)
     fun detectPartyScore(bitmap: Bitmap, config: BoxConfig): Double {
-        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled
+        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return 0.0
         return performColorMatchCached(bitmap, config, template)
     }
 
-    private fun calculateBlueRatioSurgical(bitmap: Bitmap, left: Int, top: Int, width: Int, height: Int): Double {
-        return 0.0
-    }
     fun detectMonsterScore(bitmap: Bitmap, config: BoxConfig): Double {
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, mat)

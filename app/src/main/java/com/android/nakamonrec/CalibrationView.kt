@@ -21,13 +21,14 @@ class CalibrationView @JvmOverloads constructor(
     private val paintBufferFill = Paint().apply {
         color = Color.CYAN
         style = Paint.Style.FILL
-        alpha = 60
+        alpha = 40
     }
     private val paintBufferStroke = Paint().apply {
         color = Color.CYAN
         style = Paint.Style.STROKE
         strokeWidth = 2f
-        alpha = 180
+        alpha = 120
+        pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
     }
     private val paintHandle = Paint().apply {
         color = Color.YELLOW
@@ -58,8 +59,15 @@ class CalibrationView @JvmOverloads constructor(
     private val bufferRect = RectF()
     private val handleRadius = 30f
 
+    private var uiScale: Float = 1.0f
+
     fun setSourceImage(bitmap: Bitmap) {
         backgroundImage = bitmap
+        invalidate()
+    }
+
+    fun setUiScale(scale: Float) {
+        uiScale = scale
         invalidate()
     }
 
@@ -102,15 +110,16 @@ class CalibrationView @JvmOverloads constructor(
             
             // 探索範囲の可視化
             if (box.label.startsWith("P")) {
-                // パーティ選択枠：上下左右20pxずつのバッファ (BattleAnalyzerのpad=20と同期)
-                val margin = 20f * scaleX
-                bufferRect.set(reusableRect.left - margin, reusableRect.top - margin, reusableRect.right + margin, reusableRect.bottom + margin)
+                // パーティ選択：垂直方向を広く（BattleAnalyzer.ROI_PAD_PARTY_V/Hと同期）
+                val padH = (BattleAnalyzer.ROI_PAD_PARTY_H * uiScale) * scaleX
+                val padV = (BattleAnalyzer.ROI_PAD_PARTY_V * uiScale) * scaleY
+                bufferRect.set(reusableRect.left - padH, reusableRect.top - padV, reusableRect.right + padH, reusableRect.bottom + padV)
                 canvas.drawRect(bufferRect, paintBufferFill)
                 canvas.drawRect(bufferRect, paintBufferStroke)
             } else if (box.label.contains("自") || box.label.contains("敵")) {
-                // モンスター枠：上下左右20pxずつのバッファ (BattleAnalyzerのpad=20と同期)
-                val margin = 20f * scaleX
-                bufferRect.set(reusableRect.left - margin, reusableRect.top - margin, reusableRect.right + margin, reusableRect.bottom + margin)
+                // モンスター：正方形（BattleAnalyzer.ROI_PAD_MONSTERと同期）
+                val pad = (BattleAnalyzer.ROI_PAD_MONSTER * uiScale) * scaleX
+                bufferRect.set(reusableRect.left - pad, reusableRect.top - pad, reusableRect.right + pad, reusableRect.bottom + pad)
                 canvas.drawRect(bufferRect, paintBufferFill)
                 canvas.drawRect(bufferRect, paintBufferStroke)
             }

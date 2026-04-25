@@ -57,6 +57,10 @@ class CalibrationActivity : AppCompatActivity() {
         sourceBitmap = BitmapFactory.decodeFile(file.absolutePath)
         binding.calibrationView.setSourceImage(sourceBitmap!!)
 
+        val currentData = loadCalibrationData()
+        detectedScale = currentData.uiScale
+        binding.calibrationView.setUiScale(detectedScale)
+
         binding.textInstruction.text = when (mode) {
             "party" -> getString(R.string.calibrate_guide_party)
             "vs" -> getString(R.string.calibrate_guide_vs)
@@ -65,8 +69,6 @@ class CalibrationActivity : AppCompatActivity() {
             else -> getString(R.string.calibrate_guide_default)
         }
 
-        val currentData = loadCalibrationData()
-        detectedScale = currentData.uiScale
         displayBoxes(currentData)
 
         binding.btnSave.setOnClickListener {
@@ -86,6 +88,7 @@ class CalibrationActivity : AppCompatActivity() {
 
             val defaultData = CalibrationData()
             detectedScale = defaultData.uiScale
+            binding.calibrationView.setUiScale(detectedScale)
             displayBoxes(defaultData)
             updateTemplateNameDisplay()
             Toast.makeText(this, getString(R.string.toast_default_restored), Toast.LENGTH_SHORT).show()
@@ -182,6 +185,7 @@ class CalibrationActivity : AppCompatActivity() {
                 binding.layoutProgress.visibility = View.GONE
                 if (results != null) {
                     detectedScale = newScale
+                    binding.calibrationView.setUiScale(detectedScale)
                     binding.calibrationView.setBoxes(results)
                     updateTemplateNameDisplay() // スコア更新に合わせて表示確認
                     Toast.makeText(this, getString(R.string.toast_auto_calibrated), Toast.LENGTH_SHORT).show()
