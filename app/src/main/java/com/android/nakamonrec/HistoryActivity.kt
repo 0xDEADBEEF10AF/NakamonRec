@@ -512,15 +512,28 @@ class HistoryActivity : AppCompatActivity() {
                     }
                 }
                 setOnClickListener {
-                    dialog.dismiss()
+                    // ダイアログを閉じないように変更
                     val isMyParty = index < 4
                     val monsterIndex = if (isMyParty) index else index - 4
                     showMonsterPicker { selectedName ->
-                        val newMyParty = record.myParty.toMutableList()
-                        val newEnemyParty = record.enemyParty.toMutableList()
+                        val currentRecord = dataManager.history.records[recordPos]
+                        val newMyParty = currentRecord.myParty.toMutableList()
+                        val newEnemyParty = currentRecord.enemyParty.toMutableList()
                         if (isMyParty) newMyParty[monsterIndex] = selectedName
                         else newEnemyParty[monsterIndex] = selectedName
-                        updateAndSave(recordPos, record.copy(myParty = newMyParty, enemyParty = newEnemyParty))
+                        
+                        val updatedRecord = currentRecord.copy(myParty = newMyParty, enemyParty = newEnemyParty)
+                        updateAndSave(recordPos, updatedRecord)
+                        
+                        // アイコンを即座に更新（ダイアログを閉じずに連続編集を可能にする）
+                        val monsterData = dataManager.monsterMaster.find { it.name == selectedName }
+                        if (monsterData != null) {
+                            try {
+                                assets.open("templates/${monsterData.fileName}").use {
+                                    setImageBitmap(BitmapFactory.decodeStream(it))
+                                }
+                            } catch (_: Exception) {}
+                        }
                     }
                 }
             }
@@ -613,22 +626,46 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun insertRecordAfter(position: Int) {
-        val baseRecord = dataManager.history.records[position]
-        val newRecord = baseRecord.copy(
-            timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+        val parties = arrayOf(
+            getString(R.string.label_party_name_format, 1),
+            getString(R.string.label_party_name_format, 2),
+            getString(R.string.label_party_name_format, 3)
         )
-        dataManager.history.records.add(position + 1, newRecord)
-        if (newRecord.result == "WIN") dataManager.history.totalWins++
-        else dataManager.history.totalLosses++
-        dataManager.saveHistory()
-        if (MediaCaptureService.isRunning) {
-            val intent = Intent(this, MediaCaptureService::class.java).apply {
-                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+        AlertDialog.Builder(this)
+            .setTitle(R.string.edit_party_title)
+            .setItems(parties) { _, partyIndex ->
+                // 最新の履歴から、選択されたパーティIndexに合致する自パーティ構成を探す
+                val latestPartyForIndex = dataManager.history.records
+                    .filter { it.partyIndex == partyIndex }
+                    .maxByOrNull { it.timestamp }
+                    ?.myParty ?: listOf("?", "?", "?", "?")
+
+                val newRecord = BattleRecord(
+                    timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+                    result = "WIN",
+                    partyIndex = partyIndex,
+                    myParty = latestPartyForIndex,
+                    enemyParty = listOf("?", "?", "?", "?")
+                )
+                
+                dataManager.history.records.add(position + 1, newRecord)
+                dataManager.history.totalWins++
+                dataManager.saveHistory()
+                
+                if (MediaCaptureService.isRunning) {
+                    val intent = Intent(this, MediaCaptureService::class.java).apply {
+                        action = MediaCaptureService.ACTION_RELOAD_HISTORY
+                    }
+                    startService(intent)
+                }
+                setupUI()
+                // 追加した位置までスムーズにスクロールさせる
+                binding.recyclerViewHistory.smoothScrollToPosition(position + 1)
+                
+                // 追加したレコードの編集ダイアログを自動で開く
+                showEditRecordDialog(position + 1)
             }
-            startService(intent)
-        }
-        setupUI()
-        showEditRecordDialog(position + 1)
+            .show()
     }
 
     override fun onSupportNavigateUp(): Boolean {
