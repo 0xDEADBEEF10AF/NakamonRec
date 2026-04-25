@@ -78,15 +78,40 @@ class CalibrationActivity : AppCompatActivity() {
         }
 
         binding.btnDefault.setOnClickListener {
+            // 現在のモードに応じて対象のカスタムテンプレートのみを削除
+            when (mode) {
+                "party" -> analyzer.deleteCustomTemplate("party_custom.png")
+                "vs" -> analyzer.deleteCustomTemplate("vs_custom.png")
+            }
+
             val defaultData = CalibrationData()
             detectedScale = defaultData.uiScale
             displayBoxes(defaultData)
+            updateTemplateNameDisplay()
             Toast.makeText(this, getString(R.string.toast_default_restored), Toast.LENGTH_SHORT).show()
         }
 
         binding.btnAuto.setOnClickListener {
             runAutoCalibration()
         }
+        updateTemplateNameDisplay()
+    }
+
+    private fun updateTemplateNameDisplay() {
+        val text = when (mode) {
+            "vs" -> {
+                val vsFile = File(filesDir, "vs_custom.png")
+                if (vsFile.exists()) "Template: CUSTOM" else "Template: BASE"
+            }
+            "party" -> {
+                val partyFile = File(filesDir, "party_custom.png")
+                if (partyFile.exists()) "Template: CUSTOM" else "Template: BASE"
+            }
+            "win" -> "Template: BASE"
+            "lose" -> "Template: BASE"
+            else -> ""
+        }
+        binding.textTemplateName.text = text
     }
 
     private fun runAutoCalibration() {
@@ -101,7 +126,13 @@ class CalibrationActivity : AppCompatActivity() {
                     val res = analyzer.autoCalibrateParty(bitmap)
                     if (res != null) {
                         newScale = res.second
-                        res.first.mapIndexed { i: Int, config: BoxConfig ->
+                        
+                        // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
+                        val configs = res.first
+                        val bestConfig = configs.maxByOrNull { analyzer.detectPartyScore(bitmap, it) }
+                        bestConfig?.let { analyzer.saveCustomTemplate(bitmap, it, "party_custom.png") }
+                        
+                        configs.mapIndexed { i: Int, config: BoxConfig ->
                             val score = analyzer.detectPartyScore(bitmap, config)
                             CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}", score)
                         }
@@ -111,6 +142,10 @@ class CalibrationActivity : AppCompatActivity() {
                     val autoData = analyzer.autoCalibrateBattleScene(bitmap)
                     if (autoData != null) {
                         newScale = autoData.uiScale
+                        
+                        // 見つかったVSロゴをその場でカスタムテンプレートとして保存
+                        analyzer.saveCustomTemplate(bitmap, autoData.vsBox, "vs_custom.png")
+
                         val list = mutableListOf<CalibrationView.CalibrationBox>()
                         val vsScore = analyzer.detectVsScore(bitmap, autoData.vsBox)
                         list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS", vsScore))
@@ -148,6 +183,7 @@ class CalibrationActivity : AppCompatActivity() {
                 if (results != null) {
                     detectedScale = newScale
                     binding.calibrationView.setBoxes(results)
+                    updateTemplateNameDisplay() // スコア更新に合わせて表示確認
                     Toast.makeText(this, getString(R.string.toast_auto_calibrated), Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, getString(R.string.toast_auto_calibrate_failed), Toast.LENGTH_SHORT).show()
@@ -207,15 +243,27 @@ class CalibrationActivity : AppCompatActivity() {
         val data = loadCalibrationData()
         data.uiScale = detectedScale
 
+        val bitmap = sourceBitmap
         when (mode) {
             "party" -> {
                 data.partySelectBoxes = updatedBoxes.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
+                // スコア（水色比率加味済み）が最も高い枠をカスタムテンプレートとして保存
+                if (bitmap != null) {
+                    val bestBox = updatedBoxes.maxByOrNull { it.score }
+                    bestBox?.let {
+                        analyzer.saveCustomTemplate(bitmap, BoxConfig(it.centerX, it.centerY, it.width, it.height), "party_custom.png")
+                    }
+                }
             }
             "vs" -> {
                 val vs = updatedBoxes.find { it.id == 0 } ?: return
                 data.vsBox = BoxConfig(vs.centerX, vs.centerY, vs.width, vs.height)
                 data.enemyPartyBoxes = updatedBoxes.filter { it.id in 10..13 }.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
                 data.myPartyBoxes = updatedBoxes.filter { it.id in 20..23 }.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
+                // VSロゴをカスタムテンプレートとして保存
+                if (bitmap != null) {
+                    analyzer.saveCustomTemplate(bitmap, data.vsBox, "vs_custom.png")
+                }
             }
             "win" -> {
                 val res = updatedBoxes[0]

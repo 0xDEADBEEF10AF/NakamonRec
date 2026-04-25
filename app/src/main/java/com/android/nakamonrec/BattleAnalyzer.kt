@@ -15,16 +15,22 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var calibrationData: CalibrationData = CalibrationData()
     private var appContext: Context? = null
 
-    private var vsTemplate: Mat? = null
+    private var vsFmTemplate: Mat? = null
+    private var vsMgTemplate: Mat? = null
+    private var vsCustomTemplate: Mat? = null
     private var winTemplate: Mat? = null
     private var loseTemplate: Mat? = null
     private var partySelectTemplate: Mat? = null
+    private var partyCustomTemplate: Mat? = null
     
     private val scaledMonsterTemplates = mutableMapOf<String, List<Mat>>()
-    private var vsTemplateScaled: Mat? = null
+    private var vsFmTemplateScaled: Mat? = null
+    private var vsMgTemplateScaled: Mat? = null
+    private var vsCustomTemplateScaled: Mat? = null
     private var winTemplateScaled: Mat? = null
     private var loseTemplateScaled: Mat? = null
     private var partySelectTemplateScaled: Mat? = null
+    private var partyCustomTemplateScaled: Mat? = null
     private var cachedScale = -1.0
 
     companion object {
@@ -65,10 +71,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             }
         }
 
-        vsTemplateScaled?.release(); vsTemplateScaled = vsTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        vsFmTemplateScaled?.release(); vsFmTemplateScaled = vsFmTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        vsMgTemplateScaled?.release(); vsMgTemplateScaled = vsMgTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        vsCustomTemplateScaled?.release(); vsCustomTemplateScaled = vsCustomTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         winTemplateScaled?.release(); winTemplateScaled = winTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         loseTemplateScaled?.release(); loseTemplateScaled = loseTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         partySelectTemplateScaled?.release(); partySelectTemplateScaled = partySelectTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        partyCustomTemplateScaled?.release(); partyCustomTemplateScaled = partyCustomTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
 
         cachedScale = s
     }
@@ -86,12 +95,37 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 }
             } catch (_: Exception) {}
         }
-        vsTemplate = loadColorTemplate(context, "templates/VS.png")
+        vsFmTemplate = loadColorTemplate(context, "templates/VS_FM.png")
+        vsMgTemplate = loadColorTemplate(context, "templates/VS_MG.png")
         winTemplate = loadColorTemplate(context, "templates/WIN.png")
         loseTemplate = loadColorTemplate(context, "templates/LOSE.png")
         partySelectTemplate = loadColorTemplate(context, "templates/SELECT.png")
         
+        loadCustomTemplates(context)
         prepareScaledTemplates()
+    }
+
+    private fun loadCustomTemplates(context: Context) {
+        val vsFile = File(context.filesDir, "vs_custom.png")
+        if (vsFile.exists()) {
+            vsCustomTemplate = loadExternalTemplate(vsFile.absolutePath)
+        }
+        val partyFile = File(context.filesDir, "party_custom.png")
+        if (partyFile.exists()) {
+            partyCustomTemplate = loadExternalTemplate(partyFile.absolutePath)
+        }
+    }
+
+    private fun loadExternalTemplate(path: String): Mat? {
+        return try {
+            val bitmap = BitmapFactory.decodeFile(path) ?: return null
+            val mat = Mat()
+            Utils.bitmapToMat(bitmap, mat)
+            val rgbMat = Mat()
+            Imgproc.cvtColor(mat, rgbMat, Imgproc.COLOR_RGBA2RGB)
+            mat.release()
+            rgbMat
+        } catch (_: Exception) { null }
     }
 
     private fun loadColorTemplate(context: Context, path: String): Mat? {
@@ -175,7 +209,18 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         Utils.bitmapToMat(sceneBitmap, fullMat)
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
 
-        val vsRes = findTemplateWithScale(fullMat, vsTemplate, true, 0.3f, 0.8f) ?: return null
+        val results = mutableListOf<ScanResult>()
+        findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)?.let { results.add(it) }
+        findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)?.let { results.add(it) }
+        findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)?.let { results.add(it) }
+
+        val vsRes = results.maxByOrNull { it.score }
+        
+        if (vsRes == null || vsRes.score < 0.4) {
+            fullMat.release()
+            return null
+        }
+        
         val vsScale = vsRes.scale
         val vsBox = vsRes.config
 
@@ -288,7 +333,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun isVsDetected(bitmap: Bitmap): Boolean {
-        return performColorMatchCached(bitmap, calibrationData.vsBox, vsTemplateScaled) > VS_THRESHOLD
+        if (vsCustomTemplateScaled != null) {
+            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled) > VS_THRESHOLD) return true
+        }
+        if (performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled) > VS_THRESHOLD) return true
+        return performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled) > VS_THRESHOLD
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {
@@ -339,7 +388,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         for (i in 0..7) {
             if (identifiedNames[i] != null) continue
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + 20, config.height + 20)
+            
+            // uiScaleに基づいた相対的なパディング (+10相当をスケール)
+            val pad = (10 * calibrationData.uiScale).toInt()
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
             
             val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
             val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
@@ -388,10 +440,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun detectSelectedParty(bitmap: Bitmap): Int {
         val scores = mutableListOf<Double>()
+        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled
+        // 縦方向にスキャン範囲を広げる (uiScaleの40倍 = スクロール耐性)
+        val padH = (40 * calibrationData.uiScale).toInt()
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width, config.height + 200)
-            scores.add(performColorMatchCached(bitmap, expandedConfig, partySelectTemplateScaled))
+            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width, config.height + padH)
+            scores.add(performColorMatchCached(bitmap, expandedConfig, template))
         }
         val maxScore = scores.maxOrNull() ?: 0.0
         val maxIndex = scores.indexOf(maxScore)
@@ -411,10 +466,22 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         }
     }
 
-    fun detectVsScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, vsTemplateScaled)
+    fun detectVsScore(bitmap: Bitmap, config: BoxConfig): Double {
+        val s1 = if (vsCustomTemplateScaled != null) performColorMatchCached(bitmap, config, vsCustomTemplateScaled) else 0.0
+        val s2 = performColorMatchCached(bitmap, config, vsFmTemplateScaled)
+        val s3 = performColorMatchCached(bitmap, config, vsMgTemplateScaled)
+        return maxOf(s1, maxOf(s2, s3))
+    }
     fun detectWinScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, winTemplateScaled)
     fun detectLoseScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, loseTemplateScaled)
-    fun detectPartyScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, partySelectTemplateScaled)
+    fun detectPartyScore(bitmap: Bitmap, config: BoxConfig): Double {
+        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled
+        return performColorMatchCached(bitmap, config, template)
+    }
+
+    private fun calculateBlueRatioSurgical(bitmap: Bitmap, left: Int, top: Int, width: Int, height: Int): Double {
+        return 0.0
+    }
     fun detectMonsterScore(bitmap: Bitmap, config: BoxConfig): Double {
         val mat = Mat()
         org.opencv.android.Utils.bitmapToMat(bitmap, mat)
@@ -433,8 +500,58 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun releaseTemplates() {
         monsterMaster.forEach { it.templateMat?.release() }
-        vsTemplate?.release(); winTemplate?.release(); loseTemplate?.release(); partySelectTemplate?.release()
+        vsFmTemplate?.release(); vsMgTemplate?.release(); vsCustomTemplate?.release(); winTemplate?.release(); loseTemplate?.release(); partySelectTemplate?.release(); partyCustomTemplate?.release()
         scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
-        vsTemplateScaled?.release(); winTemplateScaled?.release(); loseTemplateScaled?.release(); partySelectTemplateScaled?.release()
+        vsFmTemplateScaled?.release(); vsMgTemplateScaled?.release(); vsCustomTemplateScaled?.release(); winTemplateScaled?.release(); loseTemplateScaled?.release(); partySelectTemplateScaled?.release(); partyCustomTemplateScaled?.release()
+    }
+
+    fun saveCustomTemplate(bitmap: Bitmap, config: BoxConfig, fileName: String) {
+        val ctx = appContext ?: return
+        val imgW = bitmap.width
+        val imgH = bitmap.height
+        val centerX = (imgW * config.centerX).toInt()
+        val centerY = (imgH * config.centerY).toInt()
+        val left = (centerX - config.width / 2).coerceIn(0, imgW - config.width)
+        val top = (centerY - config.height / 2).coerceIn(0, imgH - config.height)
+        
+        try {
+            val cropped = Bitmap.createBitmap(bitmap, left, top, config.width, config.height)
+            val file = File(ctx.filesDir, fileName)
+            file.outputStream().use {
+                cropped.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            Log.i("BattleAnalyzer", "✨ カスタムテンプレートを保存しました: ${file.absolutePath}")
+            
+            // 即座に読み込んで適用
+            if (fileName == "vs_custom.png") {
+                vsCustomTemplate?.release()
+                vsCustomTemplate = loadExternalTemplate(file.absolutePath)
+            } else if (fileName == "party_custom.png") {
+                partyCustomTemplate?.release()
+                partyCustomTemplate = loadExternalTemplate(file.absolutePath)
+            }
+            cachedScale = -1.0 // 再スケーリングを強制
+            prepareScaledTemplates()
+        } catch (e: Exception) {
+            Log.e("BattleAnalyzer", "カスタムテンプレート保存失敗: ${e.message}")
+        }
+    }
+
+    fun deleteCustomTemplate(fileName: String) {
+        val ctx = appContext ?: return
+        val file = File(ctx.filesDir, fileName)
+        if (file.exists()) file.delete()
+
+        if (fileName == "vs_custom.png") {
+            vsCustomTemplate?.release()
+            vsCustomTemplate = null
+        } else if (fileName == "party_custom.png") {
+            partyCustomTemplate?.release()
+            partyCustomTemplate = null
+        }
+        
+        cachedScale = -1.0 // 再スケーリングを強制してフォールバック
+        prepareScaledTemplates()
+        Log.i("BattleAnalyzer", "🗑️ カスタムテンプレート $fileName を削除しました。標準に戻ります。")
     }
 }
