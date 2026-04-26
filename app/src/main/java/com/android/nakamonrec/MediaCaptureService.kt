@@ -244,8 +244,8 @@ class MediaCaptureService : Service() {
             debugImageSavedInSession = false
             currentState = State.IN_BATTLE
             analyzer.resetIdentification()
-            val partyName = if (selectedPartyIndex != -1) "Party${selectedPartyIndex + 1}" else "?"
-            updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始！ ($partyName)")
+            val partyName = if (selectedPartyIndex != -1) "P[${selectedPartyIndex + 1}]" else "?"
+            updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始 ($partyName)")
             
             repeatScan(currentSessionId, 40, 50L)
         }
@@ -285,7 +285,7 @@ class MediaCaptureService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(status)
-            .setContentText("戦績: ${win}勝 ${lose}敗 (勝率 ${String.format(Locale.US, "%.1f", winRate)}%)")
+            .setContentText("${win}W - ${lose}L (${String.format(Locale.US, "%.1f", winRate)}%)")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

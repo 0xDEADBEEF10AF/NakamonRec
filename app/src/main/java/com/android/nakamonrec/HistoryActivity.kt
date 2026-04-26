@@ -2,6 +2,7 @@ package com.android.nakamonrec
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Bundle
@@ -32,7 +33,8 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var dataManager: BattleDataManager
     private var filterPartyIndex: Int = -1 // -1: All, 0: P1, 1: P2, 2: P3
     private var filterResult: String? = null // null: All, "WIN", "LOSE"
-    private val filterMonsters = mutableListOf<String>()
+    private val filterEnemyMonsters = mutableListOf<String>()
+    private val filterMyMonsters = mutableListOf<String>()
     private var isFilterMode = false
     
     private lateinit var historyAdapter: BattleHistoryAdapter
@@ -55,20 +57,18 @@ class HistoryActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
         binding.btnAnalyze.setOnClickListener { showAnalysisDialog() }
 
-        // モード切替ボタンの初期化 (最初はEditモードなのでFilterアイコンを出す)
         binding.btnModeToggle.text = ""
         binding.btnModeToggle.setIconResource(android.R.drawable.ic_menu_sort_by_size)
         binding.btnModeToggle.setOnClickListener { toggleMode() }
 
-        // フィルタ解除ボタン
         binding.btnClearFilter.setOnClickListener {
-            filterMonsters.clear()
+            filterEnemyMonsters.clear()
+            filterMyMonsters.clear()
             filterResult = null
             updateFilterStatusUI()
             setupUI()
         }
 
-        // 既存のパーティフィルタ
         binding.cardTotal.setOnClickListener { setFilter(-1) }
         binding.cardP1.setOnClickListener { setFilter(0) }
         binding.cardP2.setOnClickListener { setFilter(1) }
@@ -89,7 +89,9 @@ class HistoryActivity : AppCompatActivity() {
                 showEditRecordDialog(realIndex)
             },
             onResultClick = { showResultFilterDialog() },
-            onMonsterClick = { monsterName -> addMonsterFilter(monsterName) }
+            onMonsterClick = { name, isEnemy ->
+                addMonsterFilter(name, isEnemy)
+            }
         )
         binding.recyclerViewHistory.apply {
             val lm = LinearLayoutManager(this@HistoryActivity)
@@ -104,78 +106,147 @@ class HistoryActivity : AppCompatActivity() {
         isFilterMode = !isFilterMode
         historyAdapter.isFilterMode = isFilterMode
         
-        // ボタンには「次に切り替わるモード」のアイコンを表示する
         if (isFilterMode) {
             binding.btnModeToggle.setIconResource(android.R.drawable.ic_menu_edit)
         } else {
             binding.btnModeToggle.setIconResource(android.R.drawable.ic_menu_sort_by_size)
         }
-        // モード切替時に統計表示を更新
         setupUI()
     }
 
-    private fun addMonsterFilter(name: String) {
-        if (filterMonsters.contains(name)) return
-        if (filterMonsters.size >= 4) return
+    private fun addMonsterFilter(name: String, isEnemy: Boolean) {
+        val list = if (isEnemy) filterEnemyMonsters else filterMyMonsters
+        if (list.contains(name)) return
+        if (list.size >= 4) return
         
-        filterMonsters.add(name)
+        list.add(name)
         updateFilterStatusUI()
         setupUI()
     }
 
     private fun updateFilterStatusUI() {
-        if (filterMonsters.isEmpty() && filterResult == null) {
+        if (filterEnemyMonsters.isEmpty() && filterMyMonsters.isEmpty() && filterResult == null) {
             binding.layoutFilterStatus.visibility = View.GONE
+            historyAdapter.filterMyMonsters = listOf()
+            historyAdapter.filterEnemyMonsters = listOf()
+            historyAdapter.notifyDataSetChanged()
             return
         }
         binding.layoutFilterStatus.visibility = View.VISIBLE
-        binding.layoutFilterChips.removeAllViews()
+        binding.chipGroupFilters.removeAllViews()
         
-        // 勝敗フィルタの状態もチップとして表示
         filterResult?.let { result ->
-            val textView = TextView(this).apply {
-                text = if (result == "WIN") "WIN" else "LOSE"
-                setTextColor(Color.YELLOW)
-                textSize = 10f
-                setBackgroundResource(R.drawable.bg_filter_bar)
-                setPadding(16, 4, 16, 4)
-                val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                params.setMargins(4, 0, 4, 0)
-                layoutParams = params
-                setOnClickListener {
-                    filterResult = null
-                    updateFilterStatusUI()
-                    setupUI()
-                }
+            val color = if (result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt()
+            addFilterChip(if (result == "WIN") "WIN" else "LOSE", color) {
+                filterResult = null
+                updateFilterStatusUI()
+                setupUI()
             }
-            binding.layoutFilterChips.addView(textView)
         }
 
-        filterMonsters.forEach { name ->
-            val textView = TextView(this).apply {
-                text = name
-                setTextColor(Color.WHITE)
-                textSize = 10f
-                setBackgroundResource(R.drawable.bg_filter_bar) // 簡易的な背景
-                setPadding(16, 4, 16, 4)
-                val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                params.setMargins(4, 0, 4, 0)
-                layoutParams = params
-                setOnClickListener {
-                    filterMonsters.remove(name)
-                    updateFilterStatusUI()
-                    setupUI()
+        filterMyMonsters.forEach { name -> addMonsterFilterChip(name, false) }
+        filterEnemyMonsters.forEach { name -> addMonsterFilterChip(name, true) }
+        
+        historyAdapter.filterMyMonsters = filterMyMonsters.toList()
+        historyAdapter.filterEnemyMonsters = filterEnemyMonsters.toList()
+        historyAdapter.notifyDataSetChanged()
+    }
+
+    private fun addFilterChip(labelText: String, colorInt: Int, onClose: () -> Unit) {
+        val chip = com.google.android.material.chip.Chip(this).apply {
+            text = labelText
+            isCloseIconVisible = false
+            setTextColor(Color.WHITE)
+            chipBackgroundColor = ColorStateList.valueOf(colorInt)
+            setChipStrokeWidthResource(R.dimen.none)
+            textSize = 10f
+            setEnsureMinTouchTargetSize(false)
+            chipMinHeight = 24f * resources.displayMetrics.density
+            chipStartPadding = 8f
+            chipEndPadding = 8f
+            
+            // 親(LinearLayout)の垂直中央に配置
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setMargins((4 * resources.displayMetrics.density).toInt(), 0, (4 * resources.displayMetrics.density).toInt(), 0)
+            }
+
+            setOnClickListener { onClose() }
+        }
+        binding.chipGroupFilters.addView(chip)
+    }
+
+    private fun addMonsterFilterChip(name: String, isEnemy: Boolean) {
+        val iconSize = resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
+        val density = resources.displayMetrics.density
+        
+        // Chipの代わりにFrameLayoutでアイコンと枠線を構成
+        val container = android.widget.FrameLayout(this).apply {
+            // 親(LinearLayout)の垂直中央に配置
+            val params = LinearLayout.LayoutParams(iconSize, iconSize).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setMargins((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+            }
+            layoutParams = params
+            
+            val bg = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 4 * density
+                setColor(Color.TRANSPARENT)
+            }
+            background = bg
+            clipToOutline = true
+        }
+
+        val imageView = ImageView(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            
+            val monsterData = dataManager.monsterMaster.find { it.name == name }
+            if (monsterData != null) {
+                try {
+                    assets.open("templates/${monsterData.fileName}").use {
+                        setImageBitmap(BitmapFactory.decodeStream(it))
+                    }
+                } catch (_: Exception) {
+                    setImageResource(android.R.drawable.ic_menu_help)
                 }
             }
-            binding.layoutFilterChips.addView(textView)
         }
+
+        // 枠線（縁取り）
+        val strokeColor = if (isEnemy) Color.parseColor("#90D7EC") else Color.parseColor("#F09199")
+        val border = View(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            val gd = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 4 * density
+                setStroke((2 * density).toInt(), strokeColor)
+            }
+            background = gd
+        }
+
+        container.addView(imageView)
+        container.addView(border)
+        
+        container.setOnClickListener {
+            if (isEnemy) filterEnemyMonsters.remove(name) else filterMyMonsters.remove(name)
+            updateFilterStatusUI()
+            setupUI()
+        }
+
+        binding.chipGroupFilters.addView(container)
     }
+
 
     private fun showResultFilterDialog() {
         val items = arrayOf(getString(R.string.filter_all), getString(R.string.filter_win_only), getString(R.string.filter_lose_only))
@@ -206,25 +277,29 @@ class HistoryActivity : AppCompatActivity() {
         return allRecords.filter { record ->
             val matchParty = filterPartyIndex == -1 || record.partyIndex == filterPartyIndex
             val matchResult = filterResult == null || record.result == filterResult
-            val matchMonsters = if (filterMonsters.isEmpty()) true else {
-                filterMonsters.all { fName -> record.enemyParty.contains(fName) }
+            
+            val matchEnemy = if (filterEnemyMonsters.isEmpty()) true else {
+                filterEnemyMonsters.all { fName -> record.enemyParty.contains(fName) }
             }
-            matchParty && matchResult && matchMonsters
+            val matchMy = if (filterMyMonsters.isEmpty()) true else {
+                filterMyMonsters.all { fName -> record.myParty.contains(fName) }
+            }
+            
+            matchParty && matchResult && matchEnemy && matchMy
         }
     }
 
     private fun setupUI() {
         val allRecords = dataManager.history.records
         
-        // --- 1. 左上カード (TOTAL / FILTER) の更新 ---
         if (isFilterMode) {
-            // フィルタモード：フィルタ条件（勝敗・モンスター）に一致する「全パーティ合計」の統計
-            val filteredTotalRecords = allRecords.filter { record ->
-                (filterResult == null || record.result == filterResult) &&
-                (filterMonsters.isEmpty() || filterMonsters.all { it in record.enemyParty })
+            // 統計表示では「勝敗フィルタ(filterResult)」を除外して計算する（勝率0/100%固定を避けるため）
+            val statsRecords = allRecords.filter { record ->
+                (filterEnemyMonsters.isEmpty() || filterEnemyMonsters.all { it in record.enemyParty }) &&
+                (filterMyMonsters.isEmpty() || filterMyMonsters.all { it in record.myParty })
             }
-            val wins = filteredTotalRecords.count { it.result == "WIN" }
-            val losses = filteredTotalRecords.count { it.result == "LOSE" }
+            val wins = statsRecords.count { it.result == "WIN" }
+            val losses = statsRecords.count { it.result == "LOSE" }
             val totalCount = wins + losses
             val rate = if (totalCount > 0) (wins.toDouble() / totalCount * 100.0) else 0.0
 
@@ -233,7 +308,6 @@ class HistoryActivity : AppCompatActivity() {
             binding.valTotalCount.text = getString(R.string.label_matches_format, totalCount)
             binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, wins, losses)
         } else {
-            // 編集モード：常に絶対的な全体統計を表示
             val stats = dataManager.getStatistics()
             binding.textTotalLabel.text = getString(R.string.label_total_win_rate)
             binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
@@ -241,24 +315,22 @@ class HistoryActivity : AppCompatActivity() {
             binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
         }
 
-        // --- 2. 各パーティカードの更新 ---
         val globalStats = dataManager.getStatistics()
         for (i in 0..2) {
             val partyRecords = allRecords.filter { it.partyIndex == i }
             
             val (wins, losses, rate) = if (isFilterMode) {
-                // フィルタモード：このパーティのうち、条件に一致するものを抽出
-                val filtered = partyRecords.filter { record ->
-                    (filterResult == null || record.result == filterResult) &&
-                    (filterMonsters.isEmpty() || filterMonsters.all { it in record.enemyParty })
+                // パーティ別統計も同様に勝敗フィルタを除外
+                val stats = partyRecords.filter { record ->
+                    (filterEnemyMonsters.isEmpty() || filterEnemyMonsters.all { it in record.enemyParty }) &&
+                    (filterMyMonsters.isEmpty() || filterMyMonsters.all { it in record.myParty })
                 }
-                val w = filtered.count { it.result == "WIN" }
-                val l = filtered.count { it.result == "LOSE" }
+                val w = stats.count { it.result == "WIN" }
+                val l = stats.count { it.result == "LOSE" }
                 val t = w + l
                 val r = if (t > 0) (w.toDouble() / t * 100.0) else 0.0
                 Triple(w, l, r)
             } else {
-                // 編集モード：このパーティの全期間戦績
                 val w = partyRecords.count { it.result == "WIN" }
                 val l = partyRecords.count { it.result == "LOSE" }
                 val t = w + l
@@ -296,10 +368,15 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        // --- 3. リストとグラフの更新 ---
         val filteredRecordsForList = getFilteredRecords(allRecords)
         updateTrendsGraph(filteredRecordsForList)
         historyAdapter.updateData(filteredRecordsForList)
+        
+        // フィルタ解除時やデータ更新時、最新のレコード（リストの最後）へスクロール
+        if (filteredRecordsForList.isNotEmpty()) {
+            binding.recyclerViewHistory.scrollToPosition(filteredRecordsForList.size - 1)
+        }
+
         updateCardSelectionUI()
     }
 
@@ -330,7 +407,6 @@ class HistoryActivity : AppCompatActivity() {
     private fun setCardStyle(card: MaterialCardView, isSelected: Boolean) {
         val density = resources.displayMetrics.density
         if (isSelected) {
-            // 選択時：青色の太枠(3dp)とわずかに拡大
             card.strokeWidth = (3f * density).toInt()
             card.strokeColor = "#AAAAAA".toColorInt()
             card.animate().scaleX(1.05f).scaleY(1.05f).setDuration(200).start()
@@ -499,7 +575,7 @@ class HistoryActivity : AppCompatActivity() {
         allMonsters.forEachIndexed { index, name ->
             val imageView = ImageView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(4, 0, 4, 0) }
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 setBackgroundResource(if (index < 4) android.R.drawable.editbox_dropdown_light_frame else android.R.drawable.editbox_dropdown_dark_frame)
                 val monsterData = dataManager.monsterMaster.find { it.name == name }
                 if (monsterData != null) {
@@ -512,7 +588,6 @@ class HistoryActivity : AppCompatActivity() {
                     }
                 }
                 setOnClickListener {
-                    // ダイアログを閉じないように変更
                     val isMyParty = index < 4
                     val monsterIndex = if (isMyParty) index else index - 4
                     showMonsterPicker { selectedName ->
@@ -525,7 +600,6 @@ class HistoryActivity : AppCompatActivity() {
                         val updatedRecord = currentRecord.copy(myParty = newMyParty, enemyParty = newEnemyParty)
                         updateAndSave(recordPos, updatedRecord)
                         
-                        // アイコンを即座に更新（ダイアログを閉じずに連続編集を可能にする）
                         val monsterData = dataManager.monsterMaster.find { it.name == selectedName }
                         if (monsterData != null) {
                             try {
@@ -634,7 +708,6 @@ class HistoryActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.edit_party_title)
             .setItems(parties) { _, partyIndex ->
-                // 最新の履歴から、選択されたパーティIndexに合致する自パーティ構成を探す
                 val latestPartyForIndex = dataManager.history.records
                     .filter { it.partyIndex == partyIndex }
                     .maxByOrNull { it.timestamp }
@@ -659,10 +732,7 @@ class HistoryActivity : AppCompatActivity() {
                     startService(intent)
                 }
                 setupUI()
-                // 追加した位置までスムーズにスクロールさせる
                 binding.recyclerViewHistory.smoothScrollToPosition(position + 1)
-                
-                // 追加したレコードの編集ダイアログを自動で開く
                 showEditRecordDialog(position + 1)
             }
             .show()

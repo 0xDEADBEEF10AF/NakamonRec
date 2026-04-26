@@ -51,6 +51,7 @@
     <string name="filter_all">ALL</string>
     <string name="filter_win_only">WIN</string>
     <string name="filter_lose_only">LOSE</string>
+    <string name="label_filtering_active">Filtering:</string>
     <string name="label_filtering_enemy">Filter:</string>
     <string name="btn_clear_filter">CLEAR</string>
     <string name="msg_filter_added">フィルタに追加: %1$s</string>

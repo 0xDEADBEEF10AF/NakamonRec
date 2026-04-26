@@ -2,6 +2,7 @@ package com.android.nakamonrec
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -16,9 +17,12 @@ class BattleHistoryAdapter(
     private var records: MutableList<BattleRecord>,
     private val monsterMaster: List<MonsterData>,
     private val onLongClick: (Int) -> Unit,
-    private val onResultClick: () -> Unit,
-    private val onMonsterClick: (String) -> Unit
+    val onResultClick: () -> Unit,
+    private val onMonsterClick: (String, Boolean) -> Unit
 ) : RecyclerView.Adapter<BattleHistoryAdapter.ViewHolder>() {
+
+    var filterMyMonsters: List<String> = listOf()
+    var filterEnemyMonsters: List<String> = listOf()
 
     var isFilterMode: Boolean = false
         set(value) {
@@ -62,8 +66,8 @@ class BattleHistoryAdapter(
         val context = holder.itemView.context
 
         holder.result.text = record.result
-        holder.result.setTextColor(if (record.result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt())
-        holder.party.text = context.getString(R.string.party_label_format, record.partyIndex + 1)
+        holder.result.setTextColor(if (record.result == "WIN") Color.parseColor("#F09199") else Color.parseColor("#90D7EC"))
+        holder.party.text = "P${record.partyIndex + 1}"
         holder.time.text = record.timestamp
 
         // モードに応じたクリック設定
@@ -78,11 +82,11 @@ class BattleHistoryAdapter(
             }
         }
 
-        setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, false)
-        setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, isFilterMode)
+        setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, isFilterMode, false)
+        setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, isFilterMode, true)
     }
 
-    private fun setupMonsterIcons(context: Context, layout: LinearLayout, monsterNames: List<String>, clickable: Boolean) {
+    private fun setupMonsterIcons(context: Context, layout: LinearLayout, monsterNames: List<String>, clickable: Boolean, isEnemy: Boolean) {
         layout.removeAllViews()
         val iconSize = context.resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
 
@@ -105,12 +109,39 @@ class BattleHistoryAdapter(
                 imageView.setImageResource(android.R.drawable.ic_menu_help)
             }
 
+            val isSelected = if (isEnemy) filterEnemyMonsters.contains(name) else filterMyMonsters.contains(name)
+            
+            if (isSelected) {
+                // フィルタ選択中: 背景に境界線と薄い塗りつぶしを加え、より洗練された強調表現を適用
+                val highlightColor = if (isEnemy) Color.parseColor("#90D7EC") else Color.parseColor("#F09199")
+                val bg = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                    cornerRadius = 4 * context.resources.displayMetrics.density
+                    setStroke((2 * context.resources.displayMetrics.density).toInt(), highlightColor)
+                    // 背景色を透過させて立ち絵を邪魔しないように調整
+                    setColor(Color.argb(40, Color.red(highlightColor), Color.green(highlightColor), Color.blue(highlightColor)))
+                }
+                imageView.background = bg
+                val p = (2 * context.resources.displayMetrics.density).toInt()
+                imageView.setPadding(p, p, p, p)
+                
+                // 白色のオーバーレイで「選択中」の質感を出し、スケールアップで視覚的に強調
+                imageView.setColorFilter(Color.argb(70, 255, 255, 255), android.graphics.PorterDuff.Mode.SRC_ATOP)
+                
+                imageView.scaleX = 1.15f
+                imageView.scaleY = 1.15f
+            } else {
+                imageView.background = null
+                imageView.setPadding(0, 0, 0, 0)
+                imageView.colorFilter = null
+                imageView.scaleX = 1.0f
+                imageView.scaleY = 1.0f
+            }
+
             if (clickable && name.isNotEmpty()) {
-                imageView.setOnClickListener { onMonsterClick(name) }
-                imageView.setBackgroundResource(android.R.drawable.editbox_dropdown_light_frame)
+                imageView.setOnClickListener { onMonsterClick(name, isEnemy) }
             } else {
                 imageView.setOnClickListener(null)
-                imageView.background = null
             }
 
             layout.addView(imageView)

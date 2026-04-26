@@ -43,20 +43,26 @@
 
                 <TextView
                     android:id="@+id/textTotalLabel"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/label_total_win_rate"
                     android:textColor="#AAAAAA"
-                    android:textSize="10sp"
                     android:textStyle="bold"
-                    android:letterSpacing="0.1"/>
+                    android:letterSpacing="0.1"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    app:autoSizeTextType="uniform"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeMaxTextSize="14sp"
+                    app:autoSizeStepGranularity="1sp"
+                    tools:textSize="14sp"/>
 
                 <TextView
                     android:id="@+id/valTotalRate"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="#F09199"
-                    android:textSize="24sp"
+                    android:textSize="30sp"
                     android:textStyle="bold"
                     android:text="@string/status_none"/>
 
@@ -67,7 +73,7 @@
                     android:textColor="#FFFFFF"
                     android:textSize="12sp"
                     android:text="@string/status_none"
-                    android:alpha="0.7"/>
+                    android:alpha="0.8"/>
 
                 <TextView
                     android:id="@+id/valTotalWinLose"
@@ -245,14 +251,15 @@
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
-    <!-- フィルタステータスバー (敵フィルタが有効なときのみ表示) -->
+    <!-- フィルタステータスバー -->
     <LinearLayout
         android:id="@+id/layoutFilterStatus"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="36dp"
         android:layout_marginHorizontal="12dp"
-        android:layout_marginTop="4dp"
-        android:padding="6dp"
+        android:layout_marginTop="0dp"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="0dp"
         android:background="@drawable/bg_filter_bar"
         android:orientation="horizontal"
         android:gravity="center_vertical"
@@ -260,26 +267,19 @@
         app:layout_constraintTop_toBottomOf="@id/layoutParties"
         tools:visibility="visible">
 
-        <TextView
-            android:id="@+id/textFilterLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/label_filtering_enemy"
-            android:textColor="#AAAAAA"
-            android:textSize="10sp"
-            android:textStyle="bold" />
-
+        <!-- ChipGroupをスクロール可能にするか、横並びにするために調整 -->
         <HorizontalScrollView
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
             android:scrollbars="none"
-            android:layout_marginHorizontal="8dp">
+            android:fillViewport="true">
             <LinearLayout
-                android:id="@+id/layoutFilterChips"
+                android:id="@+id/chipGroupFilters"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal" />
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
         </HorizontalScrollView>
 
         <TextView
@@ -288,10 +288,10 @@
             android:layout_height="wrap_content"
             android:text="@string/btn_clear_filter"
             android:textColor="#90D7EC"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold"
             android:paddingHorizontal="8dp"
-            android:paddingVertical="4dp"
+            android:paddingVertical="2dp"
             android:background="?selectableItemBackground"
             android:clickable="true"
             android:focusable="true" />
