@@ -38,7 +38,13 @@ class CalibrationView @JvmOverloads constructor(
         color = Color.GREEN
         textSize = 40f
         isFakeBoldText = true
-        setShadowLayer(5f, 0f, 0f, Color.BLACK)
+    }
+    private val paintTextOutline = Paint().apply {
+        color = Color.WHITE
+        textSize = 40f
+        isFakeBoldText = true
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
     }
 
     data class CalibrationBox(
@@ -48,7 +54,8 @@ class CalibrationView @JvmOverloads constructor(
         var width: Int,
         var height: Int,
         val label: String,
-        var score: Double = -1.0
+        var score: Double = -1.0,
+        var actualScore: Double = -1.0
     )
 
     private val boxes = mutableListOf<CalibrationBox>()
@@ -132,11 +139,30 @@ class CalibrationView @JvmOverloads constructor(
             }
             
             canvas.drawRect(reusableRect, paintRect)
+            
+            // ラベルの描画（白縁取り + 緑）
+            canvas.drawText(box.label, reusableRect.left, reusableRect.top - 10f, paintTextOutline)
             canvas.drawText(box.label, reusableRect.left, reusableRect.top - 10f, paintText)
             
             if (box.score >= 0) {
                 val scoreText = String.format(java.util.Locale.US, "%.3f", box.score)
+                // 校正スコアの描画（白縁取り + 緑）
+                canvas.drawText(scoreText, reusableRect.right, reusableRect.bottom + 35f, paintTextOutline)
                 canvas.drawText(scoreText, reusableRect.right, reusableRect.bottom + 35f, paintText)
+            }
+
+            // 本番スコアの表示（明るい蛍光ピンク + 白縁取り）
+            if (box.actualScore >= 0) {
+                val actualScoreText = String.format(java.util.Locale.US, "%.3f", box.actualScore)
+                
+                // 縁取り（白）を描画
+                canvas.drawText(actualScoreText, reusableRect.right, reusableRect.bottom + 75f, paintTextOutline)
+                
+                // 本文（ピンク）を上書き
+                val oldColor = paintText.color
+                paintText.color = Color.parseColor("#FF33FF")
+                canvas.drawText(actualScoreText, reusableRect.right, reusableRect.bottom + 75f, paintText)
+                paintText.color = oldColor
             }
         }
     }

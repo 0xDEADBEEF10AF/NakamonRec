@@ -19,7 +19,12 @@ data class BattleRecord(
     val result: String,
     val partyIndex: Int,
     val myParty: List<String>,
-    val enemyParty: List<String>
+    val enemyParty: List<String>,
+    var vsScore: Double? = null,
+    var myPartyScores: List<Double>? = null,
+    var enemyPartyScores: List<Double>? = null,
+    var resultScore: Double? = null,
+    var partySelectScores: List<Double>? = null
 )
 
 /**

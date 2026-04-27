@@ -35,6 +35,7 @@ class MediaCaptureService : Service() {
     private var lastAnalysisTime = 0L
     private var latestBitmap: Bitmap? = null
     private var selectedPartyIndex = -1
+    private var selectedPartyScores: List<Double> = emptyList()
     private var currentSessionId = 0L
     private var debugImageSavedInSession = false
 
@@ -119,7 +120,7 @@ class MediaCaptureService : Service() {
         if (calJson != null) {
             try {
                 val calData = Gson().fromJson(calJson, CalibrationData::class.java)
-                analyzer.setCalibrationData(calData)
+                analyzer.calibrationData = calData
             } catch (e: Exception) {
                 Log.e("CaptureService", "校正データのロード失敗: ${e.message}")
             }
@@ -234,8 +235,11 @@ class MediaCaptureService : Service() {
     }
 
     private fun handleIdleState(bitmap: Bitmap) {
-        val detected = analyzer.detectSelectedParty(bitmap)
-        if (detected != -1) selectedPartyIndex = detected
+        val (detected, scores) = analyzer.detectSelectedParty(bitmap)
+        if (detected != -1) {
+            selectedPartyIndex = detected
+            selectedPartyScores = scores
+        }
         
         if (analyzer.isVsDetected(bitmap)) {
             analysisHandler?.removeCallbacksAndMessages(null)
@@ -244,7 +248,7 @@ class MediaCaptureService : Service() {
             debugImageSavedInSession = false
             currentState = State.IN_BATTLE
             analyzer.resetIdentification()
-            val partyName = if (selectedPartyIndex != -1) "P[${selectedPartyIndex + 1}]" else "?"
+            val partyName = if (selectedPartyIndex != -1) "P${selectedPartyIndex + 1}" else "?"
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始 ($partyName)")
             
             repeatScan(currentSessionId, 40, 50L)
@@ -254,18 +258,26 @@ class MediaCaptureService : Service() {
     private fun handleBattleState(bitmap: Bitmap) {
         val result = analyzer.checkBattleResult(bitmap)
         if (result != null) {
+            val resultScore = if (result == "WIN") analyzer.detectWinScore(bitmap, analyzer.calibrationData.winBox)
+                              else analyzer.detectLoseScore(bitmap, analyzer.calibrationData.loseBox)
+            val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
+
             if (!analyzer.isAllIdentified() && !debugImageSavedInSession) {
                 analyzer.saveDebugBitmap(bitmap, "battle_ended_incomplete_${System.currentTimeMillis()}")
                 debugImageSavedInSession = true
             }
             currentSessionId = 0
-            finalizeBattle(result)
+            finalizeBattle(result, vsScore, resultScore)
         }
     }
 
-    private fun finalizeBattle(result: String) {
-        val (myParty, enemyParty) = analyzer.getCurrentResults()
-        dataManager.addRecord(result, myParty, enemyParty, selectedPartyIndex)
+    private fun finalizeBattle(result: String, vsScore: Double, resultScore: Double) {
+        val (myParty, enemyParty, scores) = analyzer.getCurrentResults()
+        dataManager.addRecord(
+            result, myParty, enemyParty, selectedPartyIndex,
+            vsScore, scores.first, scores.second, resultScore,
+            selectedPartyScores
+        )
         currentState = State.IDLE
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
     }

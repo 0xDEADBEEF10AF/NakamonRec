@@ -156,7 +156,7 @@
                 android:orientation="vertical"
                 android:padding="4dp"
                 android:gravity="center">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p1" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p1" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -194,7 +194,7 @@
                 android:orientation="vertical"
                 android:padding="4dp"
                 android:gravity="center">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p2" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p2" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -232,7 +232,7 @@
                 android:orientation="vertical"
                 android:padding="4dp"
                 android:gravity="center">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p3" android:textColor="#FFFFFF" android:textSize="10sp" android:textStyle="bold"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/label_p3" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

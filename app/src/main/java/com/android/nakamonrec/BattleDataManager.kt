@@ -27,11 +27,26 @@ class BattleDataManager(private val context: Context) {
         }
     }
 
-    fun addRecord(result: String, myParty: List<String>, enemyParty: List<String>, partyIndex: Int) {
+    fun addRecord(
+        result: String,
+        myParty: List<String>,
+        enemyParty: List<String>,
+        partyIndex: Int,
+        vsScore: Double? = null,
+        myPartyScores: List<Double>? = null,
+        enemyPartyScores: List<Double>? = null,
+        resultScore: Double? = null,
+        partySelectScores: List<Double>? = null
+    ) {
         if (result == "WIN") history.totalWins++ else history.totalLosses++
 
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-        history.records.add(BattleRecord(timestamp, result, partyIndex, myParty, enemyParty))
+        val record = BattleRecord(
+            timestamp, result, partyIndex, myParty, enemyParty,
+            vsScore, myPartyScores, enemyPartyScores, resultScore,
+            partySelectScores
+        )
+        history.records.add(record)
         saveHistory()
     }
 

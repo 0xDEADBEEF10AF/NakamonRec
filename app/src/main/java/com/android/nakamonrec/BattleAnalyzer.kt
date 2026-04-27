@@ -12,7 +12,12 @@ import java.util.Locale
 
 class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private val identifiedNames = arrayOfNulls<String>(8)
-    private var calibrationData: CalibrationData = CalibrationData()
+    private val identifiedScores = arrayOfNulls<Double>(8)
+    var calibrationData: CalibrationData = CalibrationData()
+        set(value) {
+            field = value
+            prepareScaledTemplates()
+        }
     private var appContext: Context? = null
 
     private var vsFmTemplate: Mat? = null
@@ -52,11 +57,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun getWinTemplate(): Mat? = winTemplate
     fun getLoseTemplate(): Mat? = loseTemplate
-
-    fun setCalibrationData(data: CalibrationData) {
-        this.calibrationData = data
-        prepareScaledTemplates()
-    }
 
     private fun prepareScaledTemplates() {
         val s = calibrationData.uiScale.toDouble()
@@ -112,7 +112,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         prepareScaledTemplates()
     }
 
-    private fun loadCustomTemplates(context: Context) {
+    fun loadCustomTemplates(context: Context) {
         val vsFile = File(context.filesDir, "vs_custom.png")
         if (vsFile.exists()) {
             vsCustomTemplate = loadExternalTemplate(vsFile.absolutePath)
@@ -382,7 +382,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return score
     }
 
-    fun resetIdentification() { identifiedNames.fill(null) }
+    fun resetIdentification() { 
+        identifiedNames.fill(null)
+        identifiedScores.fill(null)
+    }
     fun isAllIdentified(): Boolean = identifiedNames.all { it != null }
 
     fun identifyStepByStep(bitmap: Bitmap) {
@@ -408,6 +411,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 val result = findBestMonsterMatchMicroScales(roi)
                 if (result.score > MONSTER_THRESHOLD) {
                     identifiedNames[i] = result.name
+                    identifiedScores[i] = result.score
                     Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
                 }
                 roi.release()
@@ -439,14 +443,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     data class MatchResult(val name: String, val score: Double)
 
-    fun getCurrentResults(): Pair<List<String>, List<String>> {
+    fun getCurrentResults(): Triple<List<String>, List<String>, Pair<List<Double>, List<Double>>> {
         val my = identifiedNames.slice(0..3).map { it ?: "?" }
         val enemy = identifiedNames.slice(4..7).map { it ?: "?" }
-        return Pair(my, enemy)
+        val myScores = identifiedScores.slice(0..3).map { it ?: -1.0 }
+        val enemyScores = identifiedScores.slice(4..7).map { it ?: -1.0 }
+        return Triple(my, enemy, Pair(myScores, enemyScores))
     }
 
-    fun detectSelectedParty(bitmap: Bitmap): Int {
-        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return -1
+    fun detectSelectedParty(bitmap: Bitmap): Pair<Int, List<Double>> {
+        val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return -1 to emptyList()
 
         val fullMat = Mat()
         Utils.bitmapToMat(bitmap, fullMat)
@@ -457,6 +463,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         var bestIndex = -1
         var maxScore = -1.0
+        val allScores = mutableListOf<Double>()
         
         val padH = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
         val padV = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
@@ -468,12 +475,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
             val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
             
+            var score = 0.0
             try {
                 val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
                 if (template.cols() <= roi.cols() && template.rows() <= roi.rows()) {
                     val res = Mat()
                     Imgproc.matchTemplate(roi, template, res, Imgproc.TM_CCOEFF_NORMED)
-                    val score = Core.minMaxLoc(res).maxVal
+                    score = Core.minMaxLoc(res).maxVal
                     res.release()
 
                     if (score > maxScore) {
@@ -483,10 +491,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 }
                 roi.release()
             } catch (_: Exception) {}
+            allScores.add(score)
         }
         fullMat.release()
 
-        return if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
+        val finalIdx = if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
+        return finalIdx to allScores
     }
 
     fun saveDebugBitmap(bitmap: Bitmap, label: String) {
@@ -517,7 +527,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun detectMonsterScore(bitmap: Bitmap, config: BoxConfig): Double {
         val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+        Utils.bitmapToMat(bitmap, mat)
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2RGB)
         val imgW = mat.cols().toFloat()
         val imgH = mat.rows().toFloat()

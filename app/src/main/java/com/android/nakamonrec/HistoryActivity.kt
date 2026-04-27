@@ -249,13 +249,13 @@ class HistoryActivity : AppCompatActivity() {
 
 
     private fun showResultFilterDialog() {
-        val items = arrayOf(getString(R.string.filter_all), getString(R.string.filter_win_only), getString(R.string.filter_lose_only))
+        val items = arrayOf(getString(R.string.filter_win_only), getString(R.string.filter_lose_only))
         AlertDialog.Builder(this)
             .setTitle(R.string.dialog_title_result_filter)
             .setItems(items) { _, which ->
                 filterResult = when (which) {
-                    1 -> "WIN"
-                    2 -> "LOSE"
+                    0 -> "WIN"
+                    1 -> "LOSE"
                     else -> null
                 }
                 updateFilterStatusUI()

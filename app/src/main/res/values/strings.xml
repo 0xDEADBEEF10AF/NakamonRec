@@ -10,7 +10,7 @@
     <string name="btn_reset">データリセット</string>
     <string name="btn_calibrate">キャプチャ校正</string>
     <string name="summary_format">勝率 %1$s%% (%2$d勝%3$d敗)</string>
-    <string name="party_label_format">P[%1$d]</string>
+    <string name="party_label_format">P%1$d</string>
 
     <!-- Activity Labels -->
     <string name="title_history">戦績チェック</string>
@@ -26,9 +26,9 @@
 
     <!-- ラベル用 -->
     <string name="label_total">TOTAL</string>
-    <string name="label_p1">P[1]</string>
-    <string name="label_p2">P[2]</string>
-    <string name="label_p3">P[3]</string>
+    <string name="label_p1">P1</string>
+    <string name="label_p2">P2</string>
+    <string name="label_p3">P3</string>
     <string name="label_win_short">勝利</string>
     <string name="label_lose_short">敗北</string>
     <string name="btn_back">戻る</string>

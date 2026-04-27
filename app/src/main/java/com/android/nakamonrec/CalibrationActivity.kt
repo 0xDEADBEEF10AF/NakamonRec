@@ -18,10 +18,14 @@ import java.util.concurrent.Executors
 class CalibrationActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCalibrationBinding
-    private lateinit var analyzer: BattleAnalyzer
+    private val dataManager by lazy { BattleDataManager(this) }
+    private val analyzer by lazy { BattleAnalyzer(dataManager.monsterMaster) }
     private var mode: String? = null
     private var fileName: String? = null
     private var sourceBitmap: Bitmap? = null
+    private var lastMeasuredRecord: BattleRecord? = null
+    private var lastWinRecord: BattleRecord? = null
+    private var lastLoseRecord: BattleRecord? = null
     private var detectedScale: Float = 1.0f
     private val executor = Executors.newSingleThreadExecutor()
 
@@ -39,9 +43,8 @@ class CalibrationActivity : AppCompatActivity() {
             return
         }
 
-        val dm = BattleDataManager(this)
-        analyzer = BattleAnalyzer(dm.monsterMaster)
         analyzer.loadTemplates(this)
+        analyzer.loadCustomTemplates(this)
 
         setupUI()
     }
@@ -69,6 +72,14 @@ class CalibrationActivity : AppCompatActivity() {
             else -> getString(R.string.calibrate_guide_default)
         }
 
+        // 最後に記録された戦績を取得
+        val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
+        val lastFile = prefs.getString("last_file_name", "history_default") ?: "history_default"
+        dataManager.loadHistory(lastFile)
+        lastMeasuredRecord = dataManager.history.records.lastOrNull()
+        lastWinRecord = dataManager.history.records.findLast { it.result == "WIN" }
+        lastLoseRecord = dataManager.history.records.findLast { it.result == "LOSE" }
+
         displayBoxes(currentData)
 
         binding.btnSave.setOnClickListener {
@@ -80,6 +91,11 @@ class CalibrationActivity : AppCompatActivity() {
         }
 
         binding.btnDefault.setOnClickListener {
+            // 本番スコアをリセット
+            lastMeasuredRecord = null
+            lastWinRecord = null
+            lastLoseRecord = null
+
             // 現在のモードに応じて対象のカスタムテンプレートのみを削除
             when (mode) {
                 "party" -> analyzer.deleteCustomTemplate("party_custom.png")
@@ -137,7 +153,8 @@ class CalibrationActivity : AppCompatActivity() {
                         
                         configs.mapIndexed { i: Int, config: BoxConfig ->
                             val score = analyzer.detectPartyScore(bitmap, config)
-                            CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}", score)
+                            val actual = lastMeasuredRecord?.partySelectScores?.getOrNull(i) ?: -1.0
+                            CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}", score, actual)
                         }
                     } else null
                 }
@@ -151,15 +168,17 @@ class CalibrationActivity : AppCompatActivity() {
 
                         val list = mutableListOf<CalibrationView.CalibrationBox>()
                         val vsScore = analyzer.detectVsScore(bitmap, autoData.vsBox)
-                        list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS", vsScore))
+                        list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS", vsScore, lastMeasuredRecord?.vsScore ?: -1.0))
                         
                         autoData.enemyPartyBoxes.forEachIndexed { i: Int, b: BoxConfig ->
                             val s = analyzer.detectMonsterScore(bitmap, b)
-                            list.add(CalibrationView.CalibrationBox(10+i, b.centerX, b.centerY, b.width, b.height, "敵${i+1}", s))
+                            val actual = lastMeasuredRecord?.enemyPartyScores?.getOrNull(i) ?: -1.0
+                            list.add(CalibrationView.CalibrationBox(10+i, b.centerX, b.centerY, b.width, b.height, "敵${i+1}", s, actual))
                         }
                         autoData.myPartyBoxes.forEachIndexed { i: Int, b: BoxConfig ->
                             val s = analyzer.detectMonsterScore(bitmap, b)
-                            list.add(CalibrationView.CalibrationBox(20+i, b.centerX, b.centerY, b.width, b.height, "自${i+1}", s))
+                            val actual = lastMeasuredRecord?.myPartyScores?.getOrNull(i) ?: -1.0
+                            list.add(CalibrationView.CalibrationBox(20+i, b.centerX, b.centerY, b.width, b.height, "自${i+1}", s, actual))
                         }
                         list
                     } else null
@@ -168,14 +187,16 @@ class CalibrationActivity : AppCompatActivity() {
                     val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getWinTemplate(), false, 0.0f, 0.5f)
                     if (resRes != null) {
                         val config = resRes.first
-                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), resRes.second))
+                        val actual = lastWinRecord?.resultScore ?: -1.0
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), resRes.second, actual))
                     } else null
                 }
                 "lose" -> {
                     val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getLoseTemplate(), false, 0.0f, 0.5f)
                     if (resRes != null) {
                         val config = resRes.first
-                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), resRes.second))
+                        val actual = lastLoseRecord?.resultScore ?: -1.0
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), resRes.second, actual))
                     } else null
                 }
                 else -> null
@@ -201,29 +222,34 @@ class CalibrationActivity : AppCompatActivity() {
         val boxes = when (mode) {
             "party" -> data.partySelectBoxes.mapIndexed { i: Int, config: BoxConfig ->
                 val score = if (bitmap != null) analyzer.detectPartyScore(bitmap, config) else -1.0
-                CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}", score)
+                val actual = lastMeasuredRecord?.partySelectScores?.getOrNull(i) ?: -1.0
+                CalibrationView.CalibrationBox(i, config.centerX, config.centerY, config.width, config.height, "P${i + 1}", score, actual)
             }
             "vs" -> {
                 val list = mutableListOf<CalibrationView.CalibrationBox>()
                 val vsScore = if (bitmap != null) analyzer.detectVsScore(bitmap, data.vsBox) else -1.0
-                list.add(CalibrationView.CalibrationBox(0, data.vsBox.centerX, data.vsBox.centerY, data.vsBox.width, data.vsBox.height, "VS", vsScore))
+                list.add(CalibrationView.CalibrationBox(0, data.vsBox.centerX, data.vsBox.centerY, data.vsBox.width, data.vsBox.height, "VS", vsScore, lastMeasuredRecord?.vsScore ?: -1.0))
                 data.enemyPartyBoxes.forEachIndexed { i: Int, config: BoxConfig ->
                     val s = if (bitmap != null) analyzer.detectMonsterScore(bitmap, config) else -1.0
-                    list.add(CalibrationView.CalibrationBox(10 + i, config.centerX, config.centerY, config.width, config.height, "敵${i + 1}", s))
+                    val actual = lastMeasuredRecord?.enemyPartyScores?.getOrNull(i) ?: -1.0
+                    list.add(CalibrationView.CalibrationBox(10 + i, config.centerX, config.centerY, config.width, config.height, "敵${i + 1}", s, actual))
                 }
-                data.myPartyBoxes.forEachIndexed { i: Int, config: BoxConfig ->
-                    val s = if (bitmap != null) analyzer.detectMonsterScore(bitmap, config) else -1.0
-                    list.add(CalibrationView.CalibrationBox(20 + i, config.centerX, config.centerY, config.width, config.height, "自${i + 1}", s))
+                data.myPartyBoxes.forEachIndexed { i: Int, b: BoxConfig ->
+                    val s = if (bitmap != null) analyzer.detectMonsterScore(bitmap, b) else -1.0
+                    val actual = lastMeasuredRecord?.myPartyScores?.getOrNull(i) ?: -1.0
+                    list.add(CalibrationView.CalibrationBox(20 + i, b.centerX, b.centerY, b.width, b.height, "自${i + 1}", s, actual))
                 }
                 list
             }
             "win" -> {
                 val score = if (bitmap != null) analyzer.detectWinScore(bitmap, data.winBox) else -1.0
-                listOf(CalibrationView.CalibrationBox(0, data.winBox.centerX, data.winBox.centerY, data.winBox.width, data.winBox.height, getString(R.string.label_win_short), score))
+                val actual = lastWinRecord?.resultScore ?: -1.0
+                listOf(CalibrationView.CalibrationBox(0, data.winBox.centerX, data.winBox.centerY, data.winBox.width, data.winBox.height, getString(R.string.label_win_short), score, actual))
             }
             "lose" -> {
                 val score = if (bitmap != null) analyzer.detectLoseScore(bitmap, data.loseBox) else -1.0
-                listOf(CalibrationView.CalibrationBox(0, data.loseBox.centerX, data.loseBox.centerY, data.loseBox.width, data.loseBox.height, getString(R.string.label_lose_short), score))
+                val actual = lastLoseRecord?.resultScore ?: -1.0
+                listOf(CalibrationView.CalibrationBox(0, data.loseBox.centerX, data.loseBox.centerY, data.loseBox.width, data.loseBox.height, getString(R.string.label_lose_short), score, actual))
             }
             else -> emptyList()
         }
