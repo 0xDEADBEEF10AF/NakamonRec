@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
+import android.widget.FrameLayout
 import android.widget.GridView
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -79,6 +80,8 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun initRecyclerView() {
+        binding.winRateGraph.visibleCount = 20 // 20戦分を表示
+        binding.winRateGraph.isDynamicScale = true // ダイナミックスケールを有効化
         historyAdapter = BattleHistoryAdapter(
             mutableListOf(),
             dataManager.monsterMaster,
@@ -184,7 +187,7 @@ class HistoryActivity : AppCompatActivity() {
         val density = resources.displayMetrics.density
         
         // Chipの代わりにFrameLayoutでアイコンと枠線を構成
-        val container = android.widget.FrameLayout(this).apply {
+        val container = FrameLayout(this).apply {
             // 親(LinearLayout)の垂直中央に配置
             val params = LinearLayout.LayoutParams(iconSize, iconSize).apply {
                 gravity = Gravity.CENTER_VERTICAL
@@ -202,9 +205,9 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         val imageView = ImageView(this).apply {
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
             )
             scaleType = ImageView.ScaleType.CENTER_CROP
             
@@ -223,9 +226,9 @@ class HistoryActivity : AppCompatActivity() {
         // 枠線（縁取り）
         val strokeColor = if (isEnemy) "#90D7EC".toColorInt() else "#F09199".toColorInt()
         val border = View(this).apply {
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
             )
             val gd = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
@@ -386,15 +389,18 @@ class HistoryActivity : AppCompatActivity() {
             return
         }
         binding.winRateGraph.visibility = View.VISIBLE
-        val movingRates = mutableListOf<Double>()
+        val dataPoints = mutableListOf<WinRateGraphView.PointData>()
         val windowSize = 20
         targetRecords.forEachIndexed { i, _ ->
             val start = (i - windowSize + 1).coerceAtLeast(0)
             val subList = targetRecords.subList(start, i + 1)
             val wins = subList.count { it.result == "WIN" }
-            movingRates.add((wins.toDouble() / subList.size) * 100.0)
+            val rate = (wins.toDouble() / subList.size) * 100.0
+            // タップ時に表示する情報を label に格納: "〇%：〇Matches"
+            val label = String.format(Locale.US, "%.1f%% : %dMatches", rate, subList.size)
+            dataPoints.add(WinRateGraphView.PointData(rate, label))
         }
-        binding.winRateGraph.setData(movingRates)
+        binding.winRateGraph.setData(dataPoints)
     }
 
     private fun updateCardSelectionUI() {
@@ -440,6 +446,226 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showAnalysisDialog() {
+        val items = arrayOf("パーティ分析", "モンスター分析")
+        AlertDialog.Builder(this)
+            .setTitle("分析メニュー")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showPartyAnalysisDialog()
+                    1 -> showMonsterRankingDialog()
+                }
+            }
+            .show()
+    }
+
+    private fun showPartyAnalysisDialog() {
+        val allRecords = dataManager.history.records
+        if (allRecords.isEmpty()) return
+
+        val globalStats = dataManager.getStatistics()
+        val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val sdfDisplay = SimpleDateFormat("MM/dd", Locale.US)
+
+        data class PartyStats(
+            val partyIndex: Int, // -1: Total, 0-2: P1-P3
+            val members: List<String>,
+            var wins: Int = 0,
+            var losses: Int = 0,
+            var lastUsed: Long = 0,
+            var isLatest: Boolean = false,
+            var historyRates: List<WinRateGraphView.PointData> = emptyList()
+        ) {
+            val total get() = wins + losses
+            val winRate get() = if (total > 0) (wins.toDouble() / total * 100.0) else 0.0
+        }
+
+        fun getDailyRates(records: List<BattleRecord>): List<WinRateGraphView.PointData> {
+            val grouped = records.groupBy {
+                try { sdfDate.format(sdfInput.parse(it.timestamp)!!) } catch (_: Exception) { it.timestamp.take(10) }
+            }
+            return grouped.entries.sortedBy { it.key }.map { (dateStr, dayRecords) ->
+                val wins = dayRecords.count { it.result == "WIN" }
+                val rate = (wins.toDouble() / dayRecords.size) * 100.0
+                val dateLabel = try { sdfDisplay.format(sdfDate.parse(dateStr)!!) } catch (_: Exception) { dateStr.takeLast(5) }
+                // タップ時に表示する情報を label に格納。X軸表示用の日付はここでは含めず、ツールチップ用として構成
+                val tooltipLabel = String.format(Locale.US, "%.1f%% : %dMatches (%s)", rate, dayRecords.size, dateLabel)
+                WinRateGraphView.PointData(rate, tooltipLabel)
+            }
+        }
+
+        val statsMap = mutableMapOf<Pair<Int, List<String>>, PartyStats>()
+        val totalStats = PartyStats(-1, emptyList())
+        
+        val latestMembersByIndex = mutableMapOf<Int, List<String>>()
+        for (i in 0..2) {
+            allRecords.filter { it.partyIndex == i }.maxByOrNull { it.timestamp }?.let {
+                latestMembersByIndex[i] = it.myParty
+            }
+        }
+
+        allRecords.forEach { record ->
+            if (record.result == "WIN") totalStats.wins++ else totalStats.losses++
+            val key = record.partyIndex to record.myParty
+            val stats = statsMap.getOrPut(key) { PartyStats(record.partyIndex, record.myParty) }
+            if (record.result == "WIN") stats.wins++ else stats.losses++
+            val time = try { sdfInput.parse(record.timestamp)?.time ?: 0L } catch(_: Exception) { 0L }
+            if (time > stats.lastUsed) stats.lastUsed = time
+        }
+
+        totalStats.historyRates = getDailyRates(allRecords)
+        statsMap.forEach { (key, stats) ->
+            val partyRecords = allRecords.filter { it.partyIndex == key.first && it.myParty == key.second }
+            stats.historyRates = getDailyRates(partyRecords)
+        }
+
+        statsMap.values.forEach { 
+            if (it.members == latestMembersByIndex[it.partyIndex]) it.isLatest = true
+        }
+
+        val displayList = mutableListOf<PartyStats>().apply {
+            add(totalStats)
+            for (i in 0..2) {
+                statsMap.values.find { it.partyIndex == i && it.isLatest }?.let { add(it) }
+            }
+            addAll(statsMap.values.filter { !it.isLatest }.sortedByDescending { it.lastUsed })
+        }
+
+        val listView = ListView(this).apply {
+            divider = null
+            setPadding(16, 16, 16, 16)
+            clipToPadding = false
+        }
+        
+        listView.adapter = object : BaseAdapter() {
+            override fun getCount(): Int = displayList.size
+            override fun getItem(position: Int) = displayList[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val stats = displayList[position]
+                val card = MaterialCardView(this@HistoryActivity).apply {
+                    layoutParams = ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        setMargins(0, 8, 0, 8)
+                    }
+                    radius = 12f * resources.displayMetrics.density
+                    cardElevation = 4f * resources.displayMetrics.density
+                    setCardBackgroundColor("#252525".toColorInt())
+                    if (stats.isLatest) {
+                        strokeWidth = (2 * resources.displayMetrics.density).toInt()
+                        strokeColor = "#F09199".toColorInt()
+                    } else {
+                        strokeWidth = 0
+                    }
+                    
+                    val horizontalRoot = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        val p = (12 * resources.displayMetrics.density).toInt()
+                        setPadding(p, p, p, p)
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+
+                    // 左側コンテンツ (テキストとアイコン)
+                    val leftContent = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams((124 * resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+                    }
+
+                    // タイトルと勝率
+                    val titleRow = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    }
+                    val titleText = when {
+                        stats.partyIndex == -1 -> "TOTAL"
+                        stats.isLatest -> "P${stats.partyIndex + 1}(最新)"
+                        else -> "P${stats.partyIndex + 1}(過去)"
+                    }
+                    val title = TextView(context).apply {
+                        text = titleText
+                        setTextColor(Color.WHITE)
+                        textSize = 14f
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                    }
+                    val spacer = View(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+                    }
+                    val rateText = TextView(context).apply {
+                        text = String.format(Locale.US, "%.1f%%", stats.winRate)
+                        setTextColor(if (stats.winRate >= 50.0) "#F09199".toColorInt() else "#90D7EC".toColorInt())
+                        textSize = 15f
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                    }
+                    titleRow.addView(title)
+                    titleRow.addView(spacer)
+                    titleRow.addView(rateText)
+                    leftContent.addView(titleRow)
+
+                    // 対戦数・使用率 (2行に分割、フォーマット統一)
+                    val subInfo = TextView(context).apply {
+                        val matchesStr = getString(R.string.label_matches_format, stats.total)
+                        val wlStr = getString(R.string.label_win_lose_format, stats.wins, stats.losses)
+                        val usageRate = if (stats.partyIndex == -1) 100.0 else {
+                            globalStats.partyStats.find { it.index == stats.partyIndex }?.usageRate ?: 0.0
+                        }
+                        val usageStr = String.format(Locale.US, "%.1f%%", usageRate)
+
+                        text = "${matchesStr}\n${wlStr}(Use:${usageStr})"
+                        setTextColor(Color.LTGRAY)
+                        textSize = 11f
+                        setPadding(0, 2, 0, 0)
+                    }
+                    leftContent.addView(subInfo)
+
+                    // モンスターアイコン
+                    if (stats.partyIndex != -1) {
+                        val iconsLayout = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            setPadding(0, 8, 0, 0)
+                        }
+                        val iconSize = (28 * resources.displayMetrics.density).toInt()
+                        stats.members.forEach { name ->
+                            val iv = ImageView(context).apply {
+                                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { marginEnd = 4 }
+                                scaleType = ImageView.ScaleType.CENTER_CROP
+                                dataManager.monsterMaster.find { it.name == name }?.let { monster ->
+                                    try { assets.open("templates/${monster.fileName}").use { setImageBitmap(BitmapFactory.decodeStream(it)) } }
+                                    catch(_:Exception) { setImageResource(android.R.drawable.ic_menu_help) }
+                                } ?: setImageResource(android.R.drawable.ic_menu_help)
+                            }
+                            iconsLayout.addView(iv)
+                        }
+                        leftContent.addView(iconsLayout)
+                    }
+                    horizontalRoot.addView(leftContent)
+
+                    // 右側：勝率推移グラフ
+                    val graphContainer = FrameLayout(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, (80 * resources.displayMetrics.density).toInt(), 1f).apply {
+                            marginStart = 16
+                        }
+                        val graph = WinRateGraphView(context).apply {
+                            visibleCount = 7 // 日別データは1週間分程度を表示
+                            setData(stats.historyRates)
+                        }
+                        addView(graph)
+                    }
+                    horizontalRoot.addView(graphContainer)
+                    
+                    addView(horizontalRoot)
+                }
+                return card
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("パーティ分析")
+            .setView(listView)
+            .setPositiveButton("閉じる", null)
+            .show()
+    }
+
+    private fun showMonsterRankingDialog() {
         val allRecords = dataManager.history.records
         val filteredRecords = getFilteredRecords(allRecords)
         if (filteredRecords.isEmpty()) return
@@ -447,7 +673,7 @@ class HistoryActivity : AppCompatActivity() {
         val appearanceCount = mutableMapOf<String, Int>()
         val winAgainstCount = mutableMapOf<String, Int>()
         filteredRecords.forEach { record ->
-            record.enemyParty.filter { it.isNotEmpty() }.distinct().forEach { name ->
+            record.enemyParty.filter { it.isNotEmpty() && it != "?" }.distinct().forEach { name ->
                 appearanceCount[name] = appearanceCount.getOrDefault(name, 0) + 1
                 if (record.result == "WIN") winAgainstCount[name] = winAgainstCount.getOrDefault(name, 0) + 1
             }
