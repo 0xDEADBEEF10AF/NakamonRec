@@ -36,6 +36,7 @@ class BattleHistoryAdapter(
         val result: TextView = view.findViewById(R.id.textResult)
         val party: TextView = view.findViewById(R.id.textParty)
         val time: TextView = view.findViewById(R.id.textTimestamp)
+        val vsScore: TextView = view.findViewById(R.id.textVsScore)
         val layoutMyMonsters: LinearLayout = view.findViewById(R.id.layoutMyMonsters)
         val layoutEnemyMonsters: LinearLayout = view.findViewById(R.id.layoutEnemyMonsters)
     }
@@ -70,6 +71,14 @@ class BattleHistoryAdapter(
         holder.party.text = "P${record.partyIndex + 1}"
         holder.time.text = record.timestamp
 
+        // スコア表示
+        if (record.vsScore != null) {
+            holder.vsScore.text = String.format(java.util.Locale.US, "%.0f%%", record.vsScore!! * 100)
+            holder.vsScore.visibility = View.VISIBLE
+        } else {
+            holder.vsScore.visibility = View.GONE
+        }
+
         // モードに応じたクリック設定
         if (isFilterMode) {
             holder.result.setOnClickListener { onResultClick() }
@@ -82,15 +91,27 @@ class BattleHistoryAdapter(
             }
         }
 
-        setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, isFilterMode, false)
-        setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, isFilterMode, true)
+        setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, record.myPartyScores, isFilterMode, false)
+        setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, record.enemyPartyScores, isFilterMode, true)
     }
 
-    private fun setupMonsterIcons(context: Context, layout: LinearLayout, monsterNames: List<String>, clickable: Boolean, isEnemy: Boolean) {
+    private fun setupMonsterIcons(
+        context: Context,
+        layout: LinearLayout,
+        monsterNames: List<String>,
+        scores: List<Double>?,
+        clickable: Boolean,
+        isEnemy: Boolean
+    ) {
         layout.removeAllViews()
         val iconSize = context.resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
 
-        monsterNames.forEach { name ->
+        monsterNames.forEachIndexed { i, name ->
+            val container = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+            }
+
             val imageView = ImageView(context)
             val params = LinearLayout.LayoutParams(iconSize, iconSize)
             params.setMargins(1, 0, 1, 0)
@@ -112,22 +133,17 @@ class BattleHistoryAdapter(
             val isSelected = if (isEnemy) filterEnemyMonsters.contains(name) else filterMyMonsters.contains(name)
             
             if (isSelected) {
-                // フィルタ選択中: 背景に境界線と薄い塗りつぶしを加え、より洗練された強調表現を適用
                 val highlightColor = if (isEnemy) Color.parseColor("#90D7EC") else Color.parseColor("#F09199")
                 val bg = android.graphics.drawable.GradientDrawable().apply {
                     shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                     cornerRadius = 4 * context.resources.displayMetrics.density
                     setStroke((2 * context.resources.displayMetrics.density).toInt(), highlightColor)
-                    // 背景色を透過させて立ち絵を邪魔しないように調整
                     setColor(Color.argb(40, Color.red(highlightColor), Color.green(highlightColor), Color.blue(highlightColor)))
                 }
                 imageView.background = bg
                 val p = (2 * context.resources.displayMetrics.density).toInt()
                 imageView.setPadding(p, p, p, p)
-                
-                // 白色のオーバーレイで「選択中」の質感を出し、スケールアップで視覚的に強調
                 imageView.setColorFilter(Color.argb(70, 255, 255, 255), android.graphics.PorterDuff.Mode.SRC_ATOP)
-                
                 imageView.scaleX = 1.15f
                 imageView.scaleY = 1.15f
             } else {
@@ -138,13 +154,24 @@ class BattleHistoryAdapter(
                 imageView.scaleY = 1.0f
             }
 
-            if (clickable && name.isNotEmpty()) {
-                imageView.setOnClickListener { onMonsterClick(name, isEnemy) }
-            } else {
-                imageView.setOnClickListener(null)
+            container.addView(imageView)
+
+            // スコア表示用テキスト
+            val score = scores?.getOrNull(i)
+            if (score != null) {
+                val scoreText = TextView(context).apply {
+                    text = String.format(java.util.Locale.US, "%.0f%%", score * 100)
+                    textSize = 7f
+                    setTextColor(if (score > 0.8) Color.WHITE else Color.parseColor("#FF8888"))
+                }
+                container.addView(scoreText)
             }
 
-            layout.addView(imageView)
+            if (clickable && name.isNotEmpty()) {
+                container.setOnClickListener { onMonsterClick(name, isEnemy) }
+            }
+
+            layout.addView(container)
         }
     }
 

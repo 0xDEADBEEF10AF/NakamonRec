@@ -51,14 +51,26 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal" />
 
-            <TextView
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/label_vs"
-                android:textColor="#FFFFFF"
-                android:layout_marginHorizontal="2dp"
-                android:textSize="@dimen/battle_history_text_sub"
-                android:textStyle="bold" />
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/textVsScore"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#88FFFFFF"
+                    android:textSize="8sp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_vs"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginHorizontal="2dp"
+                    android:textSize="@dimen/battle_history_text_sub"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/layoutEnemyMonsters"
