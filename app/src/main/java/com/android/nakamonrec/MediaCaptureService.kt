@@ -4,6 +4,7 @@ import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -33,9 +34,12 @@ class MediaCaptureService : Service() {
     private enum class State { IDLE, IN_BATTLE }
     private var currentState = State.IDLE
     private var lastAnalysisTime = 0L
+    private var lastBitmapUpdateTime = 0L
     private var latestBitmap: Bitmap? = null
     private var selectedPartyIndex = -1
-    private var selectedPartyScores: List<Double> = emptyList()
+    private var currentPartyScores: List<Double> = emptyList()
+    private var maxPartyScores: List<Double> = emptyList()
+    private var maxVsScore: Double = 0.0
     private var currentSessionId = 0L
     private var debugImageSavedInSession = false
 
@@ -147,42 +151,48 @@ class MediaCaptureService : Service() {
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             
-            val cleanBitmap = try {
-                processImageToBitmap(image)
-            } catch (_: Exception) {
-                image.close()
-                return@setOnImageAvailableListener
-            }
-            image.close()
-
-            synchronized(this) {
-                latestBitmap?.recycle()
-                latestBitmap = cleanBitmap
-            }
-
             val currentTime = System.currentTimeMillis()
-            if (currentTime - lastAnalysisTime >= ANALYSIS_INTERVAL_MS) {
-                lastAnalysisTime = currentTime
-                
-                val snapshot = synchronized(this) {
-                    if (latestBitmap != null && !latestBitmap!!.isRecycled) {
-                        Bitmap.createBitmap(latestBitmap!!)
-                    } else null
+            val minInterval = if (currentState == State.IN_BATTLE) 50L else 500L
+
+            if (currentTime - lastBitmapUpdateTime >= minInterval) {
+                val cleanBitmap = try {
+                    processImageToBitmap(image)
+                } catch (_: Exception) {
+                    null
                 }
                 
-                snapshot?.let { bmp ->
-                    analysisHandler?.post {
-                        try {
-                            when (currentState) {
-                                State.IDLE -> handleIdleState(bmp)
-                                State.IN_BATTLE -> handleBattleState(bmp)
+                if (cleanBitmap != null) {
+                    lastBitmapUpdateTime = currentTime
+                    synchronized(this) {
+                        latestBitmap?.recycle()
+                        latestBitmap = cleanBitmap
+                    }
+
+                    if (currentTime - lastAnalysisTime >= ANALYSIS_INTERVAL_MS) {
+                        lastAnalysisTime = currentTime
+                        
+                        val snapshot = synchronized(this) {
+                            if (latestBitmap != null && !latestBitmap!!.isRecycled) {
+                                Bitmap.createBitmap(latestBitmap!!)
+                            } else null
+                        }
+                        
+                        snapshot?.let { bmp ->
+                            analysisHandler?.post {
+                                try {
+                                    when (currentState) {
+                                        State.IDLE -> handleIdleState(bmp)
+                                        State.IN_BATTLE -> handleBattleState(bmp)
+                                    }
+                                } finally {
+                                    bmp.recycle()
+                                }
                             }
-                        } finally {
-                            bmp.recycle()
                         }
                     }
                 }
             }
+            image.close()
         }, captureHandler)
     }
 
@@ -192,11 +202,18 @@ class MediaCaptureService : Service() {
         val pixelStride = planes.pixelStride
         val rowStride = planes.rowStride
         val rowPadding = rowStride - pixelStride * image.width
-        val tempBitmap = createBitmap(image.width + rowPadding / pixelStride, image.height)
-        tempBitmap.copyPixelsFromBuffer(buffer)
-        val cleanBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, image.width, image.height)
-        tempBitmap.recycle()
-        return cleanBitmap
+        
+        return if (rowPadding == 0) {
+            val bitmap = createBitmap(image.width, image.height)
+            bitmap.copyPixelsFromBuffer(buffer)
+            bitmap
+        } else {
+            val tempBitmap = createBitmap(image.width + rowPadding / pixelStride, image.height)
+            tempBitmap.copyPixelsFromBuffer(buffer)
+            val cleanBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, image.width, image.height)
+            tempBitmap.recycle()
+            cleanBitmap
+        }
     }
 
     private fun repeatScan(sessionId: Long, count: Int, delayMs: Long) {
@@ -236,12 +253,20 @@ class MediaCaptureService : Service() {
 
     private fun handleIdleState(bitmap: Bitmap) {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
+        currentPartyScores = scores
+        
+        if (maxPartyScores.isEmpty() || scores.maxOrNull() ?: 0.0 > maxPartyScores.maxOrNull() ?: 0.0) {
+            maxPartyScores = scores
+        }
+        
         if (detected != -1) {
             selectedPartyIndex = detected
-            selectedPartyScores = scores
         }
         
         if (analyzer.isVsDetected(bitmap)) {
+            val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
+            maxVsScore = vsScore
+
             analysisHandler?.removeCallbacksAndMessages(null)
 
             currentSessionId = System.currentTimeMillis()
@@ -256,18 +281,20 @@ class MediaCaptureService : Service() {
     }
 
     private fun handleBattleState(bitmap: Bitmap) {
+        val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
+        if (vsScore > maxVsScore) maxVsScore = vsScore
+
         val result = analyzer.checkBattleResult(bitmap)
         if (result != null) {
             val resultScore = if (result == "WIN") analyzer.detectWinScore(bitmap, analyzer.calibrationData.winBox)
                               else analyzer.detectLoseScore(bitmap, analyzer.calibrationData.loseBox)
-            val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
 
             if (!analyzer.isAllIdentified() && !debugImageSavedInSession) {
                 analyzer.saveDebugBitmap(bitmap, "battle_ended_incomplete_${System.currentTimeMillis()}")
                 debugImageSavedInSession = true
             }
             currentSessionId = 0
-            finalizeBattle(result, vsScore, resultScore)
+            finalizeBattle(result, maxVsScore, resultScore)
         }
     }
 
@@ -276,9 +303,11 @@ class MediaCaptureService : Service() {
         dataManager.addRecord(
             result, myParty, enemyParty, selectedPartyIndex,
             vsScore, scores.first, scores.second, resultScore,
-            selectedPartyScores
+            maxPartyScores
         )
         currentState = State.IDLE
+        maxPartyScores = emptyList()
+        maxVsScore = 0.0
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
     }
 

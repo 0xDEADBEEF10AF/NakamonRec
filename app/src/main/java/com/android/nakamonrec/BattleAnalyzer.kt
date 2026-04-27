@@ -396,7 +396,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
         
         for (i in 0..7) {
+            // 確定済みならスキップ
             if (identifiedNames[i] != null) continue
+
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
             
             // モンスター用パディング
@@ -409,6 +411,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             try {
                 val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
                 val result = findBestMonsterMatchMicroScales(roi)
+                
+                // 未確定スロットの最高スコアを更新（原因調査用）
+                val currentMax = identifiedScores[i] ?: -1.0
+                if (result.score > currentMax) {
+                    identifiedScores[i] = result.score
+                }
+
                 if (result.score > MONSTER_THRESHOLD) {
                     identifiedNames[i] = result.name
                     identifiedScores[i] = result.score

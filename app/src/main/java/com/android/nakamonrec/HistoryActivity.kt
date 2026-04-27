@@ -129,7 +129,7 @@ class HistoryActivity : AppCompatActivity() {
             binding.layoutFilterStatus.visibility = View.GONE
             historyAdapter.filterMyMonsters = listOf()
             historyAdapter.filterEnemyMonsters = listOf()
-            historyAdapter.notifyDataSetChanged()
+            historyAdapter.notifyItemRangeChanged(0, historyAdapter.itemCount)
             return
         }
         binding.layoutFilterStatus.visibility = View.VISIBLE
@@ -149,7 +149,7 @@ class HistoryActivity : AppCompatActivity() {
         
         historyAdapter.filterMyMonsters = filterMyMonsters.toList()
         historyAdapter.filterEnemyMonsters = filterEnemyMonsters.toList()
-        historyAdapter.notifyDataSetChanged()
+        historyAdapter.notifyItemRangeChanged(0, historyAdapter.itemCount)
     }
 
     private fun addFilterChip(labelText: String, colorInt: Int, onClose: () -> Unit) {
@@ -221,7 +221,7 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         // 枠線（縁取り）
-        val strokeColor = if (isEnemy) Color.parseColor("#90D7EC") else Color.parseColor("#F09199")
+        val strokeColor = if (isEnemy) "#90D7EC".toColorInt() else "#F09199".toColorInt()
         val border = View(this).apply {
             layoutParams = android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
@@ -527,7 +527,8 @@ class HistoryActivity : AppCompatActivity() {
             getString(R.string.edit_option_change_party, record.partyIndex + 1),
             getString(R.string.edit_option_change_monsters),
             getString(R.string.edit_option_delete),
-            getString(R.string.edit_option_insert_after)
+            getString(R.string.edit_option_insert_after),
+            "マッチングスコアを確認"
         )
         AlertDialog.Builder(this)
             .setTitle(R.string.edit_record_title)
@@ -538,8 +539,40 @@ class HistoryActivity : AppCompatActivity() {
                     2 -> showMonsterEditSelector(position)
                     3 -> deleteRecord(position)
                     4 -> insertRecordAfter(position)
+                    5 -> showScoreDetailsDialog(position)
                 }
             }
+            .show()
+    }
+
+    private fun showScoreDetailsDialog(position: Int) {
+        val record = dataManager.history.records.getOrNull(position) ?: return
+        val sb = StringBuilder()
+        sb.append("【パーティ選択】\n")
+        record.partySelectScores?.forEachIndexed { i, s ->
+            sb.append("P${i + 1}: ${String.format(Locale.US, "%.3f", s)}\n")
+        }
+        sb.append("\n【VS画面】\n")
+        sb.append("VSロゴ: ${String.format(Locale.US, "%.3f", record.vsScore ?: 0.0)}\n")
+
+        sb.append("\n【モンスター】\n")
+        record.myParty.forEachIndexed { i, name ->
+            val s = record.myPartyScores?.getOrNull(i) ?: 0.0
+            sb.append("自${i + 1}($name): ${String.format(Locale.US, "%.3f", s)}\n")
+        }
+        record.enemyParty.forEachIndexed { i, name ->
+            val s = record.enemyPartyScores?.getOrNull(i) ?: 0.0
+            sb.append("敵${i + 1}($name): ${String.format(Locale.US, "%.3f", s)}\n")
+        }
+
+        sb.append("\n【勝敗ロゴ】\n")
+        val resScore = record.resultScore ?: 0.0
+        sb.append("${record.result}: ${String.format(Locale.US, "%.3f", resScore)}\n")
+
+        AlertDialog.Builder(this)
+            .setTitle("マッチングスコア詳細")
+            .setMessage(sb.toString())
+            .setPositiveButton("閉じる", null)
             .show()
     }
 

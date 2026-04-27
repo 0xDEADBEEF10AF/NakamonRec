@@ -67,17 +67,12 @@ class BattleHistoryAdapter(
         val context = holder.itemView.context
 
         holder.result.text = record.result
-        holder.result.setTextColor(if (record.result == "WIN") Color.parseColor("#F09199") else Color.parseColor("#90D7EC"))
+        holder.result.setTextColor(if (record.result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt())
         holder.party.text = "P${record.partyIndex + 1}"
         holder.time.text = record.timestamp
 
         // スコア表示
-        if (record.vsScore != null) {
-            holder.vsScore.text = String.format(java.util.Locale.US, "%.0f%%", record.vsScore!! * 100)
-            holder.vsScore.visibility = View.VISIBLE
-        } else {
-            holder.vsScore.visibility = View.GONE
-        }
+        holder.vsScore.visibility = View.GONE
 
         // モードに応じたクリック設定
         if (isFilterMode) {
@@ -106,7 +101,7 @@ class BattleHistoryAdapter(
         layout.removeAllViews()
         val iconSize = context.resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
 
-        monsterNames.forEachIndexed { i, name ->
+        monsterNames.forEach { name ->
             val container = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = android.view.Gravity.CENTER
@@ -155,17 +150,6 @@ class BattleHistoryAdapter(
             }
 
             container.addView(imageView)
-
-            // スコア表示用テキスト
-            val score = scores?.getOrNull(i)
-            if (score != null) {
-                val scoreText = TextView(context).apply {
-                    text = String.format(java.util.Locale.US, "%.0f%%", score * 100)
-                    textSize = 7f
-                    setTextColor(if (score > 0.8) Color.WHITE else Color.parseColor("#FF8888"))
-                }
-                container.addView(scoreText)
-            }
 
             if (clickable && name.isNotEmpty()) {
                 container.setOnClickListener { onMonsterClick(name, isEnemy) }
