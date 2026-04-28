@@ -294,18 +294,28 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun setupUI() {
         val allRecords = dataManager.history.records
-        val filteredRecordsForList = getFilteredRecords(allRecords)
         
-        // 統計表示用の計算（常にフィルタ後のレコードをベースにする）
-        val wins = filteredRecordsForList.count { it.result == "WIN" }
-        val losses = filteredRecordsForList.count { it.result == "LOSE" }
+        // 統計表示用の計算（トップカード用：パーティ選択フィルタを除外し、検索/勝敗フィルタのみ適用）
+        val topStatsRecords = allRecords.filter { record ->
+            val matchResult = filterResult == null || record.result == filterResult
+            val matchEnemy = if (filterEnemyMonsters.isEmpty()) true else {
+                filterEnemyMonsters.all { fName -> record.enemyParty.contains(fName) }
+            }
+            val matchMy = if (filterMyMonsters.isEmpty()) true else {
+                filterMyMonsters.all { fName -> record.myParty.contains(fName) }
+            }
+            matchResult && matchEnemy && matchMy
+        }
+        
+        val wins = topStatsRecords.count { it.result == "WIN" }
+        val losses = topStatsRecords.count { it.result == "LOSE" }
         val totalCount = wins + losses
         val rate = if (totalCount > 0) (wins.toDouble() / totalCount * 100.0) else 0.0
 
         if (isFilterMode) {
             binding.textTotalLabel.text = getString(R.string.label_filter_win_rate)
         } else {
-            binding.textTotalLabel.text = if (filterPartyIndex == -1) getString(R.string.label_total_win_rate) else getString(R.string.analysis_label_party_format, filterPartyIndex + 1)
+            binding.textTotalLabel.text = getString(R.string.label_total_win_rate)
         }
         
         binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", rate)
@@ -365,6 +375,7 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
+        val filteredRecordsForList = getFilteredRecords(allRecords)
         updateTrendsGraph(filteredRecordsForList)
         historyAdapter.updateData(filteredRecordsForList)
         
@@ -439,7 +450,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showAnalysisDialog() {
-        val items = arrayOf("パーティ分析", "モンスター分析")
+        val items = arrayOf("パーティ集計", "モンスター集計")
         AlertDialog.Builder(this)
             .setTitle("分析メニュー")
             .setItems(items) { _, which ->
@@ -460,7 +471,7 @@ class HistoryActivity : AppCompatActivity() {
         val sdfDisplay = SimpleDateFormat("MM/dd", Locale.US)
 
         data class PartyStats(
-            val partyIndex: Int, // -1: Total, 0-2: P1-P3
+            var partyIndices: MutableSet<Int> = mutableSetOf(), // 元のパーティ番号（0-2）
             val members: List<String>,
             var wins: Int = 0,
             var losses: Int = 0,
@@ -470,6 +481,7 @@ class HistoryActivity : AppCompatActivity() {
         ) {
             val total get() = wins + losses
             val winRate get() = if (total > 0) (wins.toDouble() / total * 100.0) else 0.0
+            val sortedMembers get() = members.filter { it.isNotEmpty() && it != "?" }.sorted()
         }
 
         fun getDailyRates(records: List<BattleRecord>): List<WinRateGraphView.PointData> {
@@ -486,39 +498,48 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        val statsMap = mutableMapOf<Pair<Int, List<String>>, PartyStats>()
-        val totalStats = PartyStats(-1, emptyList())
+        // キーを「ソート済みのモンスター名のリスト」にすることで、並び順が違ってもマージする
+        val statsMap = mutableMapOf<List<String>, PartyStats>()
+        val totalStats = PartyStats(mutableSetOf(-1), emptyList())
         
         val latestMembersByIndex = mutableMapOf<Int, List<String>>()
         for (i in 0..2) {
             allRecords.filter { it.partyIndex == i }.maxByOrNull { it.timestamp }?.let {
-                latestMembersByIndex[i] = it.myParty
+                latestMembersByIndex[i] = it.myParty.filter { it.isNotEmpty() && it != "?" }.sorted()
             }
         }
 
         allRecords.forEach { record ->
             if (record.result == "WIN") totalStats.wins++ else totalStats.losses++
-            val key = record.partyIndex to record.myParty
-            val stats = statsMap.getOrPut(key) { PartyStats(record.partyIndex, record.myParty) }
+            val sortedMembers = record.myParty.filter { it.isNotEmpty() && it != "?" }.sorted()
+            val stats = statsMap.getOrPut(sortedMembers) { PartyStats(mutableSetOf(), record.myParty) }
+            stats.partyIndices.add(record.partyIndex)
             if (record.result == "WIN") stats.wins++ else stats.losses++
             val time = try { sdfInput.parse(record.timestamp)?.time ?: 0L } catch(_: Exception) { 0L }
             if (time > stats.lastUsed) stats.lastUsed = time
         }
 
         totalStats.historyRates = getDailyRates(allRecords)
-        statsMap.forEach { (key, stats) ->
-            val partyRecords = allRecords.filter { it.partyIndex == key.first && it.myParty == key.second }
+        statsMap.forEach { (sortedKey, stats) ->
+            val partyRecords = allRecords.filter { it.myParty.filter { m -> m.isNotEmpty() && m != "?" }.sorted() == sortedKey }
             stats.historyRates = getDailyRates(partyRecords)
-        }
-
-        statsMap.values.forEach { 
-            if (it.members == latestMembersByIndex[it.partyIndex]) it.isLatest = true
+            
+            // 最新のパーティ構成に含まれているかチェック
+            for (i in 0..2) {
+                if (latestMembersByIndex[i] == sortedKey) {
+                    stats.isLatest = true
+                    stats.partyIndices.add(i)
+                }
+            }
         }
 
         val displayList = mutableListOf<PartyStats>().apply {
             add(totalStats)
+            // 最新の構成を優先して並べる
             for (i in 0..2) {
-                statsMap.values.find { it.partyIndex == i && it.isLatest }?.let { add(it) }
+                statsMap.values.find { it.isLatest && latestMembersByIndex[i] == it.sortedMembers }?.let { 
+                    if (!contains(it)) add(it) 
+                }
             }
             addAll(statsMap.values.filter { !it.isLatest }.sortedByDescending { it.lastUsed })
         }
@@ -542,12 +563,7 @@ class HistoryActivity : AppCompatActivity() {
                     radius = 12f * resources.displayMetrics.density
                     cardElevation = 4f * resources.displayMetrics.density
                     setCardBackgroundColor("#252525".toColorInt())
-                    if (stats.isLatest) {
-                        strokeWidth = (2 * resources.displayMetrics.density).toInt()
-                        strokeColor = "#F09199".toColorInt()
-                    } else {
-                        strokeWidth = 0
-                    }
+                    strokeWidth = 0
                     
                     val horizontalRoot = LinearLayout(context).apply {
                         orientation = LinearLayout.HORIZONTAL
@@ -569,9 +585,17 @@ class HistoryActivity : AppCompatActivity() {
                         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                     }
                     val titleText = when {
-                        stats.partyIndex == -1 -> "TOTAL"
-                        stats.isLatest -> "P${stats.partyIndex + 1}(最新)"
-                        else -> "P${stats.partyIndex + 1}(過去)"
+                        stats.partyIndices.contains(-1) -> "TOTAL"
+                        stats.isLatest -> {
+                            // 現在のスロット(0,1,2)のうち、この構成と一致する最小の番号を表示
+                            val currentIdx = (0..2).find { latestMembersByIndex[it] == stats.sortedMembers } ?: 0
+                            "P${currentIdx + 1}(最新)"
+                        }
+                        else -> {
+                            // 過去の構成の場合、記録されている中で最小のパーティ番号を表示
+                            val pastIdx = stats.partyIndices.filter { it >= 0 }.minOrNull() ?: 0
+                            "P${pastIdx + 1}(過去)"
+                        }
                     }
                     val title = TextView(context).apply {
                         text = titleText
@@ -598,7 +622,7 @@ class HistoryActivity : AppCompatActivity() {
                         val matchesStr = getString(R.string.label_matches_format, stats.total)
                         val wlStr = getString(R.string.label_win_lose_format, stats.wins, stats.losses)
                         
-                        if (stats.partyIndex == -1) {
+                        if (stats.partyIndices.contains(-1)) {
                             text = "${matchesStr}\n${wlStr}"
                         } else {
                             val usageRate = (stats.total.toDouble() / allRecords.size * 100.0)
@@ -613,7 +637,7 @@ class HistoryActivity : AppCompatActivity() {
                     leftContent.addView(subInfo)
 
                     // モンスターアイコン
-                    if (stats.partyIndex != -1) {
+                    if (!stats.partyIndices.contains(-1)) {
                         val iconsLayout = LinearLayout(context).apply {
                             orientation = LinearLayout.HORIZONTAL
                             setPadding(0, 8, 0, 0)
@@ -654,7 +678,7 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle("パーティ分析")
+            .setTitle("パーティ集計")
             .setView(listView)
             .setPositiveButton("閉じる", null)
             .show()

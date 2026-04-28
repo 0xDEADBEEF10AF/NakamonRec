@@ -24,7 +24,7 @@ class WinRateGraphView @JvmOverloads constructor(
     private val paddingLeft = 60f
     private val paddingRight = 30f
     private val paddingTop = 40f
-    private val paddingBottom = 40f
+    private val paddingBottom = 45f // 少し広げる
 
     data class PointData(val rate: Double, val label: String)
 
@@ -177,12 +177,15 @@ class WinRateGraphView @JvmOverloads constructor(
 
         // X軸目盛り (1Matchごと)
         if (visibleCount >= 20 && stepX > 0) {
+            canvas.save()
+            canvas.clipRect(paddingLeft, 0f, w - paddingRight, h)
             dataPoints.forEachIndexed { i, _ ->
                 val x = paddingLeft + i * stepX - scrollOffset
-                if (x >= paddingLeft && x <= w - paddingRight) {
+                if (x >= paddingLeft - 1f && x <= w - paddingRight + 1f) {
                     canvas.drawLine(x, paddingTop, x, paddingTop + innerH, gridPaint)
                 }
             }
+            canvas.restore()
         }
 
         path.reset()
@@ -216,27 +219,36 @@ class WinRateGraphView @JvmOverloads constructor(
                 }
 
                 if (displayLabel.isNotEmpty()) {
-                    canvas.drawText(displayLabel, x, h - 5f, textPaint)
+                    canvas.drawText(displayLabel, x, h - 20f, textPaint) // 少し上に移動
                 }
             }
         }
         
         if (!path.isEmpty) {
+            canvas.save()
+            // グラフ領域でクリップ（Y軸ラベルエリアへの侵入を防ぐ）
+            canvas.clipRect(paddingLeft, 0f, w - paddingRight, h)
+            
             val lastX = paddingLeft + (dataPoints.size - 1) * stepX - scrollOffset
-            areaPath.lineTo(lastX.coerceIn(paddingLeft, w - paddingRight), paddingTop + innerH)
+            areaPath.lineTo(lastX, paddingTop + innerH)
             canvas.drawPath(areaPath, areaPaint)
             canvas.drawPath(path, linePaint)
+            
+            canvas.restore()
         }
 
         // SLIDE TO SEE 表示
         if (calculateMaxScroll() > 0) {
             labelPaint.textSize = 10f * resources.displayMetrics.density
-            canvas.drawText("SLIDE TO SEE", paddingLeft, h - 5f, labelPaint)
+            canvas.drawText("SLIDE TO SEE", paddingLeft, h, labelPaint) // 下端に配置
         }
 
         // インジケーター表示 (touchX または selectedIndex)
-        val activeIndex = if (touchX >= paddingLeft && touchX <= w - paddingRight) {
-            ((touchX + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
+        val activeIndex = if (touchX != -1f) {
+            // パディングの少し外側でも反応するようにマージンを持たせる（右端は特に広めに50f）
+            if (touchX >= paddingLeft - 20f && touchX <= w - paddingRight + 50f) {
+                ((touchX + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
+            } else -1
         } else if (selectedIndex != -1) {
             selectedIndex
         } else {
@@ -248,7 +260,8 @@ class WinRateGraphView @JvmOverloads constructor(
             val data = dataPoints[activeIndex]
             val targetY = paddingTop + innerH - ((data.rate.toFloat() - displayMin) / range * innerH)
 
-            if (targetX in paddingLeft..(w - paddingRight)) {
+            // 描画位置がパディング内にあるかチェック（誤差や遊びを考慮して±5f）
+            if (targetX >= paddingLeft - 5f && targetX <= w - paddingRight + 5f) {
                 canvas.drawLine(targetX, paddingTop, targetX, paddingTop + innerH, indicatorPaint)
                 canvas.drawCircle(targetX, targetY, 8f, circlePaint.apply { color = Color.WHITE })
                 canvas.drawCircle(targetX, targetY, 6f, circlePaint.apply { color = linePaint.color })

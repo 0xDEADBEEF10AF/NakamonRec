@@ -207,18 +207,144 @@ class MainActivity : AppCompatActivity() {
         val files = filesDir.listFiles { file -> file.extension == "json" && file.name != "monsters.json" }
         val fileNames = files?.map { it.nameWithoutExtension }?.toTypedArray() ?: arrayOf()
         
-        // あなたのデバイスでの正解物理配置を固定 [左端: Neutral] [中央: Negative] [右端: Positive]
-        val builder = AlertDialog.Builder(this).setTitle("ファイルを選択")
-            .setNeutralButton("新規作成") { _, _ -> showCreateFileDialog() }
-            .setNegativeButton("CSVインポート") { _, _ -> pickCsvLauncher.launch("text/*") }
-            .setPositiveButton("閉じる", null)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("ファイルを選択")
+            .setView(root)
+            .create()
 
         if (fileNames.isNotEmpty()) {
-            builder.setItems(fileNames) { _, idx -> showFileActionDialog(fileNames[idx]) }
+            val listView = android.widget.ListView(this).apply {
+                adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_list_item_1, fileNames)
+                // ファイルが多い場合に備えて高さを調整（重み付け）
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                setOnItemClickListener { _, _, idx, _ ->
+                    dialog.dismiss()
+                    showFileActionDialog(fileNames[idx])
+                }
+            }
+            root.addView(listView)
         } else {
-            builder.setMessage("保存されたファイルがありません。")
+            val emptyText = TextView(this).apply {
+                text = "保存されたファイルがありません。"
+                setPadding(50, 50, 50, 50)
+                gravity = Gravity.CENTER
+            }
+            root.addView(emptyText)
         }
-        builder.show()
+
+        // カスタムボタンエリア (4つのボタンを横並び)
+        val buttonBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+        }
+        val btnParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        
+        fun createBtn(label: String, onClick: () -> Unit) = android.widget.Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+            text = label
+            textSize = 10f
+            setPadding(0, 0, 0, 0)
+            setOnClickListener { onClick() }
+        }
+
+        buttonBar.addView(createBtn(getString(R.string.btn_new_file)) { dialog.dismiss(); showCreateFileDialog() }, btnParams)
+        buttonBar.addView(createBtn(getString(R.string.btn_merge_files)) { dialog.dismiss(); showMergeSelectorDialog() }, btnParams)
+        buttonBar.addView(createBtn(getString(R.string.btn_import_csv_short)) { dialog.dismiss(); pickCsvLauncher.launch("text/*") }, btnParams)
+        buttonBar.addView(createBtn(getString(R.string.btn_close)) { dialog.dismiss() }, btnParams)
+        
+        root.addView(buttonBar)
+        dialog.show()
+    }
+
+    private fun showMergeSelectorDialog() {
+        val files = filesDir.listFiles { file -> file.extension == "json" && file.name != "monsters.json" }
+        val fileNames = files?.map { it.nameWithoutExtension }?.toTypedArray() ?: arrayOf()
+        if (fileNames.isEmpty()) {
+            Toast.makeText(this, "マージできるファイルがありません", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val checkedItems = BooleanArray(fileNames.size) { false }
+        val selectedFiles = mutableListOf<String>()
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.title_merge_files)
+            .setMultiChoiceItems(fileNames, checkedItems) { _, which, isChecked ->
+                if (isChecked) selectedFiles.add(fileNames[which])
+                else selectedFiles.remove(fileNames[which])
+            }
+            .setPositiveButton(R.string.btn_execute_merge) { _, _ ->
+                if (selectedFiles.size < 2) {
+                    Toast.makeText(this, R.string.msg_select_two_files, Toast.LENGTH_SHORT).show()
+                } else {
+                    showMergeNameDialog(selectedFiles)
+                }
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
+    }
+
+    private fun showMergeNameDialog(selectedFiles: List<String>) {
+        val editText = EditText(this).apply {
+            setText("merged_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}")
+            selectAll()
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.label_merge_new_name)
+            .setView(editText)
+            .setPositiveButton("実行") { _, _ ->
+                val newName = editText.text.toString()
+                if (isValidFileName(newName)) {
+                    performMerge(selectedFiles, newName)
+                } else {
+                    Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
+    }
+
+    private fun performMerge(selectedFiles: List<String>, newName: String) {
+        thread {
+            try {
+                val allRecords = mutableListOf<BattleRecord>()
+                val gson = Gson()
+                selectedFiles.forEach { fileName ->
+                    val file = File(filesDir, "$fileName.json")
+                    if (file.exists()) {
+                        val json = file.readText()
+                        val history = gson.fromJson(json, BattleHistory::class.java)
+                        allRecords.addAll(history.records)
+                    }
+                }
+
+                // 時系列（timestamp）でソート
+                allRecords.sortBy { it.timestamp }
+
+                val newHistory = BattleHistory(
+                    totalWins = allRecords.count { it.result == "WIN" },
+                    totalLosses = allRecords.count { it.result == "LOSE" },
+                    records = allRecords.toMutableList()
+                )
+
+                val newFile = File(filesDir, "$newName.json")
+                newFile.writeText(gson.toJson(newHistory))
+
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this, getString(R.string.msg_merge_success, newName, allRecords.size), Toast.LENGTH_LONG).show()
+                    saveCurrentFileName(newName)
+                    refreshServiceAndUI()
+                }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this, getString(R.string.msg_merge_failed, e.message ?: "Unknown"), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun importHistoryFromCsv(uri: Uri) {

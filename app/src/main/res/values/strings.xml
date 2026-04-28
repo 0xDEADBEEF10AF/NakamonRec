@@ -70,6 +70,15 @@
     <string name="btn_sort_appearance">出現数の多い順</string>
     <string name="btn_sort_win_rate_worst">勝率の低い順</string>
     <string name="msg_no_data">データがありません</string>
+    <string name="btn_merge_files">ファイルマージ</string>
+    <string name="title_merge_files">マージするファイルを選択</string>
+    <string name="btn_execute_merge">マージ実行</string>
+    <string name="msg_select_two_files">2つ以上のファイルを選択してください</string>
+    <string name="msg_merge_success">「%1$s」として結合しました（%2$d件）</string>
+    <string name="msg_merge_failed">マージに失敗しました: %1$s</string>
+    <string name="label_merge_new_name">マージ後のファイル名を入力</string>
+    <string name="btn_new_file">新規作成</string>
+    <string name="btn_import_csv_short">CSVインポート</string>
 
     <!-- レコード編集用 -->
     <string name="edit_record_title">レコードの編集</string>
