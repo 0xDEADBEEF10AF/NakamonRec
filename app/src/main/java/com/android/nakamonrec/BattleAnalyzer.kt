@@ -80,11 +80,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         vsFmTemplateScaled?.release(); vsFmTemplateScaled = vsFmTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         vsMgTemplateScaled?.release(); vsMgTemplateScaled = vsMgTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
-        vsCustomTemplateScaled?.release(); vsCustomTemplateScaled = vsCustomTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        
+        // カスタムテンプレートは、その端末で切り出されたものなので uiScale を適用せず 1.0 で使用する
+        vsCustomTemplateScaled?.release(); vsCustomTemplateScaled = vsCustomTemplate?.let { val m = Mat(); it.copyTo(m); m }
+        
         winTemplateScaled?.release(); winTemplateScaled = winTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         loseTemplateScaled?.release(); loseTemplateScaled = loseTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         partySelectTemplateScaled?.release(); partySelectTemplateScaled = partySelectTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
-        partyCustomTemplateScaled?.release(); partyCustomTemplateScaled = partyCustomTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        
+        // カスタムテンプレートは 1.0 固定
+        partyCustomTemplateScaled?.release(); partyCustomTemplateScaled = partyCustomTemplate?.let { val m = Mat(); it.copyTo(m); m }
 
         cachedScale = s
     }
@@ -216,35 +221,40 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         Utils.bitmapToMat(sceneBitmap, fullMat)
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
 
-        val results = mutableListOf<ScanResult>()
-        findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)?.let { results.add(it) }
-        findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)?.let { results.add(it) }
-        findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)?.let { results.add(it) }
+        // 各種テンプレートで個別に検索
+        val customRes = findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)
+        val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)
+        val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)
 
-        val vsRes = results.maxByOrNull { it.score }
+        // 最もスコアの高い結果を位置基準として採用
+        val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
         
-        if (vsRes == null || vsRes.score < 0.4) {
+        if (bestRes == null || bestRes.score < 0.4) {
             fullMat.release()
             return null
         }
         
-        val vsScale = vsRes.scale
-        val vsBox = vsRes.config
-
+        // 【重要】モンスター等の標準アセット用 uiScale は、標準テンプレート（FM/MG）から取得する
+        // カスタムが最高スコアでも、アセットサイズ計算には「標準画像との比率」が必要なため
+        val assetRes = listOfNotNull(fmRes, mgRes).maxByOrNull { it.score }
+        val vsScaleForAssets = assetRes?.scale ?: (if (bestRes == customRes) calibrationData.uiScale.toDouble() else bestRes.scale)
+        
+        val vsBox = bestRes.config
         val newData = CalibrationData()
         newData.vsBox = vsBox
-        newData.uiScale = vsScale.toFloat()
+        newData.uiScale = vsScaleForAssets.toFloat()
 
         val vsCx = vsBox.centerX * fullMat.cols()
         val vsCy = vsBox.centerY * fullMat.rows()
 
         fun getMonsterConfig(refX: Float, refY: Float): BoxConfig {
-            val dx = (refX - 540f) * vsScale
-            val dy = (refY - 1260f) * vsScale
+            // 座標計算には「標準(1080p)から実機への倍率」である vsScaleForAssets を使用
+            val dx = (refX - 540f) * vsScaleForAssets
+            val dy = (refY - 1260f) * vsScaleForAssets
             val estCx = (vsCx + dx).toFloat()
             val estCy = (vsCy + dy).toFloat()
-            return findBestMonsterStrict(fullMat, estCx / fullMat.cols(), estCy / fullMat.rows(), vsScale)
-                ?: BoxConfig(estCx / fullMat.cols(), estCy / fullMat.rows(), (80 * vsScale).toInt(), (130 * vsScale).toInt())
+            return findBestMonsterStrict(fullMat, estCx / fullMat.cols(), estCy / fullMat.rows(), vsScaleForAssets)
+                ?: BoxConfig(estCx / fullMat.cols(), estCy / fullMat.rows(), (80 * vsScaleForAssets).toInt(), (130 * vsScaleForAssets).toInt())
         }
 
         newData.myPartyBoxes = listOf(getMonsterConfig(196f, 1635f), getMonsterConfig(391f, 1635f), getMonsterConfig(585f, 1635f), getMonsterConfig(780f, 1635f))
@@ -401,8 +411,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
             val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
             
-            // モンスター用パディング
-            val pad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
+            // モンスター用パディング（画面端のスロットほど累積誤差でズレやすいため、中心からの距離に応じて探索範囲を広げる）
+            val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f // 中心(0.5)から離れるほど大きくなる係数
+            val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
+            val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt() 
+            val pad = basePad + extraPad
+
             val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
             
             val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
