@@ -20,6 +20,12 @@ class WinRateGraphView @JvmOverloads constructor(
     var visibleCount = 20
     var isDynamicScale = false
 
+    // 固定パディング
+    private val paddingLeft = 60f
+    private val paddingRight = 30f
+    private val paddingTop = 40f
+    private val paddingBottom = 40f
+
     data class PointData(val rate: Double, val label: String)
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -56,6 +62,10 @@ class WinRateGraphView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = "#888888".toColorInt()
+        alpha = 120
+    }
 
     private val path = Path()
     private val areaPath = Path()
@@ -74,12 +84,8 @@ class WinRateGraphView @JvmOverloads constructor(
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (dataPoints.isEmpty()) return false
-            val w = width.toFloat()
-            val paddingLeft = 50f
-            val paddingRight = 20f
-            val innerW = w - paddingLeft - paddingRight
-            val effectiveVisibleCount = if (visibleCount > 0) visibleCount else dataPoints.size
-            val stepX = if (dataPoints.size > 1) innerW / (effectiveVisibleCount - 1).coerceAtLeast(1) else 0f
+            val stepX = calculateStepX()
+            if (stepX <= 0) return false
             
             val i = ((e.x + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
             selectedIndex = if (selectedIndex == i) -1 else i
@@ -102,11 +108,17 @@ class WinRateGraphView @JvmOverloads constructor(
         setData(rates.map { PointData(it, "") })
     }
 
+    private fun calculateStepX(): Float {
+        val w = width.toFloat()
+        val innerW = w - paddingLeft - paddingRight
+        val effectiveVisibleCount = if (visibleCount > 0) visibleCount else dataPoints.size
+        return if (effectiveVisibleCount > 1) innerW / (effectiveVisibleCount - 1) else 0f
+    }
+
     private fun calculateMaxScroll(): Float {
         val effectiveVisibleCount = if (visibleCount > 0) visibleCount else dataPoints.size
         if (dataPoints.size <= effectiveVisibleCount) return 0f
-        val paddingHorizontal = 40f
-        val stepX = (width.toFloat() - paddingHorizontal * 2) / (effectiveVisibleCount - 1).coerceAtLeast(1)
+        val stepX = calculateStepX()
         return (dataPoints.size - effectiveVisibleCount) * stepX
     }
 
@@ -116,27 +128,40 @@ class WinRateGraphView @JvmOverloads constructor(
 
         val w = width.toFloat()
         val h = height.toFloat()
-        val paddingLeft = 50f
-        val paddingRight = 20f
-        val paddingTop = 30f
-        val paddingBottom = 40f
         val innerW = w - paddingLeft - paddingRight
         val innerH = h - paddingTop - paddingBottom
         
-        val effectiveVisibleCount = if (visibleCount > 0) visibleCount else dataPoints.size
-        val stepX = if (dataPoints.size > 1) innerW / (effectiveVisibleCount - 1).coerceAtLeast(1) else 0f
+        val stepX = calculateStepX()
 
-        // ダイナミックスケールの計算
+        // ダイナミックスケールの計算（現在表示されている範囲に基づいて計算）
         var displayMin = 0f
         var displayMax = 100f
         if (isDynamicScale && dataPoints.isNotEmpty()) {
-            val minVal = dataPoints.minOf { it.rate }.toFloat()
-            val maxVal = dataPoints.maxOf { it.rate }.toFloat()
-            displayMin = (Math.floor(minVal / 10.0) * 10.0 - 10.0).toFloat().coerceAtLeast(0f)
-            displayMax = (Math.ceil(maxVal / 10.0) * 10.0 + 10.0).toFloat().coerceAtMost(100f)
-            if (displayMax - displayMin < 30f) {
-                if (displayMax > 70f) displayMin = (displayMax - 30f).coerceAtLeast(0f)
-                else displayMax = (displayMin + 30f).coerceAtMost(100f)
+            var minVal = Float.MAX_VALUE
+            var maxVal = Float.MIN_VALUE
+            var hasVisiblePoint = false
+
+            dataPoints.forEachIndexed { i, data ->
+                val x = paddingLeft + i * stepX - scrollOffset
+                // 画面内に見える点のみを対象にする
+                if (x >= paddingLeft - 1f && x <= w - paddingRight + 1f) {
+                    val r = data.rate.toFloat()
+                    if (r < minVal) minVal = r
+                    if (r > maxVal) maxVal = r
+                    hasVisiblePoint = true
+                }
+            }
+            
+            if (hasVisiblePoint) {
+                // 10%単位で丸める（マージンを持たせる）
+                displayMin = (Math.floor(minVal / 10.0) * 10.0).toFloat().coerceAtLeast(0f)
+                displayMax = (Math.ceil(maxVal / 10.0) * 10.0).toFloat().coerceAtMost(100f)
+                
+                // 最低20%の幅を確保
+                if (displayMax - displayMin < 20f) {
+                    if (displayMax <= 80f) displayMax = displayMin + 20f
+                    else displayMin = displayMax - 20f
+                }
             }
         }
         val range = displayMax - displayMin
@@ -148,6 +173,16 @@ class WinRateGraphView @JvmOverloads constructor(
             val y = paddingTop + innerH - ((rate - displayMin) / range * innerH)
             canvas.drawLine(paddingLeft, y, w - paddingRight, y, gridPaint)
             canvas.drawText(String.format(Locale.US, "%d%%", rate.toInt()), 5f, y + 6f, textPaint)
+        }
+
+        // X軸目盛り (1Matchごと)
+        if (visibleCount >= 20 && stepX > 0) {
+            dataPoints.forEachIndexed { i, _ ->
+                val x = paddingLeft + i * stepX - scrollOffset
+                if (x >= paddingLeft && x <= w - paddingRight) {
+                    canvas.drawLine(x, paddingTop, x, paddingTop + innerH, gridPaint)
+                }
+            }
         }
 
         path.reset()
@@ -195,10 +230,7 @@ class WinRateGraphView @JvmOverloads constructor(
 
         // SLIDE TO SEE 表示
         if (calculateMaxScroll() > 0) {
-            val labelPaint = Paint(textPaint).apply { 
-                textSize = 10f * resources.displayMetrics.density
-                alpha = 120
-            }
+            labelPaint.textSize = 10f * resources.displayMetrics.density
             canvas.drawText("SLIDE TO SEE", paddingLeft, h - 5f, labelPaint)
         }
 
@@ -211,7 +243,7 @@ class WinRateGraphView @JvmOverloads constructor(
             -1
         }
 
-        if (activeIndex != -1) {
+        if (activeIndex != -1 && stepX > 0) {
             val targetX = paddingLeft + activeIndex * stepX - scrollOffset
             val data = dataPoints[activeIndex]
             val targetY = paddingTop + innerH - ((data.rate.toFloat() - displayMin) / range * innerH)
@@ -221,11 +253,10 @@ class WinRateGraphView @JvmOverloads constructor(
                 canvas.drawCircle(targetX, targetY, 8f, circlePaint.apply { color = Color.WHITE })
                 canvas.drawCircle(targetX, targetY, 6f, circlePaint.apply { color = linePaint.color })
                 
-                val tooltip = if (data.label.contains("Matches")) data.label else String.format(Locale.US, "%.1f%%", data.rate)
+                val tooltip = if (data.label.contains("Matches")) data.label else String.format(Locale.US, "%.1f%%：%s", data.rate, data.label)
                 
                 val textWidth = tooltipPaint.measureText(tooltip)
                 var drawX = targetX
-                // 左右の端で見切れないように調整
                 if (drawX - textWidth / 2 < paddingLeft) {
                     drawX = paddingLeft + textWidth / 2
                 } else if (drawX + textWidth / 2 > w - paddingRight) {

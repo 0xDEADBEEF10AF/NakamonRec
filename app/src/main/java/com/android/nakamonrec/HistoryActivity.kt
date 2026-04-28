@@ -294,29 +294,23 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun setupUI() {
         val allRecords = dataManager.history.records
+        val filteredRecordsForList = getFilteredRecords(allRecords)
         
-        if (isFilterMode) {
-            // 統計表示では「勝敗フィルタ(filterResult)」を除外して計算する（勝率0/100%固定を避けるため）
-            val statsRecords = allRecords.filter { record ->
-                (filterEnemyMonsters.isEmpty() || filterEnemyMonsters.all { it in record.enemyParty }) &&
-                (filterMyMonsters.isEmpty() || filterMyMonsters.all { it in record.myParty })
-            }
-            val wins = statsRecords.count { it.result == "WIN" }
-            val losses = statsRecords.count { it.result == "LOSE" }
-            val totalCount = wins + losses
-            val rate = if (totalCount > 0) (wins.toDouble() / totalCount * 100.0) else 0.0
+        // 統計表示用の計算（常にフィルタ後のレコードをベースにする）
+        val wins = filteredRecordsForList.count { it.result == "WIN" }
+        val losses = filteredRecordsForList.count { it.result == "LOSE" }
+        val totalCount = wins + losses
+        val rate = if (totalCount > 0) (wins.toDouble() / totalCount * 100.0) else 0.0
 
+        if (isFilterMode) {
             binding.textTotalLabel.text = getString(R.string.label_filter_win_rate)
-            binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", rate)
-            binding.valTotalCount.text = getString(R.string.label_matches_format, totalCount)
-            binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, wins, losses)
         } else {
-            val stats = dataManager.getStatistics()
-            binding.textTotalLabel.text = getString(R.string.label_total_win_rate)
-            binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", stats.winRate)
-            binding.valTotalCount.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
-            binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
+            binding.textTotalLabel.text = if (filterPartyIndex == -1) getString(R.string.label_total_win_rate) else getString(R.string.analysis_label_party_format, filterPartyIndex + 1)
         }
+        
+        binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", rate)
+        binding.valTotalCount.text = getString(R.string.label_matches_format, totalCount)
+        binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, wins, losses)
 
         val globalStats = dataManager.getStatistics()
         for (i in 0..2) {
@@ -371,7 +365,6 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        val filteredRecordsForList = getFilteredRecords(allRecords)
         updateTrendsGraph(filteredRecordsForList)
         historyAdapter.updateData(filteredRecordsForList)
         
@@ -396,8 +389,8 @@ class HistoryActivity : AppCompatActivity() {
             val subList = targetRecords.subList(start, i + 1)
             val wins = subList.count { it.result == "WIN" }
             val rate = (wins.toDouble() / subList.size) * 100.0
-            // タップ時に表示する情報を label に格納: "〇%：〇Matches"
-            val label = String.format(Locale.US, "%.1f%% : %dMatches", rate, subList.size)
+            // タップ時に表示する情報を label に格納: "〇%：〇Matches" (〇番目の試合)
+            val label = String.format(Locale.US, "%.1f%%：%dMatches", rate, i + 1)
             dataPoints.add(WinRateGraphView.PointData(rate, label))
         }
         binding.winRateGraph.setData(dataPoints)
@@ -462,7 +455,6 @@ class HistoryActivity : AppCompatActivity() {
         val allRecords = dataManager.history.records
         if (allRecords.isEmpty()) return
 
-        val globalStats = dataManager.getStatistics()
         val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val sdfDisplay = SimpleDateFormat("MM/dd", Locale.US)
@@ -489,7 +481,7 @@ class HistoryActivity : AppCompatActivity() {
                 val rate = (wins.toDouble() / dayRecords.size) * 100.0
                 val dateLabel = try { sdfDisplay.format(sdfDate.parse(dateStr)!!) } catch (_: Exception) { dateStr.takeLast(5) }
                 // タップ時に表示する情報を label に格納。X軸表示用の日付はここでは含めず、ツールチップ用として構成
-                val tooltipLabel = String.format(Locale.US, "%.1f%% : %dMatches (%s)", rate, dayRecords.size, dateLabel)
+                val tooltipLabel = String.format(Locale.US, "%.1f%%：%dMatches (%s)", rate, dayRecords.size, dateLabel)
                 WinRateGraphView.PointData(rate, tooltipLabel)
             }
         }
@@ -605,12 +597,15 @@ class HistoryActivity : AppCompatActivity() {
                     val subInfo = TextView(context).apply {
                         val matchesStr = getString(R.string.label_matches_format, stats.total)
                         val wlStr = getString(R.string.label_win_lose_format, stats.wins, stats.losses)
-                        val usageRate = if (stats.partyIndex == -1) 100.0 else {
-                            globalStats.partyStats.find { it.index == stats.partyIndex }?.usageRate ?: 0.0
+                        
+                        if (stats.partyIndex == -1) {
+                            text = "${matchesStr}\n${wlStr}"
+                        } else {
+                            val usageRate = (stats.total.toDouble() / allRecords.size * 100.0)
+                            val usageStr = String.format(Locale.US, "%.1f%%", usageRate)
+                            text = "${matchesStr}\n${wlStr}(Use:${usageStr})"
                         }
-                        val usageStr = String.format(Locale.US, "%.1f%%", usageRate)
 
-                        text = "${matchesStr}\n${wlStr}(Use:${usageStr})"
                         setTextColor(Color.LTGRAY)
                         textSize = 11f
                         setPadding(0, 2, 0, 0)
