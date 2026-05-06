@@ -43,7 +43,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         private const val WIN_THRESHOLD = 0.4
         private const val LOSE_THRESHOLD = 0.4
         private const val MONSTER_THRESHOLD = 0.7
-        private const val PARTY_THRESHOLD = 0.45
+        private const val PARTY_THRESHOLD = 0.7
         
         /**
          * ROI（探索範囲）を広げるためのパディング値（ピクセル）。

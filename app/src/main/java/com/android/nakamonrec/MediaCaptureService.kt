@@ -38,8 +38,7 @@ class MediaCaptureService : Service() {
     private var latestBitmap: Bitmap? = null
     private var selectedPartyIndex = -1
     private var currentPartyScores: List<Double> = emptyList()
-    private var maxPartyScores: List<Double> = emptyList()
-    private var maxVsScore: Double = 0.0
+    private var currentVsScore: Double = 0.0
     private var currentSessionId = 0L
     private var debugImageSavedInSession = false
 
@@ -217,7 +216,7 @@ class MediaCaptureService : Service() {
     }
 
     private fun repeatScan(sessionId: Long, count: Int, delayMs: Long) {
-        if (sessionId != currentSessionId || analyzer.isAllIdentified()) {
+        if (sessionId != currentSessionId || analyzer.isAllIdentified() || count <= 0) {
             if (count <= 0 && sessionId == currentSessionId && !analyzer.isAllIdentified() && !debugImageSavedInSession) {
                 synchronized(this) {
                     latestBitmap?.let { analyzer.saveDebugBitmap(it, "incomplete_results_${System.currentTimeMillis()}") }
@@ -245,27 +244,27 @@ class MediaCaptureService : Service() {
                 }
             }
             
-            analysisHandler?.postDelayed({
-                repeatScan(sessionId, count - 1, delayMs)
-            }, delayMs)
+            // 次の解析を、現在の解析が「完了した後」に予約する（シーケンシャル化）
+            if (sessionId == currentSessionId && !analyzer.isAllIdentified() && count > 1) {
+                analysisHandler?.postDelayed({
+                    repeatScan(sessionId, count - 1, delayMs)
+                }, delayMs)
+            }
         }
     }
 
     private fun handleIdleState(bitmap: Bitmap) {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
-        currentPartyScores = scores
         
-        if (maxPartyScores.isEmpty() || scores.maxOrNull() ?: 0.0 > maxPartyScores.maxOrNull() ?: 0.0) {
-            maxPartyScores = scores
-        }
-        
+        // 閾値を超えた有効な検出があった場合のみ、インデックスとスコアを更新
         if (detected != -1) {
             selectedPartyIndex = detected
+            currentPartyScores = scores
         }
         
         if (analyzer.isVsDetected(bitmap)) {
             val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
-            maxVsScore = vsScore
+            currentVsScore = vsScore
 
             analysisHandler?.removeCallbacksAndMessages(null)
 
@@ -281,9 +280,6 @@ class MediaCaptureService : Service() {
     }
 
     private fun handleBattleState(bitmap: Bitmap) {
-        val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
-        if (vsScore > maxVsScore) maxVsScore = vsScore
-
         val result = analyzer.checkBattleResult(bitmap)
         if (result != null) {
             val resultScore = if (result == "WIN") analyzer.detectWinScore(bitmap, analyzer.calibrationData.winBox)
@@ -294,7 +290,7 @@ class MediaCaptureService : Service() {
                 debugImageSavedInSession = true
             }
             currentSessionId = 0
-            finalizeBattle(result, maxVsScore, resultScore)
+            finalizeBattle(result, currentVsScore, resultScore)
         }
     }
 
@@ -303,11 +299,12 @@ class MediaCaptureService : Service() {
         dataManager.addRecord(
             result, myParty, enemyParty, selectedPartyIndex,
             vsScore, scores.first, scores.second, resultScore,
-            maxPartyScores
+            currentPartyScores
         )
         currentState = State.IDLE
-        maxPartyScores = emptyList()
-        maxVsScore = 0.0
+        selectedPartyIndex = -1 // 次回識別のためにリセット
+        currentPartyScores = emptyList() // リセット
+        currentVsScore = 0.0
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
     }
 
