@@ -859,6 +859,15 @@ class HistoryActivity : AppCompatActivity() {
         val filteredRecords = getFilteredRecords(allRecords)
         if (filteredRecords.isEmpty()) return
         
+        val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val sdfDisplay = SimpleDateFormat("MM/dd", Locale.US)
+
+        // 日別の全対戦数を計算（出現率の分母用）
+        val dailyTotalMatches = allRecords.groupBy {
+            try { sdfDate.format(sdfInput.parse(it.timestamp)!!) } catch (_: Exception) { it.timestamp.take(10) }
+        }.mapValues { it.value.size }
+
         val appearanceCount = mutableMapOf<String, Int>()
         val winAgainstCount = mutableMapOf<String, Int>()
         filteredRecords.forEach { record ->
@@ -872,68 +881,178 @@ class HistoryActivity : AppCompatActivity() {
             val wins = winAgainstCount.getOrDefault(name, 0)
             val winRate = if (count > 0) (wins.toDouble() / count * 100) else 0.0
             val appearanceRate = (count.toDouble() / totalCount * 100)
-            MonsterRankData(name, count, appearanceRate, winRate)
+            
+            // 日別推移データの作成
+            val monsterRecords = allRecords.filter { it.enemyParty.contains(name) }
+            val dailyMonsterStats = monsterRecords.groupBy {
+                try { sdfDate.format(sdfInput.parse(it.timestamp)!!) } catch (_: Exception) { it.timestamp.take(10) }
+            }
+
+            val historyData = dailyTotalMatches.keys.sorted().map { dateStr ->
+                val dayRecords = dailyMonsterStats[dateStr] ?: emptyList()
+                val dayTotalAll = dailyTotalMatches[dateStr] ?: 1
+                
+                val appearRate = (dayRecords.size.toDouble() / dayTotalAll * 100.0)
+                val winCount = dayRecords.count { it.result == "WIN" }
+                val dayWinRate = if (dayRecords.isNotEmpty()) (winCount.toDouble() / dayRecords.size * 100.0) else 0.0
+                
+                val displayDate = try { sdfDisplay.format(sdfDate.parse(dateStr)!!) } catch (_: Exception) { dateStr.takeLast(5) }
+                MonsterStatsGraphView.DualPointData(dayWinRate, appearRate, displayDate)
+            }
+
+            MonsterRankData(name, count, appearanceRate, winRate, historyData)
         }.sortedByDescending { it.count }.toMutableList()
 
-        val listView = ListView(this)
+        val listView = ListView(this).apply {
+            divider = null
+            setPadding(16, 16, 16, 16)
+            clipToPadding = false
+        }
+
         val adapter = object : BaseAdapter() {
             override fun getCount(): Int = rankingList.size
-            override fun getItem(position: Int): Any = rankingList[position]
-            override fun getItemId(position: Int): Long = position.toLong()
+            override fun getItem(position: Int) = rankingList[position]
+            override fun getItemId(position: Int) = position.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                val view = convertView ?: layoutInflater.inflate(R.layout.item_monster_ranking, parent, false)
                 val data = rankingList[position]
-                view.findViewById<TextView>(R.id.textRank).text = String.format(Locale.US, "%d", position + 1)
-                view.findViewById<TextView>(R.id.textMonsterName).text = data.name
-                view.findViewById<TextView>(R.id.textAppearance).text = getString(R.string.rank_appearance_format, data.count, String.format(Locale.US, "%.1f", data.appearanceRate))
-                val winRateTextView = view.findViewById<TextView>(R.id.textWinRate)
-                winRateTextView.text = getString(R.string.rank_win_rate_format, String.format(Locale.US, "%.1f", data.winRate))
-                when {
-                    data.winRate >= 80.0 -> winRateTextView.setTextColor("#F09199".toColorInt())
-                    data.winRate >= 50.0 -> winRateTextView.setTextColor("#CCCCCC".toColorInt())
-                    else -> winRateTextView.setTextColor("#90D7EC".toColorInt())
+                val card = MaterialCardView(this@HistoryActivity).apply {
+                    val density = resources.displayMetrics.density
+                    layoutParams = ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        setMargins(0, (3 * density).toInt(), 0, (3 * density).toInt())
+                    }
+                    radius = 8f * density
+                    cardElevation = 2f * density
+                    setCardBackgroundColor("#252525".toColorInt())
+                    strokeWidth = 0
+                    
+                    val root = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        val ph = (10 * density).toInt()
+                        val pv = (4 * density).toInt()
+                        setPadding(ph, pv, ph, pv)
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+
+                    // 1. No. (順位)
+                    val rankText = TextView(context).apply {
+                        layoutParams = LinearLayout.LayoutParams((24 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+                        text = "${position + 1}"
+                        setTextColor(Color.GRAY)
+                        textSize = 12f
+                        gravity = Gravity.CENTER
+                        setTypeface(null, Typeface.BOLD)
+                    }
+                    root.addView(rankText)
+
+                    // 2. モンスター立ち絵
+                    val iconSize = (40 * density).toInt()
+                    val imageView = ImageView(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(iconSize, iconSize)
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        dataManager.monsterMaster.find { it.name == data.name }?.let { monster ->
+                            try { assets.open("templates/${monster.fileName}").use { setImageBitmap(BitmapFactory.decodeStream(it)) } }
+                            catch(_: Exception) { setImageResource(android.R.drawable.ic_menu_help) }
+                        } ?: setImageResource(android.R.drawable.ic_menu_help)
+                    }
+                    root.addView(imageView)
+
+                    // 3. 情報 (名前・出現数・勝率)
+                    val infoLayout = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams((90 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            marginStart = (8 * density).toInt()
+                        }
+                    }
+                    val nameText = TextView(context).apply {
+                        text = data.name
+                        setTextColor(Color.WHITE)
+                        textSize = 12f
+                        setTypeface(null, Typeface.BOLD)
+                        maxLines = 1
+                    }
+                    val appearText = TextView(context).apply {
+                        text = String.format(Locale.US, "出現:%d回(%.1f%%)", data.count, data.appearanceRate)
+                        setTextColor(Color.LTGRAY)
+                        textSize = 10f
+                    }
+                    val winRateText = TextView(context).apply {
+                        text = String.format(Locale.US, "勝率:%.1f%%", data.winRate)
+                        setTextColor(when {
+                            data.winRate >= 80.0 -> "#F09199".toColorInt()
+                            data.winRate >= 50.0 -> Color.WHITE
+                            else -> "#90D7EC".toColorInt()
+                        })
+                        textSize = 10f
+                        setTypeface(null, Typeface.BOLD)
+                    }
+                    infoLayout.addView(nameText)
+                    infoLayout.addView(appearText)
+                    infoLayout.addView(winRateText)
+                    root.addView(infoLayout)
+
+                    // 4. 二連折れ線グラフ
+                    val graphContainer = FrameLayout(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, (60 * density).toInt(), 1f).apply {
+                            marginStart = (4 * density).toInt()
+                        }
+                        val graph = MonsterStatsGraphView(context).apply {
+                            setData(data.historyData)
+                        }
+                        addView(graph)
+                    }
+                    root.addView(graphContainer)
+
+                    addView(root)
                 }
-                val imageView = view.findViewById<ImageView>(R.id.imageMonster)
-                val monsterData = dataManager.monsterMaster.find { it.name == data.name }
-                if (monsterData != null) {
-                    try {
-                        assets.open("templates/${monsterData.fileName}").use { imageView.setImageBitmap(BitmapFactory.decodeStream(it)) }
-                    } catch (_: Exception) { imageView.setImageResource(android.R.drawable.ic_menu_help) }
-                } else {
-                    imageView.setImageResource(android.R.drawable.ic_menu_help)
-                }
-                return view
+                return card
             }
         }
+
         listView.adapter = adapter
         val titlePrefix = if (filterPartyIndex == -1) getString(R.string.analysis_label_all) else getString(R.string.analysis_label_party_format, filterPartyIndex + 1)
+        
         val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.analysis_title_appearance_format, titlePrefix))
             .setView(listView)
             .setPositiveButton(R.string.btn_close, null)
-            .setNeutralButton(R.string.btn_sort_win_rate_worst, null)
+            .setNeutralButton("勝率の低い順", null)
             .create()
+
+        var sortMode = 0 // 0: 出現数(降), 1: 勝率(昇), 2: 勝率(降)
         dialog.setOnShowListener {
             val sortButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-            var sortedByAppearance = true
             sortButton.setOnClickListener {
-                if (sortedByAppearance) {
-                    rankingList.sortBy { it.winRate }
-                    sortButton.text = getString(R.string.btn_sort_appearance)
-                    dialog.setTitle(getString(R.string.analysis_title_win_rate_worst_format, titlePrefix))
-                } else {
-                    rankingList.sortByDescending { it.count }
-                    sortButton.text = getString(R.string.btn_sort_win_rate_worst)
-                    dialog.setTitle(getString(R.string.analysis_title_appearance_format, titlePrefix))
+                sortMode = (sortMode + 1) % 3
+                when (sortMode) {
+                    0 -> {
+                        rankingList.sortByDescending { it.count }
+                        sortButton.text = "勝率の低い順"
+                        dialog.setTitle(getString(R.string.analysis_title_appearance_format, titlePrefix))
+                    }
+                    1 -> {
+                        rankingList.sortBy { it.winRate }
+                        sortButton.text = "勝率の高い順"
+                        dialog.setTitle("勝率の低い順: $titlePrefix")
+                    }
+                    2 -> {
+                        rankingList.sortByDescending { it.winRate }
+                        sortButton.text = "出現数の多い順"
+                        dialog.setTitle("勝率の高い順: $titlePrefix")
+                    }
                 }
-                sortedByAppearance = !sortedByAppearance
                 adapter.notifyDataSetChanged()
             }
         }
         dialog.show()
     }
 
-    data class MonsterRankData(val name: String, val count: Int, val appearanceRate: Double, val winRate: Double)
+    data class MonsterRankData(
+        val name: String, 
+        val count: Int, 
+        val appearanceRate: Double, 
+        val winRate: Double,
+        val historyData: List<MonsterStatsGraphView.DualPointData> = emptyList()
+    )
 
     private fun showEditRecordDialog(position: Int) {
         val record = dataManager.history.records[position]
