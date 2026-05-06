@@ -477,7 +477,7 @@ class HistoryActivity : AppCompatActivity() {
         compositions.addAll(grouped)
 
         if (partyRecords.isEmpty()) {
-            Toast.makeText(this, "履歴がありません", Toast.LENGTH_SHORT).show()
+            showTopToast("履歴がありません")
             return
         }
 
@@ -615,7 +615,7 @@ class HistoryActivity : AppCompatActivity() {
     private fun showAnalysisDialog() {
         val items = arrayOf("パーティ集計", "モンスター集計")
         AlertDialog.Builder(this)
-            .setTitle("分析メニュー")
+            .setTitle("集計メニュー")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showPartyAnalysisDialog()
@@ -639,6 +639,7 @@ class HistoryActivity : AppCompatActivity() {
             var wins: Int = 0,
             var losses: Int = 0,
             var lastUsed: Long = 0,
+            var lastUsedIndex: Int = -1, // 最も新しく使われたパーティ番号
             var isLatest: Boolean = false,
             var historyRates: List<WinRateGraphView.PointData> = emptyList()
         ) {
@@ -679,7 +680,10 @@ class HistoryActivity : AppCompatActivity() {
             stats.partyIndices.add(record.partyIndex)
             if (record.result == "WIN") stats.wins++ else stats.losses++
             val time = try { sdfInput.parse(record.timestamp)?.time ?: 0L } catch(_: Exception) { 0L }
-            if (time > stats.lastUsed) stats.lastUsed = time
+            if (time > stats.lastUsed) {
+                stats.lastUsed = time
+                stats.lastUsedIndex = record.partyIndex
+            }
         }
 
         totalStats.historyRates = getDailyRates(allRecords)
@@ -747,18 +751,21 @@ class HistoryActivity : AppCompatActivity() {
                         gravity = Gravity.CENTER_VERTICAL
                         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                     }
-                    val titleText = when {
-                        stats.partyIndices.contains(-1) -> "TOTAL"
-                        stats.isLatest -> {
-                            // 現在のスロット(0,1,2)のうち、この構成と一致する最小の番号を表示
-                            val currentIdx = (0..2).find { latestMembersByIndex[it] == stats.sortedMembers } ?: 0
-                            "P${currentIdx + 1}(最新)"
+                    val titleText = if (stats.partyIndices.contains(-1)) {
+                        "TOTAL"
+                    } else {
+                        // メインとなるパーティ（最後、または最新の利用スロット）
+                        val mainIdx = stats.lastUsedIndex
+                        // その他の利用履歴スロットを昇順で抽出
+                        val otherIndices = stats.partyIndices.filter { it != mainIdx && it >= 0 }.sorted()
+                        
+                        val sb = StringBuilder("P${mainIdx + 1}")
+                        if (otherIndices.isNotEmpty()) {
+                            sb.append(",")
+                            sb.append(otherIndices.map { it + 1 }.joinToString(","))
                         }
-                        else -> {
-                            // 過去の構成の場合、記録されている中で最小のパーティ番号を表示
-                            val pastIdx = stats.partyIndices.filter { it >= 0 }.minOrNull() ?: 0
-                            "P${pastIdx + 1}(過去)"
-                        }
+                        sb.append(if (stats.isLatest) "(最新)" else "(過去)")
+                        sb.toString()
                     }
                     val title = TextView(context).apply {
                         text = titleText
@@ -1182,5 +1189,11 @@ class HistoryActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
+    }
+
+    private fun showTopToast(message: String) {
+        val toast = Toast.makeText(this, message, Toast.LENGTH_SHORT)
+        toast.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 200)
+        toast.show()
     }
 }

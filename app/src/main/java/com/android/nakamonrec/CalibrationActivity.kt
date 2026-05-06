@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -52,7 +53,7 @@ class CalibrationActivity : AppCompatActivity() {
     private fun setupUI() {
         val file = File(filesDir, fileName!!)
         if (!file.exists()) {
-            Toast.makeText(this, getString(R.string.toast_image_not_found), Toast.LENGTH_SHORT).show()
+            showTopToast(getString(R.string.toast_image_not_found))
             finish()
             return
         }
@@ -107,7 +108,7 @@ class CalibrationActivity : AppCompatActivity() {
             binding.calibrationView.setUiScale(detectedScale)
             displayBoxes(defaultData)
             updateTemplateNameDisplay()
-            Toast.makeText(this, getString(R.string.toast_default_restored), Toast.LENGTH_SHORT).show()
+            showTopToast(getString(R.string.toast_default_restored))
         }
 
         binding.btnAuto.setOnClickListener {
@@ -209,9 +210,9 @@ class CalibrationActivity : AppCompatActivity() {
                     binding.calibrationView.setUiScale(detectedScale)
                     binding.calibrationView.setBoxes(results)
                     updateTemplateNameDisplay() // スコア更新に合わせて表示確認
-                    Toast.makeText(this, getString(R.string.toast_auto_calibrated), Toast.LENGTH_SHORT).show()
+                    showTopToast(getString(R.string.toast_auto_calibrated))
                 } else {
-                    Toast.makeText(this, getString(R.string.toast_auto_calibrate_failed), Toast.LENGTH_SHORT).show()
+                    showTopToast(getString(R.string.toast_auto_calibrate_failed))
                 }
             }
         }
@@ -310,8 +311,14 @@ class CalibrationActivity : AppCompatActivity() {
             putString("calibration_data", json)
         }
 
-        Toast.makeText(this, getString(R.string.toast_save_success), Toast.LENGTH_SHORT).show()
+        showTopToast(getString(R.string.toast_save_success))
         finish()
+    }
+
+    private fun showTopToast(message: String) {
+        val toast = Toast.makeText(this, message, Toast.LENGTH_SHORT)
+        toast.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 200)
+        toast.show()
     }
 
     override fun onDestroy() {

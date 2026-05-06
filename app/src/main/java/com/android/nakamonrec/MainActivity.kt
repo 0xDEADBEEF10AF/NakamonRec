@@ -81,11 +81,11 @@ class MainActivity : AppCompatActivity() {
         uri?.let {
             val fileName = pendingCalibrationFileName ?: return@let
             if (importImageForCalibration(it, fileName)) {
-                Toast.makeText(this, getString(R.string.msg_imported), Toast.LENGTH_SHORT).show()
+                showTopToast(getString(R.string.msg_imported))
                 calibrationSelectorDialog?.dismiss()
                 showCalibrationSelectorDialog() 
             } else {
-                Toast.makeText(this, getString(R.string.msg_import_failed), Toast.LENGTH_SHORT).show()
+                showTopToast(getString(R.string.msg_import_failed))
             }
         }
     }
@@ -103,9 +103,9 @@ class MainActivity : AppCompatActivity() {
                         outputStream.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
                         outputStream.write(content.toByteArray())
                     }
-                    Toast.makeText(this, "CSVファイルに保存しました", Toast.LENGTH_LONG).show()
+                    showTopToast("CSVファイルに保存しました", true)
                 } catch (e: Exception) {
-                    Toast.makeText(this, "保存に失敗しました: ${e.message}", Toast.LENGTH_LONG).show()
+                    showTopToast("保存に失敗しました: ${e.message}", true)
                 }
             }
         }
@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.textVersion.setOnClickListener {
-            Toast.makeText(this, getString(R.string.msg_checking_update), Toast.LENGTH_SHORT).show()
+            showTopToast(getString(R.string.msg_checking_update))
             checkForUpdates(currentVersionName, isManual = true)
         }
 
@@ -178,11 +178,11 @@ class MainActivity : AppCompatActivity() {
                     val cleanCurrentName = currentName.replace("v", "").trim()
                     Handler(Looper.getMainLooper()).post {
                         if (isNewerVersion(latestName, cleanCurrentName)) showUpdateDialog(latest.name, latest.htmlUrl)
-                        else if (isManual) Toast.makeText(this, getString(R.string.msg_latest_version), Toast.LENGTH_SHORT).show()
+                        else if (isManual) showTopToast(getString(R.string.msg_latest_version))
                     }
                 }
             } catch (_: Exception) {
-                if (isManual) Handler(Looper.getMainLooper()).post { Toast.makeText(this, getString(R.string.msg_update_failed), Toast.LENGTH_SHORT).show() }
+                if (isManual) Handler(Looper.getMainLooper()).post { showTopToast(getString(R.string.msg_update_failed)) }
             }
         }
     }
@@ -264,7 +264,7 @@ class MainActivity : AppCompatActivity() {
         val files = filesDir.listFiles { file -> file.extension == "json" && file.name != "monsters.json" }
         val fileNames = files?.map { it.nameWithoutExtension }?.toTypedArray() ?: arrayOf()
         if (fileNames.isEmpty()) {
-            Toast.makeText(this, "マージできるファイルがありません", Toast.LENGTH_SHORT).show()
+            showTopToast("マージできるファイルがありません")
             return
         }
 
@@ -279,7 +279,7 @@ class MainActivity : AppCompatActivity() {
             }
             .setPositiveButton(R.string.btn_execute_merge) { _, _ ->
                 if (selectedFiles.size < 2) {
-                    Toast.makeText(this, R.string.msg_select_two_files, Toast.LENGTH_SHORT).show()
+                    showTopToast(getString(R.string.msg_select_two_files))
                 } else {
                     showMergeNameDialog(selectedFiles)
                 }
@@ -301,7 +301,7 @@ class MainActivity : AppCompatActivity() {
                 if (isValidFileName(newName)) {
                     performMerge(selectedFiles, newName)
                 } else {
-                    Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
+                    showTopToast("ファイル名が無効です")
                 }
             }
             .setNegativeButton(R.string.btn_cancel, null)
@@ -335,13 +335,13 @@ class MainActivity : AppCompatActivity() {
                 newFile.writeText(gson.toJson(newHistory))
 
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this, getString(R.string.msg_merge_success, newName, allRecords.size), Toast.LENGTH_LONG).show()
+                    showTopToast(getString(R.string.msg_merge_success, newName, allRecords.size), true)
                     saveCurrentFileName(newName)
                     refreshServiceAndUI()
                 }
             } catch (e: Exception) {
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this, getString(R.string.msg_merge_failed, e.message ?: "Unknown"), Toast.LENGTH_SHORT).show()
+                    showTopToast(getString(R.string.msg_merge_failed, e.message ?: "Unknown"))
                 }
             }
         }
@@ -372,15 +372,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             dm.saveHistory(); saveCurrentFileName(csvFileName); refreshServiceAndUI()
-            Toast.makeText(this, "「$csvFileName.json」として${importedCount}件をインポートしました", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) { Toast.makeText(this, "インポートに失敗しました: ${e.message}", Toast.LENGTH_LONG).show() }
+            showTopToast("「$csvFileName.json」として${importedCount}件をインポートしました", true)
+        } catch (e: Exception) { showTopToast("インポートに失敗しました: ${e.message}", true) }
     }
 
     private fun showFileActionDialog(fileName: String) {
         AlertDialog.Builder(this).setTitle("ファイル操作: $fileName")
             .setItems(arrayOf("このファイルを使用する", "名前を変更する", "削除する", "CSVにエクスポート")) { _, idx ->
                 when (idx) {
-                    0 -> { saveCurrentFileName(fileName); Toast.makeText(this, getString(R.string.file_switched_toast, fileName), Toast.LENGTH_SHORT).show(); refreshServiceAndUI() }
+                    0 -> { saveCurrentFileName(fileName); showTopToast(getString(R.string.file_switched_toast, fileName)); refreshServiceAndUI() }
                     1 -> showRenameDialog(fileName); 2 -> showDeleteConfirmDialog(fileName); 3 -> exportHistoryToCsv(fileName)
                 }
             }.show()
@@ -416,7 +416,7 @@ class MainActivity : AppCompatActivity() {
                     when (idx) {
                         0 -> { pendingCalibrationFileName = fileNames[i]; pickImageLauncher.launch("image/*") }
                         1 -> { if (File(filesDir, fileNames[i]).exists()) showDeleteImageConfirmDialog(fileNames[i]) }
-                        2 -> { if (File(filesDir, fileNames[i]).exists()) startActivity(Intent(this@MainActivity, CalibrationActivity::class.java).apply { putExtra("EXTRA_MODE", modes[i]); putExtra("EXTRA_FILE_NAME", fileNames[i]) }) else Toast.makeText(this@MainActivity, "先に画像をインポートしてください", Toast.LENGTH_SHORT).show() }
+                        2 -> { if (File(filesDir, fileNames[i]).exists()) startActivity(Intent(this@MainActivity, CalibrationActivity::class.java).apply { putExtra("EXTRA_MODE", modes[i]); putExtra("EXTRA_FILE_NAME", fileNames[i]) }) else showTopToast("先に画像をインポートしてください") }
                     }
                 }.show()
             }
@@ -427,12 +427,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDeleteConfirmDialog(fileName: String) {
         AlertDialog.Builder(this).setTitle("ファイルの削除").setMessage("「$fileName」を削除しますか？")
-            .setPositiveButton("削除") { _, _ -> if (File(filesDir, "$fileName.json").delete()) { Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show(); if (getCurrentFileName() == fileName) saveCurrentFileName("default_record"); refreshServiceAndUI() } }.setNegativeButton("キャンセル", null).show()
+            .setPositiveButton("削除") { _, _ -> if (File(filesDir, "$fileName.json").delete()) { showTopToast("削除しました"); if (getCurrentFileName() == fileName) saveCurrentFileName("default_record"); refreshServiceAndUI() } }.setNegativeButton("キャンセル", null).show()
     }
 
     private fun showResetHistoryConfirmDialog(fileName: String) {
         AlertDialog.Builder(this).setTitle("データのクリア").setMessage("「$fileName」の戦績データをすべて削除しますか？")
-            .setPositiveButton("クリア") { _, _ -> val dm = BattleDataManager(this); dm.loadHistory(fileName); dm.resetHistory(); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY }); Toast.makeText(this, "データをクリアしました", Toast.LENGTH_SHORT).show(); updateUI(MediaCaptureService.isRunning) }.setNegativeButton("キャンセル", null).show()
+            .setPositiveButton("クリア") { _, _ -> val dm = BattleDataManager(this); dm.loadHistory(fileName); dm.resetHistory(); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY }); showTopToast("データをクリアしました"); updateUI(MediaCaptureService.isRunning) }.setNegativeButton("キャンセル", null).show()
     }
 
     private fun refreshServiceAndUI() {
@@ -440,7 +440,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeleteImageConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this).setTitle("画像を削除").setMessage("この画像を削除しますか？").setPositiveButton("削除") { _, _ -> if (File(filesDir, fileName).delete()) { Toast.makeText(this, "削除しました", Toast.LENGTH_SHORT).show(); calibrationSelectorDialog?.dismiss(); showCalibrationSelectorDialog() } }.setNegativeButton("キャンセル", null).show()
+        AlertDialog.Builder(this).setTitle("画像を削除").setMessage("この画像を削除しますか？").setPositiveButton("削除") { _, _ -> if (File(filesDir, fileName).delete()) { showTopToast("削除しました"); calibrationSelectorDialog?.dismiss(); showCalibrationSelectorDialog() } }.setNegativeButton("キャンセル", null).show()
     }
 
     private fun importImageForCalibration(uri: Uri, destFileName: String): Boolean {
@@ -499,7 +499,7 @@ class MainActivity : AppCompatActivity() {
                         createNewFile(newName)
                     }
                 } else {
-                    Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
+                    showTopToast("ファイル名が無効です")
                 }
             }
             .setNegativeButton("キャンセル", null)
@@ -513,7 +513,7 @@ class MainActivity : AppCompatActivity() {
         }
         saveCurrentFileName(name)
         refreshServiceAndUI()
-        Toast.makeText(this, "「$name」を作成しました", Toast.LENGTH_SHORT).show()
+        showTopToast("「$name」を作成しました")
     }
 
     private fun showRenameDialog(oldName: String) {
@@ -538,7 +538,7 @@ class MainActivity : AppCompatActivity() {
                         performRename(oldName, newName)
                     }
                 } else if (newName != oldName) {
-                    Toast.makeText(this, "ファイル名が無効です", Toast.LENGTH_SHORT).show()
+                    showTopToast("ファイル名が無効です")
                 }
             }
             .setNegativeButton("キャンセル", null)
@@ -558,11 +558,19 @@ class MainActivity : AppCompatActivity() {
             if (getCurrentFileName() == oldName) {
                 saveCurrentFileName(newName)
             }
-            Toast.makeText(this, "名前を変更しました", Toast.LENGTH_SHORT).show()
+            showTopToast("名前を変更しました")
             refreshServiceAndUI()
         } else {
-            Toast.makeText(this, "変更に失敗しました", Toast.LENGTH_SHORT).show()
+            showTopToast("変更に失敗しました")
         }
+    }
+
+    private fun showTopToast(message: String, isLong: Boolean = false) {
+        val duration = if (isLong) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+        val toast = Toast.makeText(this, message, duration)
+        // 上部に表示 (ステータスバーを避けるため yOffset を 200程度に設定)
+        toast.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 200)
+        toast.show()
     }
 
     override fun onSupportNavigateUp(): Boolean { finish(); return true }

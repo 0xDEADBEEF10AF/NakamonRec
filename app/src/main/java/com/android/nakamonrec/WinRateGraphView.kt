@@ -96,7 +96,8 @@ class WinRateGraphView @JvmOverloads constructor(
 
     fun setData(points: List<PointData>) {
         this.dataPoints = points
-        selectedIndex = -1
+        // 右端（最新値）をデフォルトで選択状態にする
+        selectedIndex = if (points.isNotEmpty()) points.size - 1 else -1
         post {
             scrollOffset = calculateMaxScroll()
             invalidate()
