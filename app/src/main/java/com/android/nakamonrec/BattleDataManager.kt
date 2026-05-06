@@ -37,7 +37,7 @@ class BattleDataManager(private val context: Context) {
         enemyPartyScores: List<Double>? = null,
         resultScore: Double? = null,
         partySelectScores: List<Double>? = null
-    ) {
+    ): BattleRecord {
         if (result == "WIN") history.totalWins++ else history.totalLosses++
 
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
@@ -47,6 +47,13 @@ class BattleDataManager(private val context: Context) {
             partySelectScores
         )
         history.records.add(record)
+        saveHistory()
+        return record
+    }
+
+    fun updateRecord(record: BattleRecord) {
+        // オブジェクト参照が同じなので history.records 内のデータも更新されているが
+        // 明示的に保存を走らせる
         saveHistory()
     }
 

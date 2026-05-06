@@ -41,6 +41,9 @@ class MediaCaptureService : Service() {
     private var currentVsScore: Double = 0.0
     private var currentSessionId = 0L
     private var debugImageSavedInSession = false
+    private var lastActiveRecord: BattleRecord? = null
+    private val burstImages = mutableListOf<Bitmap>()
+    private var isCapturingBurst = false
 
     companion object {
         private const val NOTIFICATION_ID = 1001
@@ -216,47 +219,113 @@ class MediaCaptureService : Service() {
     }
 
     private fun repeatScan(sessionId: Long, count: Int, delayMs: Long) {
+        // セッション切れ、全確定済み、または回数終了なら即終了
         if (sessionId != currentSessionId || analyzer.isAllIdentified() || count <= 0) {
+            // 最終的に未確定で終わった場合のみバースト画像5枚を保存
             if (count <= 0 && sessionId == currentSessionId && !analyzer.isAllIdentified() && !debugImageSavedInSession) {
                 synchronized(this) {
-                    latestBitmap?.let { analyzer.saveDebugBitmap(it, "incomplete_results_${System.currentTimeMillis()}") }
+                    val timestamp = System.currentTimeMillis()
+                    burstImages.forEachIndexed { index, bmp ->
+                        if (!bmp.isRecycled) {
+                            analyzer.saveDebugBitmap(bmp, "incomplete_burst_${index}_$timestamp")
+                        }
+                    }
                 }
                 debugImageSavedInSession = true
+            }
+            // バースト画像の解放
+            if (sessionId != currentSessionId || analyzer.isAllIdentified() || count <= 0) {
+                clearBurstImages()
             }
             return
         }
 
         analysisHandler?.post {
-            val bitmapToProcess: Bitmap? = synchronized(this) {
-                val current = latestBitmap
-                if (current != null && !current.isRecycled) Bitmap.createBitmap(current) else null
-            }
-            
-            bitmapToProcess?.let { bitmap ->
-                try {
-                    if (sessionId == currentSessionId) {
-                        analyzer.identifyStepByStep(bitmap)
+            try {
+                if (sessionId == currentSessionId) {
+                    val snapshots = synchronized(this) { burstImages.toList() }
+                    val foundNew = if (snapshots.isNotEmpty()) {
+                        analyzer.identifyNextSlot(snapshots)
+                    } else {
+                        synchronized(this) {
+                            val bmp = latestBitmap
+                            if (bmp != null && !bmp.isRecycled) {
+                                analyzer.identifyStepByStep(bmp)
+                                true 
+                            } else false
+                        }
                     }
-                } catch (e: Exception) {
-                    Log.e("Battle", "Analysis error: ${e.message}")
-                } finally {
-                    bitmap.recycle()
+
+                    // 識別が進んだ場合、もし既にバトルが終了してレコードが作成済みなら更新する
+                    if (foundNew && currentState == State.IDLE) {
+                        val recordToUpdate = lastActiveRecord
+                        if (recordToUpdate != null) {
+                            val (my, enemy, scores) = analyzer.getCurrentResults()
+                            recordToUpdate.myParty = my
+                            recordToUpdate.enemyParty = enemy
+                            recordToUpdate.myPartyScores = scores.first
+                            recordToUpdate.enemyPartyScores = scores.second
+                            dataManager.updateRecord(recordToUpdate)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Battle", "Analysis error: ${e.message}")
+            } finally {
+                // 解析後に再度条件チェックして次を予約（シーケンシャル）
+                if (sessionId == currentSessionId && !analyzer.isAllIdentified() && count > 1) {
+                    analysisHandler?.postDelayed({
+                        repeatScan(sessionId, count - 1, delayMs)
+                    }, delayMs)
+                } else if (analyzer.isAllIdentified()) {
+                    Log.i("Battle", "All monsters identified. Ending scan loop early.")
+                    clearBurstImages()
                 }
             }
-            
-            // 次の解析を、現在の解析が「完了した後」に予約する（シーケンシャル化）
-            if (sessionId == currentSessionId && !analyzer.isAllIdentified() && count > 1) {
-                analysisHandler?.postDelayed({
-                    repeatScan(sessionId, count - 1, delayMs)
-                }, delayMs)
+        }
+    }
+
+    private fun startBurstCapture(sessionId: Long) {
+        if (sessionId != currentSessionId) return
+        isCapturingBurst = true
+        
+        var captureCount = 0
+        val captureRunnable = object : Runnable {
+            override fun run() {
+                if (sessionId != currentSessionId || captureCount >= 5) {
+                    isCapturingBurst = false
+                    return
+                }
+                
+                synchronized(this@MediaCaptureService) {
+                    latestBitmap?.let {
+                        if (!it.isRecycled) {
+                            burstImages.add(Bitmap.createBitmap(it))
+                            captureCount++
+                        }
+                    }
+                }
+                
+                if (captureCount < 5) {
+                    captureHandler?.postDelayed(this, 200L)
+                } else {
+                    isCapturingBurst = false
+                }
             }
+        }
+        captureHandler?.post(captureRunnable)
+    }
+
+    private fun clearBurstImages() {
+        synchronized(this) {
+            burstImages.forEach { it.recycle() }
+            burstImages.clear()
         }
     }
 
     private fun handleIdleState(bitmap: Bitmap) {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
         
-        // 閾値を超えた有効な検出があった場合のみ、インデックスとスコアを更新
         if (detected != -1) {
             selectedPartyIndex = detected
             currentPartyScores = scores
@@ -272,6 +341,10 @@ class MediaCaptureService : Service() {
             debugImageSavedInSession = false
             currentState = State.IN_BATTLE
             analyzer.resetIdentification()
+            
+            clearBurstImages()
+            startBurstCapture(currentSessionId) // バースト撮影開始
+
             val partyName = if (selectedPartyIndex != -1) "P${selectedPartyIndex + 1}" else "?"
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始 ($partyName)")
             
@@ -285,18 +358,16 @@ class MediaCaptureService : Service() {
             val resultScore = if (result == "WIN") analyzer.detectWinScore(bitmap, analyzer.calibrationData.winBox)
                               else analyzer.detectLoseScore(bitmap, analyzer.calibrationData.loseBox)
 
-            if (!analyzer.isAllIdentified() && !debugImageSavedInSession) {
-                analyzer.saveDebugBitmap(bitmap, "battle_ended_incomplete_${System.currentTimeMillis()}")
-                debugImageSavedInSession = true
-            }
-            currentSessionId = 0
+            // 戦闘終了時の不完全なデバッグ画像保存は、中途半端なロゴが映るだけで有用でないため削除
+
+            // currentSessionId = 0 はここでは行わない（バックグラウンド識別を継続させるため）
             finalizeBattle(result, currentVsScore, resultScore)
         }
     }
 
     private fun finalizeBattle(result: String, vsScore: Double, resultScore: Double) {
         val (myParty, enemyParty, scores) = analyzer.getCurrentResults()
-        dataManager.addRecord(
+        lastActiveRecord = dataManager.addRecord(
             result, myParty, enemyParty, selectedPartyIndex,
             vsScore, scores.first, scores.second, resultScore,
             currentPartyScores
@@ -340,6 +411,7 @@ class MediaCaptureService : Service() {
         isRunning = false
         currentSessionId = 0
         sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
+        clearBurstImages()
         virtualDisplay?.release()
         imageReader?.close()
         mediaProjection?.stop()

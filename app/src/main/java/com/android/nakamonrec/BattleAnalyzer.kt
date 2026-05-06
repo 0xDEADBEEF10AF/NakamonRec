@@ -37,6 +37,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var partySelectTemplateScaled: Mat? = null
     private var partyCustomTemplateScaled: Mat? = null
     private var cachedScale = -1.0
+    private var bestImageIndex = 0 // バースト画像の中で成功したインデックスを保持
+    private var nextAnalysisSlot = 0 // ラウンドロビン用のスロット追跡
+    private val monsterMatchCounts = mutableMapOf<String, Int>() // 出現頻度統計
 
     companion object {
         private const val VS_THRESHOLD = 0.4
@@ -276,7 +279,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         var bestSize = Size(80.0 * baseScale, 130.0 * baseScale)
         val localScales = listOf(baseScale * 0.9, baseScale * 1.0, baseScale * 1.1)
 
-        for (m in monsterMaster) {
+        val monsters = monsterMaster // 校正時は全モンスターを対象
+        for (m in monsters) {
             val tpl = m.templateMat ?: continue
             for (ls in localScales) {
                 val scaledTpl = Mat()
@@ -395,58 +399,114 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     fun resetIdentification() { 
         identifiedNames.fill(null)
         identifiedScores.fill(null)
+        bestImageIndex = 0 
+        nextAnalysisSlot = 0 // リセット
     }
     fun isAllIdentified(): Boolean = identifiedNames.all { it != null }
 
     fun identifyStepByStep(bitmap: Bitmap) {
-        val fullMat = Mat()
-        Utils.bitmapToMat(bitmap, fullMat)
-        val imgW = fullMat.cols().toFloat()
-        val imgH = fullMat.rows().toFloat()
-        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
-        
-        for (i in 0..7) {
-            // 確定済みならスキップ
-            if (identifiedNames[i] != null) continue
-
-            val config = if (i < 4) calibrationData.myPartyBoxes[i] else calibrationData.enemyPartyBoxes[i - 4]
-            
-            // モンスター用パディング（画面端のスロットほど累積誤差でズレやすいため、中心からの距離に応じて探索範囲を広げる）
-            val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f // 中心(0.5)から離れるほど大きくなる係数
-            val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
-            val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt() 
-            val pad = basePad + extraPad
-
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
-            
-            val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
-            val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
-            
-            try {
-                val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
-                val result = findBestMonsterMatchMicroScales(roi)
-                
-                // 未確定スロットの最高スコアを更新（原因調査用）
-                val currentMax = identifiedScores[i] ?: -1.0
-                if (result.score > currentMax) {
-                    identifiedScores[i] = result.score
-                }
-
-                if (result.score > MONSTER_THRESHOLD) {
-                    identifiedNames[i] = result.name
-                    identifiedScores[i] = result.score
-                    Log.i("BattleAnalyzer", "🎉 Slot[$i] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
-                }
-                roi.release()
-            } catch (_: Exception) {}
-        }
-        fullMat.release()
+        val monsters = monsterMaster.sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
+        identifySlot(bitmap, (0..7).firstOrNull { identifiedNames[it] == null } ?: return, monsters)
     }
 
-    private fun findBestMonsterMatchMicroScales(roiMat: Mat): MatchResult {
+    fun identifyNextSlot(bitmaps: List<Bitmap>): Boolean {
+        if (bitmaps.isEmpty()) return false
+        
+        val sortedMonsters = monsterMaster.sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
+        
+        // ラウンドロビン方式で次の未確定スロットを探す
+        for (offset in 0..7) {
+            val i = (nextAnalysisSlot + offset) % 8
+            if (identifiedNames[i] != null) continue
+            
+            // このスロットを各画像で試す
+            val indicesToTry = mutableListOf(bestImageIndex)
+            for (idx in bitmaps.indices) {
+                if (idx != bestImageIndex) indicesToTry.add(idx)
+            }
+            
+            for (idx in indicesToTry) {
+                if (idx >= bitmaps.size) continue
+                val success = identifySlot(bitmaps[idx], i, sortedMonsters)
+                if (success) {
+                    bestImageIndex = idx
+                    nextAnalysisSlot = (i + 1) % 8 // 次回は次のスロットから開始
+                    return true
+                }
+            }
+            // 5枚の画像すべてで失敗した場合でも、次回の呼び出しでは次のスロットを試すようにする
+            // これにより1つの難しいスロットで全体が止まるのを防ぐ
+            nextAnalysisSlot = (i + 1) % 8
+            return false // 1回の呼び出しで1スロット分だけ処理する
+        }
+        return false
+    }
+
+    private fun identifySlot(bitmap: Bitmap, slotIndex: Int, sortedMonsters: List<MonsterData>): Boolean {
+        val mat = Mat()
+        Utils.bitmapToMat(bitmap, mat)
+        val imgW = mat.cols().toFloat()
+        val imgH = mat.rows().toFloat()
+        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2RGB)
+
+        val config = if (slotIndex < 4) calibrationData.myPartyBoxes[slotIndex] else calibrationData.enemyPartyBoxes[slotIndex - 4]
+        
+        // 2段階探索： 1. 狭い範囲 (パディング最小)
+        val narrowPad = (20 * calibrationData.uiScale).toInt()
+        val resultNarrow = tryIdentify(mat, config, narrowPad, imgW, imgH, sortedMonsters)
+        
+        if (resultNarrow.score > MONSTER_THRESHOLD) {
+            finalizeSlot(slotIndex, resultNarrow)
+            mat.release()
+            return true
+        }
+        
+        // 2段階探索： 2. 広い範囲 (driftFactor適用)
+        val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f
+        val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
+        val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt() 
+        val widePad = basePad + extraPad
+        
+        val resultWide = tryIdentify(mat, config, widePad, imgW, imgH, sortedMonsters)
+        if (resultWide.score > MONSTER_THRESHOLD) {
+            finalizeSlot(slotIndex, resultWide)
+            mat.release()
+            return true
+        }
+        
+        // スコア更新（原因調査用）
+        if (resultWide.score > (identifiedScores[slotIndex] ?: -1.0)) {
+            identifiedScores[slotIndex] = resultWide.score
+        }
+
+        mat.release()
+        return false
+    }
+
+    private fun tryIdentify(fullMat: Mat, config: BoxConfig, pad: Int, imgW: Float, imgH: Float, monsters: List<MonsterData>): MatchResult {
+        val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
+        val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
+        val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
+        
+        return try {
+            val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
+            val result = findBestMonsterMatchMicroScales(roi, monsters)
+            roi.release()
+            result
+        } catch (_: Exception) { MatchResult("", -1.0) }
+    }
+
+    private fun finalizeSlot(slotIndex: Int, result: MatchResult) {
+        identifiedNames[slotIndex] = result.name
+        identifiedScores[slotIndex] = result.score
+        monsterMatchCounts[result.name] = monsterMatchCounts.getOrDefault(result.name, 0) + 1
+        Log.i("BattleAnalyzer", "🎉 Slot[$slotIndex] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
+    }
+
+    private fun findBestMonsterMatchMicroScales(roiMat: Mat, monsters: List<MonsterData>): MatchResult {
         var bestScore = -1.0
         var bestName = ""
-        for (monster in monsterMaster) {
+        for (monster in monsters) {
             val variants = scaledMonsterTemplates[monster.name] ?: continue
             for (scaledTpl in variants) {
                 if (scaledTpl.cols() <= roiMat.cols() && scaledTpl.rows() <= roiMat.rows()) {
@@ -559,7 +619,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
         val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
         val roi = mat.submat(top, top + config.height, left, left + config.width)
-        val res = findBestMonsterMatchMicroScales(roi)
+        val res = findBestMonsterMatchMicroScales(roi, monsterMaster)
         roi.release(); mat.release()
         return res.score
     }
