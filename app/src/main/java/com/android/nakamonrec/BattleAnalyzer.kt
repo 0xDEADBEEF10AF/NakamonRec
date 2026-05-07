@@ -25,6 +25,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var vsCustomTemplate: Mat? = null
     private var winTemplate: Mat? = null
     private var loseTemplate: Mat? = null
+    private var winCustomTemplate: Mat? = null
+    private var loseCustomTemplate: Mat? = null
     private var partySelectTemplate: Mat? = null
     private var partyCustomTemplate: Mat? = null
     
@@ -34,6 +36,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var vsCustomTemplateScaled: Mat? = null
     private var winTemplateScaled: Mat? = null
     private var loseTemplateScaled: Mat? = null
+    private var winCustomTemplateScaled: Mat? = null
+    private var loseCustomTemplateScaled: Mat? = null
     private var partySelectTemplateScaled: Mat? = null
     private var partyCustomTemplateScaled: Mat? = null
     private var cachedScale = -1.0
@@ -89,6 +93,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         
         winTemplateScaled?.release(); winTemplateScaled = winTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         loseTemplateScaled?.release(); loseTemplateScaled = loseTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
+        
+        // カスタムテンプレートは 1.0 固定
+        winCustomTemplateScaled?.release(); winCustomTemplateScaled = winCustomTemplate?.let { val m = Mat(); it.copyTo(m); m }
+        loseCustomTemplateScaled?.release(); loseCustomTemplateScaled = loseCustomTemplate?.let { val m = Mat(); it.copyTo(m); m }
+        
         partySelectTemplateScaled?.release(); partySelectTemplateScaled = partySelectTemplate?.let { Mat().apply { Imgproc.resize(it, this, Size(), s, s, Imgproc.INTER_CUBIC) } }
         
         // カスタムテンプレートは 1.0 固定
@@ -128,6 +137,14 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val partyFile = File(context.filesDir, "party_custom.png")
         if (partyFile.exists()) {
             partyCustomTemplate = loadExternalTemplate(partyFile.absolutePath)
+        }
+        val winFile = File(context.filesDir, "win_custom.png")
+        if (winFile.exists()) {
+            winCustomTemplate = loadExternalTemplate(winFile.absolutePath)
+        }
+        val loseFile = File(context.filesDir, "lose_custom.png")
+        if (loseFile.exists()) {
+            loseCustomTemplate = loadExternalTemplate(loseFile.absolutePath)
         }
     }
 
@@ -170,7 +187,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         if (useGray) Imgproc.cvtColor(scene, workScene, Imgproc.COLOR_RGBA2GRAY)
         else scene.copyTo(workScene)
 
-        val startY = (workScene.rows() * topLimit).toInt().coerceIn(0, workScene.rows() - 1)
+        val startY = (workScene.rows() * topLimit).toInt().coerceAtMost(workScene.rows() - 1)
         val endY = (workScene.rows() * bottomLimit).toInt().coerceIn(startY + 1, workScene.rows())
         val roiScene = workScene.submat(startY, endY, 0, workScene.cols())
 
@@ -270,8 +287,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private fun findBestMonsterStrict(scene: Mat, estCX: Float, estCY: Float, baseScale: Double): BoxConfig? {
         val searchW = (scene.cols() * 0.15).toInt()
         val searchH = (scene.rows() * 0.15).toInt()
-        val startX = (scene.cols() * estCX - searchW / 2).toInt().coerceIn(0, scene.cols() - searchW)
-        val startY = (scene.rows() * estCY - searchH / 2).toInt().coerceIn(0, scene.rows() - searchH)
+        
+        // 探索範囲が画像サイズを超えないように制限
+        if (searchW <= 0 || searchH <= 0 || searchW > scene.cols() || searchH > scene.rows()) return null
+
+        val startX = ((scene.cols() * estCX) - (searchW / 2)).toInt().coerceIn(0, (scene.cols() - searchW).coerceAtLeast(0))
+        val startY = ((scene.rows() * estCY) - (searchH / 2)).toInt().coerceIn(0, (scene.rows() - searchH).coerceAtLeast(0))
+        
         val roi = scene.submat(startY, startY + searchH, startX, startX + searchW)
         
         var bestScore = -1.0
@@ -362,10 +384,20 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {
+        // WIN判定
+        if (winCustomTemplateScaled != null) {
+            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled) > WIN_THRESHOLD) return "WIN"
+        }
         val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled)
         if (winScore > WIN_THRESHOLD) return "WIN"
+
+        // LOSE判定
+        if (loseCustomTemplateScaled != null) {
+            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled) > LOSE_THRESHOLD) return "LOSE"
+        }
         val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled)
         if (loseScore > LOSE_THRESHOLD) return "LOSE"
+        
         return null
     }
 
@@ -374,12 +406,19 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val fullMat = Mat()
         Utils.bitmapToMat(bitmap, fullMat)
         Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
-        val imgW = fullMat.cols().toFloat()
-        val imgH = fullMat.rows().toFloat()
+        val imgW = fullMat.cols()
+        val imgH = fullMat.rows()
+        
+        // 画像サイズに対してテンプレートが大きすぎる場合は即座に失敗とする
+        if (config.width > imgW || config.height > imgH) {
+            fullMat.release()
+            return 0.0
+        }
+
         val centerX = (imgW * config.centerX).toInt()
         val centerY = (imgH * config.centerY).toInt()
-        val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
-        val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
+        val left = (centerX - config.width / 2).coerceIn(0, (imgW - config.width).coerceAtLeast(0))
+        val top = (centerY - config.height / 2).coerceIn(0, (imgH - config.height).coerceAtLeast(0))
         
         var score = 0.0
         try {
@@ -485,8 +524,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     private fun tryIdentify(fullMat: Mat, config: BoxConfig, pad: Int, imgW: Float, imgH: Float, monsters: List<MonsterData>): MatchResult {
         val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
-        val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
-        val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
+        
+        // 画像サイズ制限ガード
+        if (expandedConfig.width > imgW || expandedConfig.height > imgH) return MatchResult("", -1.0)
+
+        val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, (imgW.toInt() - expandedConfig.width).coerceAtLeast(0))
+        val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, (imgH.toInt() - expandedConfig.height).coerceAtLeast(0))
         
         return try {
             val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
@@ -555,8 +598,14 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             val config = calibrationData.partySelectBoxes[i]
             val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + padH * 2, config.height + padV * 2)
 
-            val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, imgW.toInt() - expandedConfig.width)
-            val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, imgH.toInt() - expandedConfig.height)
+            // 画像サイズ制限ガード
+            if (expandedConfig.width > imgW || expandedConfig.height > imgH) {
+                allScores.add(0.0)
+                continue
+            }
+
+            val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, (imgW.toInt() - expandedConfig.width).coerceAtLeast(0))
+            val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, (imgH.toInt() - expandedConfig.height).coerceAtLeast(0))
             
             var score = 0.0
             try {
@@ -601,8 +650,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val s3 = performColorMatchCached(bitmap, config, vsMgTemplateScaled)
         return maxOf(s1, maxOf(s2, s3))
     }
-    fun detectWinScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, winTemplateScaled)
-    fun detectLoseScore(bitmap: Bitmap, config: BoxConfig): Double = performColorMatchCached(bitmap, config, loseTemplateScaled)
+    fun detectWinScore(bitmap: Bitmap, config: BoxConfig): Double {
+        val s1 = if (winCustomTemplateScaled != null) performColorMatchCached(bitmap, config, winCustomTemplateScaled) else 0.0
+        val s2 = performColorMatchCached(bitmap, config, winTemplateScaled)
+        return maxOf(s1, s2)
+    }
+    fun detectLoseScore(bitmap: Bitmap, config: BoxConfig): Double {
+        val s1 = if (loseCustomTemplateScaled != null) performColorMatchCached(bitmap, config, loseCustomTemplateScaled) else 0.0
+        val s2 = performColorMatchCached(bitmap, config, loseTemplateScaled)
+        return maxOf(s1, s2)
+    }
     fun detectPartyScore(bitmap: Bitmap, config: BoxConfig): Double {
         val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return 0.0
         return performColorMatchCached(bitmap, config, template)
@@ -612,23 +669,53 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val mat = Mat()
         Utils.bitmapToMat(bitmap, mat)
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2RGB)
-        val imgW = mat.cols().toFloat()
-        val imgH = mat.rows().toFloat()
+        val imgW = mat.cols()
+        val imgH = mat.rows()
+
+        // 画像サイズ制限ガード
+        if (config.width > imgW || config.height > imgH) {
+            mat.release()
+            return -1.0
+        }
+
         val centerX = (imgW * config.centerX).toInt()
         val centerY = (imgH * config.centerY).toInt()
-        val left = (centerX - config.width / 2).coerceIn(0, imgW.toInt() - config.width)
-        val top = (centerY - config.height / 2).coerceIn(0, imgH.toInt() - config.height)
-        val roi = mat.submat(top, top + config.height, left, left + config.width)
-        val res = findBestMonsterMatchMicroScales(roi, monsterMaster)
-        roi.release(); mat.release()
-        return res.score
+        val left = (centerX - config.width / 2).coerceIn(0, (imgW - config.width).coerceAtLeast(0))
+        val top = (centerY - config.height / 2).coerceIn(0, (imgH - config.height).coerceAtLeast(0))
+        
+        return try {
+            val roi = mat.submat(top, top + config.height, left, left + config.width)
+            val res = findBestMonsterMatchMicroScales(roi, monsterMaster)
+            roi.release(); mat.release()
+            res.score
+        } catch (_: Exception) {
+            mat.release()
+            -1.0
+        }
     }
 
     fun releaseTemplates() {
         monsterMaster.forEach { it.templateMat?.release() }
-        vsFmTemplate?.release(); vsMgTemplate?.release(); vsCustomTemplate?.release(); winTemplate?.release(); loseTemplate?.release(); partySelectTemplate?.release(); partyCustomTemplate?.release()
+        vsFmTemplate?.release()
+        vsMgTemplate?.release()
+        vsCustomTemplate?.release()
+        winTemplate?.release()
+        loseTemplate?.release()
+        winCustomTemplate?.release()
+        loseCustomTemplate?.release()
+        partySelectTemplate?.release()
+        partyCustomTemplate?.release()
+        
         scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
-        vsFmTemplateScaled?.release(); vsMgTemplateScaled?.release(); vsCustomTemplateScaled?.release(); winTemplateScaled?.release(); loseTemplateScaled?.release(); partySelectTemplateScaled?.release(); partyCustomTemplateScaled?.release()
+        vsFmTemplateScaled?.release()
+        vsMgTemplateScaled?.release()
+        vsCustomTemplateScaled?.release()
+        winTemplateScaled?.release()
+        loseTemplateScaled?.release()
+        winCustomTemplateScaled?.release()
+        loseCustomTemplateScaled?.release()
+        partySelectTemplateScaled?.release()
+        partyCustomTemplateScaled?.release()
     }
 
     fun saveCustomTemplate(bitmap: Bitmap, config: BoxConfig, fileName: String) {
@@ -655,6 +742,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             } else if (fileName == "party_custom.png") {
                 partyCustomTemplate?.release()
                 partyCustomTemplate = loadExternalTemplate(file.absolutePath)
+            } else if (fileName == "win_custom.png") {
+                winCustomTemplate?.release()
+                winCustomTemplate = loadExternalTemplate(file.absolutePath)
+            } else if (fileName == "lose_custom.png") {
+                loseCustomTemplate?.release()
+                loseCustomTemplate = loadExternalTemplate(file.absolutePath)
             }
             cachedScale = -1.0 // 再スケーリングを強制
             prepareScaledTemplates()
@@ -674,6 +767,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         } else if (fileName == "party_custom.png") {
             partyCustomTemplate?.release()
             partyCustomTemplate = null
+        } else if (fileName == "win_custom.png") {
+            winCustomTemplate?.release()
+            winCustomTemplate = null
+        } else if (fileName == "lose_custom.png") {
+            loseCustomTemplate?.release()
+            loseCustomTemplate = null
         }
         
         cachedScale = -1.0 // 再スケーリングを強制してフォールバック

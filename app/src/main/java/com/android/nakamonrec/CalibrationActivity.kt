@@ -101,6 +101,8 @@ class CalibrationActivity : AppCompatActivity() {
             when (mode) {
                 "party" -> analyzer.deleteCustomTemplate("party_custom.png")
                 "vs" -> analyzer.deleteCustomTemplate("vs_custom.png")
+                "win" -> analyzer.deleteCustomTemplate("win_custom.png")
+                "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
             }
 
             val defaultData = CalibrationData()
@@ -127,8 +129,14 @@ class CalibrationActivity : AppCompatActivity() {
                 val partyFile = File(filesDir, "party_custom.png")
                 if (partyFile.exists()) "Template: CUSTOM" else "Template: BASE"
             }
-            "win" -> "Template: BASE"
-            "lose" -> "Template: BASE"
+            "win" -> {
+                val vsFile = File(filesDir, "win_custom.png")
+                if (vsFile.exists()) "Template: CUSTOM" else "Template: BASE"
+            }
+            "lose" -> {
+                val vsFile = File(filesDir, "lose_custom.png")
+                if (vsFile.exists()) "Template: CUSTOM" else "Template: BASE"
+            }
             else -> ""
         }
         binding.textTemplateName.text = text
@@ -188,6 +196,10 @@ class CalibrationActivity : AppCompatActivity() {
                     val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getWinTemplate(), false, 0.0f, 0.5f)
                     if (resRes != null) {
                         val config = resRes.first
+                        
+                        // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
+                        analyzer.saveCustomTemplate(bitmap, config, "win_custom.png")
+                        
                         val actual = lastWinRecord?.resultScore ?: -1.0
                         listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), resRes.second, actual))
                     } else null
@@ -196,6 +208,10 @@ class CalibrationActivity : AppCompatActivity() {
                     val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getLoseTemplate(), false, 0.0f, 0.5f)
                     if (resRes != null) {
                         val config = resRes.first
+
+                        // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
+                        analyzer.saveCustomTemplate(bitmap, config, "lose_custom.png")
+
                         val actual = lastLoseRecord?.resultScore ?: -1.0
                         listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), resRes.second, actual))
                     } else null
@@ -298,11 +314,19 @@ class CalibrationActivity : AppCompatActivity() {
             }
             "win" -> {
                 val res = updatedBoxes[0]
-                data.winBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
+                val config = BoxConfig(res.centerX, res.centerY, res.width, res.height)
+                data.winBox = config
+                if (bitmap != null) {
+                    analyzer.saveCustomTemplate(bitmap, config, "win_custom.png")
+                }
             }
             "lose" -> {
                 val res = updatedBoxes[0]
-                data.loseBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
+                val config = BoxConfig(res.centerX, res.centerY, res.width, res.height)
+                data.loseBox = config
+                if (bitmap != null) {
+                    analyzer.saveCustomTemplate(bitmap, config, "lose_custom.png")
+                }
             }
         }
 
