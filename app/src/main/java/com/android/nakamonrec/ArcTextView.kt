@@ -10,15 +10,21 @@ class ArcTextView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
+    // 0.0: 下側・逆アーチ (アイコン風), 1.0: 上側・正アーチ (アプリ風)
+    var animationProgress: Float = 1.0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        // 32sp相当をベースに、さらに大きく(40sp相当)設定
         textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 40f, resources.displayMetrics)
         style = Paint.Style.FILL
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         textAlign = Paint.Align.CENTER
         letterSpacing = 0.2f
-        alpha = 210 // 存在感を出しつつ、背景に馴染ませる
+        alpha = 210
     }
 
     private val path = Path()
@@ -31,14 +37,15 @@ class ArcTextView @JvmOverloads constructor(
         val centerY = height / 2f
         
         val density = resources.displayMetrics.density
-        // 文字が大きくなった分、半径を広げてボタンの外側に綺麗に配置
         val radius = 115f * density 
         
         path.reset()
         rectF.set(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
         
-        // 上半分の円弧 (180度から180度分)
-        path.addArc(rectF, 180f, 180f)
+        // 進捗に応じて開始角度を遷移
+        // 逆アーチ (0度) -> 正アーチ (-180度) に向かうことで反時計回りに
+        val startAngle = 0f - (180f * animationProgress)
+        path.addArc(rectF, startAngle, 180f)
         
         canvas.drawTextOnPath("NAKAMON", path, 0f, 0f, paint)
     }

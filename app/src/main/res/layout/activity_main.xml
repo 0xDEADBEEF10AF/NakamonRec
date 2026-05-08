@@ -120,6 +120,7 @@
         app:layout_constraintBottom_toTopOf="@id/layoutBottomButtons">
 
         <com.android.nakamonrec.ArcTextView
+            android:id="@+id/arcTitle"
             android:layout_width="300dp"
             android:layout_height="300dp"
             android:layout_gravity="center" />

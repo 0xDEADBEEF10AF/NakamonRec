@@ -2,6 +2,8 @@ package com.android.nakamonrec
 
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -161,6 +163,40 @@ class MainActivity : AppCompatActivity() {
 
         updateUI(MediaCaptureService.isRunning)
         if (currentVersionName.isNotEmpty()) checkForUpdates(currentVersionName, isManual = false)
+
+        startTitleAnimation()
+    }
+
+    private fun startTitleAnimation() {
+        binding.arcTitle.animationProgress = 0.0f
+        val offset = 100f * resources.displayMetrics.density
+        binding.arcTitle.translationY = offset
+        binding.arcTitle.alpha = 0f
+
+        val delay = 400L // 起動後の待機時間
+
+        // 進捗（アーチの回転）
+        ObjectAnimator.ofFloat(binding.arcTitle, "animationProgress", 0.0f, 1.0f).apply {
+            duration = 1200
+            startDelay = delay
+            interpolator = OvershootInterpolator(0.8f)
+            start()
+        }
+
+        // 移動
+        ObjectAnimator.ofFloat(binding.arcTitle, "translationY", offset, 0f).apply {
+            duration = 1000
+            startDelay = delay
+            interpolator = DecelerateInterpolator()
+            start()
+        }
+
+        // フェードイン
+        ObjectAnimator.ofFloat(binding.arcTitle, "alpha", 0f, 1f).apply {
+            duration = 800
+            startDelay = delay
+            start()
+        }
     }
 
     private fun checkForUpdates(currentName: String, isManual: Boolean) {
