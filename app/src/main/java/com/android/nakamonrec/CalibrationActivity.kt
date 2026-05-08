@@ -145,6 +145,14 @@ class CalibrationActivity : AppCompatActivity() {
     private fun runAutoCalibration() {
         val bitmap = sourceBitmap ?: return
         
+        // 自動校正の開始前に、既存の不適切なカスタムテンプレートがあれば削除してクリーンな状態にする
+        when (mode) {
+            "party" -> analyzer.deleteCustomTemplate("party_custom.png")
+            "vs" -> analyzer.deleteCustomTemplate("vs_custom.png")
+            "win" -> analyzer.deleteCustomTemplate("win_custom.png")
+            "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
+        }
+
         binding.layoutProgress.visibility = View.VISIBLE
 
         executor.execute {
