@@ -12,21 +12,14 @@ import android.transition.TransitionManager
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.BaseAdapter
-import android.widget.FrameLayout
-import android.widget.GridView
-import android.widget.HorizontalScrollView
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ListView
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import androidx.core.graphics.toColorInt
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.android.nakamonrec.databinding.ActivityHistoryBinding
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -1080,32 +1073,107 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showScoreDetailsDialog(position: Int) {
-        val record = dataManager.history.records.getOrNull(position) ?: return
-        val sb = StringBuilder()
-        sb.append("【パーティ選択】\n")
-        record.partySelectScores?.forEachIndexed { i, s ->
-            sb.append("P${i + 1}: ${String.format(Locale.US, "%.3f", s)}\n")
+        val records = dataManager.history.records
+        val record = records.getOrNull(position) ?: return
+        val isLatest = (position == records.size - 1)
+        
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = (16 * resources.displayMetrics.density).toInt()
+            setPadding(p, p, p, p)
         }
-        sb.append("\n【VS画面】\n")
-        sb.append("VSロゴ: ${String.format(Locale.US, "%.3f", record.vsScore ?: 0.0)}\n")
 
-        sb.append("\n【モンスター】\n")
+        fun createSectionTitle(text: String) = TextView(this).apply {
+            this.text = text
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 10, 0, 5)
+            setTextColor(Color.LTGRAY)
+        }
+
+        fun createRoiImageView(label: String, score: Double, name: String = ""): View {
+            val container = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(5, 5, 5, 5)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val imageView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams((60 * resources.displayMetrics.density).toInt(), (60 * resources.displayMetrics.density).toInt())
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(0xFF333333.toInt())
+                
+                if (isLatest) {
+                    val file = File(filesDir, "last_roi_$label.png")
+                    if (file.exists()) setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                    else setImageResource(android.R.drawable.ic_menu_report_image)
+                } else {
+                    setImageResource(android.R.drawable.ic_menu_report_image)
+                }
+            }
+            val scoreText = TextView(this).apply {
+                text = String.format(Locale.US, "%.3f", score)
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(if (score >= 0.7) Color.GREEN else if (score >= 0.4) Color.YELLOW else Color.RED)
+            }
+            container.addView(imageView)
+            container.addView(scoreText)
+            if (name.isNotEmpty()) {
+                container.addView(TextView(this).apply {
+                    text = name
+                    textSize = 8f
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    setTextColor(Color.WHITE)
+                })
+            }
+            return container
+        }
+
+        // --- パーティ ＆ VS ---
+        root.addView(createSectionTitle("【基本判定】"))
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        topRow.addView(createRoiImageView("party", record.partySelectScores?.maxOrNull() ?: 0.0, "選択パーティ"))
+        topRow.addView(createRoiImageView("vs", record.vsScore ?: 0.0, "VSロゴ"))
+        root.addView(topRow)
+
+        // --- 味方 ---
+        root.addView(createSectionTitle("【味方パーティ】"))
+        val myRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         record.myParty.forEachIndexed { i, name ->
-            val s = record.myPartyScores?.getOrNull(i) ?: 0.0
-            sb.append("自${i + 1}($name): ${String.format(Locale.US, "%.3f", s)}\n")
+            myRow.addView(createRoiImageView("monster_$i", record.myPartyScores?.getOrNull(i) ?: 0.0, name))
         }
+        root.addView(myRow)
+
+        // --- 敵 ---
+        root.addView(createSectionTitle("【敵パーティ】"))
+        val enemyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         record.enemyParty.forEachIndexed { i, name ->
-            val s = record.enemyPartyScores?.getOrNull(i) ?: 0.0
-            sb.append("敵${i + 1}($name): ${String.format(Locale.US, "%.3f", s)}\n")
+            enemyRow.addView(createRoiImageView("monster_${i + 4}", record.enemyPartyScores?.getOrNull(i) ?: 0.0, name))
+        }
+        root.addView(enemyRow)
+
+        // --- 勝敗 ---
+        root.addView(createSectionTitle("【勝敗ロゴ】"))
+        val resultRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        resultRow.addView(createRoiImageView("result", record.resultScore ?: 0.0, record.result))
+        root.addView(resultRow)
+
+        if (!isLatest) {
+            root.addView(TextView(this).apply {
+                text = "※画像表示は最新の記録のみ対応しています"
+                textSize = 10f
+                setPadding(0, 20, 0, 0)
+                setTextColor(Color.GRAY)
+            })
         }
 
-        sb.append("\n【勝敗ロゴ】\n")
-        val resScore = record.resultScore ?: 0.0
-        sb.append("${record.result}: ${String.format(Locale.US, "%.3f", resScore)}\n")
+        val scrollView = ScrollView(this).apply { addView(root) }
 
         AlertDialog.Builder(this)
             .setTitle("マッチングスコア詳細")
-            .setMessage(sb.toString())
+            .setView(scrollView)
             .setPositiveButton("閉じる", null)
             .show()
     }

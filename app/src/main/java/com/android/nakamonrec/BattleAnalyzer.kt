@@ -451,11 +451,17 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val vMargin = (bitmap.height * 0.1).toInt()
         val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
         
+        var detected = false
         if (vsCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) return true
+            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) detected = true
         }
-        if (performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) return true
-        return performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin) > VS_THRESHOLD
+        if (!detected && performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) detected = true
+        if (!detected && performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) detected = true
+        
+        if (detected) {
+            saveRoi(bitmap, calibrationData.vsBox, "vs", vMargin, hMargin)
+        }
+        return detected
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {
@@ -463,18 +469,27 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
 
         // WIN判定
+        var detected: String? = null
         if (winCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled, vMargin, hMargin) > WIN_THRESHOLD) return "WIN"
+            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled, vMargin, hMargin) > WIN_THRESHOLD) detected = "WIN"
         }
-        val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, vMargin, hMargin)
-        if (winScore > WIN_THRESHOLD) return "WIN"
+        if (detected == null && performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, vMargin, hMargin) > WIN_THRESHOLD) detected = "WIN"
+
+        if (detected == "WIN") {
+            saveRoi(bitmap, calibrationData.winBox, "result", vMargin, hMargin)
+            return "WIN"
+        }
 
         // LOSE判定
         if (loseCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled, vMargin, hMargin) > LOSE_THRESHOLD) return "LOSE"
+            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled, vMargin, hMargin) > LOSE_THRESHOLD) detected = "LOSE"
         }
-        val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, vMargin, hMargin)
-        if (loseScore > LOSE_THRESHOLD) return "LOSE"
+        if (detected == null && performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, vMargin, hMargin) > LOSE_THRESHOLD) detected = "LOSE"
+        
+        if (detected == "LOSE") {
+            saveRoi(bitmap, calibrationData.loseBox, "result", vMargin, hMargin)
+            return "LOSE"
+        }
         
         return null
     }
@@ -583,7 +598,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val resultNarrow = tryIdentify(mat, config, narrowPad, imgW, imgH, sortedMonsters)
         
         if (resultNarrow.score > MONSTER_THRESHOLD) {
-            finalizeSlot(slotIndex, resultNarrow)
+            finalizeSlot(slotIndex, resultNarrow, bitmap, config, narrowPad)
             mat.release()
             return true
         }
@@ -599,10 +614,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         // スコア更新（原因調査用：はみ出しの -1.0 も含めて記録する）
         if (resultWide.score > (identifiedScores[slotIndex] ?: -2.0)) {
             identifiedScores[slotIndex] = resultWide.score
+            // スコアが更新されたら、その時点のROIを「最もマシな画像」として暫定保存
+            saveRoi(bitmap, config, "monster_$slotIndex", widePad, widePad)
         }
 
         if (resultWide.score > MONSTER_THRESHOLD) {
-            finalizeSlot(slotIndex, resultWide)
+            finalizeSlot(slotIndex, resultWide, bitmap, config, widePad)
             mat.release()
             return true
         }
@@ -628,11 +645,14 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         } catch (_: Exception) { MatchResult("", -1.0) }
     }
 
-    private fun finalizeSlot(slotIndex: Int, result: MatchResult) {
+    private fun finalizeSlot(slotIndex: Int, result: MatchResult, bitmap: Bitmap, config: BoxConfig, pad: Int) {
         identifiedNames[slotIndex] = result.name
         identifiedScores[slotIndex] = result.score
         monsterMatchCounts[result.name] = monsterMatchCounts.getOrDefault(result.name, 0) + 1
         Log.i("BattleAnalyzer", "🎉 Slot[$slotIndex] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
+        
+        // 確定した瞬間のROIを保存
+        saveRoi(bitmap, config, "monster_$slotIndex", pad, pad)
     }
 
     private fun findBestMonsterMatchMicroScales(roiMat: Mat, monsters: List<MonsterData>): MatchResult {
@@ -688,6 +708,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         }
 
         val finalIdx = if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
+        if (finalIdx != -1) {
+            val vMargin = (50 * calibrationData.uiScale).toInt()
+            val hMargin = (10 * calibrationData.uiScale).toInt()
+            saveRoi(bitmap, calibrationData.partySelectBoxes[finalIdx], "party", vMargin, hMargin)
+        }
         return finalIdx to allScores
     }
 
@@ -702,6 +727,31 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         } catch (e: Exception) {
             Log.e("BattleAnalyzer", "デバッグ画像の保存失敗: ${e.message}")
         }
+    }
+
+    fun saveRoi(bitmap: Bitmap, config: BoxConfig, label: String, vMargin: Int = 0, hMargin: Int = 0) {
+        val ctx = appContext ?: return
+        try {
+            val imgW = bitmap.width
+            val imgH = bitmap.height
+            
+            // マージンを含めたROIサイズを計算
+            val roiW = (config.width + hMargin * 2).coerceIn(2, imgW)
+            val roiH = (config.height + vMargin * 2).coerceIn(2, imgH)
+            
+            val centerX = (imgW * config.centerX).toInt()
+            val centerY = (imgH * config.centerY).toInt()
+            
+            val left = (centerX - roiW / 2).coerceIn(0, (imgW - roiW).coerceAtLeast(0))
+            val top = (centerY - roiH / 2).coerceIn(0, (imgH - roiH).coerceAtLeast(0))
+            
+            val cropped = Bitmap.createBitmap(bitmap, left, top, roiW, roiH)
+            val file = File(ctx.filesDir, "last_roi_${label}.png")
+            file.outputStream().use {
+                cropped.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            cropped.recycle()
+        } catch (_: Exception) {}
     }
 
     fun detectVsScore(bitmap: Bitmap, config: BoxConfig): Double {
