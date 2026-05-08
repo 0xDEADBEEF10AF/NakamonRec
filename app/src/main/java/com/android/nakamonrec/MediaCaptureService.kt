@@ -326,9 +326,11 @@ class MediaCaptureService : Service() {
     private fun handleIdleState(bitmap: Bitmap) {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
         
+        // デバッグ（マッチングスコア詳細）のために最新スコアは常に保持
+        currentPartyScores = scores
+        
         if (detected != -1) {
             selectedPartyIndex = detected
-            currentPartyScores = scores
         }
         
         if (analyzer.isVsDetected(bitmap)) {

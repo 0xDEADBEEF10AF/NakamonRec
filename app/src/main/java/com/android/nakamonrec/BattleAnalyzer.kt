@@ -254,10 +254,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             return null
         }
         
-        // 【重要】モンスター等の標準アセット用 uiScale は、標準テンプレート（FM/MG）から取得する
-        // カスタムが最高スコアでも、アセットサイズ計算には「標準画像との比率」が必要なため
+        // 標準アセット（モンスター等）のためのスケールを決定
         val assetRes = listOfNotNull(fmRes, mgRes).maxByOrNull { it.score }
-        val vsScaleForAssets = assetRes?.scale ?: (if (bestRes == customRes) calibrationData.uiScale.toDouble() else bestRes.scale)
+        val vsScaleForAssets = assetRes?.scale ?: bestRes.scale
         
         val vsBox = bestRes.config
         val newData = CalibrationData()
@@ -507,15 +506,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val widePad = basePad + extraPad
         
         val resultWide = tryIdentify(mat, config, widePad, imgW, imgH, sortedMonsters)
+        
+        // スコア更新（原因調査用：はみ出しの -1.0 も含めて記録する）
+        if (resultWide.score > (identifiedScores[slotIndex] ?: -2.0)) {
+            identifiedScores[slotIndex] = resultWide.score
+        }
+
         if (resultWide.score > MONSTER_THRESHOLD) {
             finalizeSlot(slotIndex, resultWide)
             mat.release()
             return true
-        }
-        
-        // スコア更新（原因調査用）
-        if (resultWide.score > (identifiedScores[slotIndex] ?: -1.0)) {
-            identifiedScores[slotIndex] = resultWide.score
         }
 
         mat.release()
