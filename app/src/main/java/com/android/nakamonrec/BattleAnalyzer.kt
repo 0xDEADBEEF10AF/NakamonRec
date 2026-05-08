@@ -254,9 +254,19 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             return null
         }
         
+        // 標準アセット幅を取得（1080p基準）
+        val standardVsWidth = (vsFmTemplate ?: vsMgTemplate)?.cols()?.toDouble() ?: return null
+
         // 標準アセット（モンスター等）のためのスケールを決定
         val assetRes = listOfNotNull(fmRes, mgRes).maxByOrNull { it.score }
-        val vsScaleForAssets = assetRes?.scale ?: bestRes.scale
+        val vsScaleForAssets = if (assetRes != null) {
+            assetRes.scale
+        } else if (customRes != null) {
+            // カスタムしか見つからない場合、カスタムテンプレートの画像サイズから本来の uiScale を逆算する
+            customRes.config.width.toDouble() / standardVsWidth
+        } else {
+            bestRes.scale
+        }
         
         val vsBox = bestRes.config
         val newData = CalibrationData()
@@ -330,48 +340,109 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun autoCalibrateParty(sceneBitmap: Bitmap): Pair<List<BoxConfig>, Float>? {
-        val template = partySelectTemplate ?: return null
+        val standardTpl = partySelectTemplate ?: return null
+        val customTpl = partyCustomTemplate
+        
         val fullMat = Mat()
         Utils.bitmapToMat(sceneBitmap, fullMat)
         val grayScene = Mat()
         Imgproc.cvtColor(fullMat, grayScene, Imgproc.COLOR_RGBA2GRAY)
-        val grayTemplate = Mat()
-        Imgproc.cvtColor(template, grayTemplate, Imgproc.COLOR_RGB2GRAY)
-        var bestOverallScore = -1.0
-        var bestConfigs: List<BoxConfig>? = null
-        var bestScale = 1.0f
+        
+        val standardWidth = standardTpl.cols().toDouble()
+        
+        data class PartyCandidate(val configs: List<BoxConfig>, val score: Double, val uiScale: Double)
+        var bestCandidate: PartyCandidate? = null
 
-        val scales = listOf(0.7, 1.0, 1.3, 1.6, 1.9, 2.2, 2.5)
-        for (s in scales) {
-            val scaledTpl = Mat()
-            Imgproc.resize(grayTemplate, scaledTpl, Size(), s, s, Imgproc.INTER_CUBIC)
-            val result = Mat()
-            Imgproc.matchTemplate(grayScene, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
-            val currentConfigs = mutableListOf<BoxConfig>()
-            var sumScore = 0.0
-            repeat(3) {
-                val mm = Core.minMaxLoc(result)
-                if (mm.maxVal < 0.25) return@repeat
-                sumScore += mm.maxVal
-                val pos = mm.maxLoc
-                currentConfigs.add(BoxConfig((pos.x + scaledTpl.cols() / 2).toFloat() / grayScene.cols(), (pos.y + scaledTpl.rows() / 2).toFloat() / grayScene.rows(), scaledTpl.cols(), scaledTpl.rows()))
-                val mask = result.submat((pos.y - scaledTpl.rows()).toInt().coerceAtLeast(0), (pos.y + scaledTpl.rows() * 2).toInt().coerceAtMost(result.rows()), (pos.x - scaledTpl.cols()).toInt().coerceAtLeast(0), (pos.x + scaledTpl.cols() * 2).toInt().coerceAtMost(result.cols()))
-                mask.setTo(Scalar(-1.0))
-                mask.release()
+        // 検索対象のテンプレートリスト
+        val targets = listOfNotNull(
+            customTpl?.let { "custom" to it },
+            "standard" to standardTpl
+        )
+
+        for ((type, tpl) in targets) {
+            val grayTpl = Mat()
+            Imgproc.cvtColor(tpl, grayTpl, Imgproc.COLOR_RGB2GRAY)
+            
+            // カスタムの場合は 1.0 固定、標準の場合はマルチスケール
+            val scales = if (type == "custom") listOf(1.0) else listOf(0.7, 1.0, 1.3, 1.6, 1.9, 2.2, 2.5)
+            
+            for (s in scales) {
+                val scaledTpl = Mat()
+                Imgproc.resize(grayTpl, scaledTpl, Size(), s, s, Imgproc.INTER_CUBIC)
+                
+                if (scaledTpl.cols() >= grayScene.cols() || scaledTpl.rows() >= grayScene.rows()) {
+                    scaledTpl.release()
+                    continue
+                }
+
+                val result = Mat()
+                Imgproc.matchTemplate(grayScene, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
+                val currentConfigs = mutableListOf<BoxConfig>()
+                var sumScore = 0.0
+                
+                repeat(3) {
+                    val mm = Core.minMaxLoc(result)
+                    if (mm.maxVal < 0.25) return@repeat
+                    sumScore += mm.maxVal
+                    val pos = mm.maxLoc
+                    currentConfigs.add(BoxConfig((pos.x + scaledTpl.cols() / 2).toFloat() / grayScene.cols(), (pos.y + scaledTpl.rows() / 2).toFloat() / grayScene.rows(), scaledTpl.cols(), scaledTpl.rows()))
+                    
+                    val mask = result.submat((pos.y - scaledTpl.rows()).toInt().coerceAtLeast(0), (pos.y + scaledTpl.rows() * 2).toInt().coerceAtMost(result.rows()), (pos.x - scaledTpl.cols()).toInt().coerceAtLeast(0), (pos.x + scaledTpl.cols() * 2).toInt().coerceAtMost(result.cols()))
+                    mask.setTo(Scalar(-1.0))
+                    mask.release()
+                }
+
+                if (currentConfigs.size == 3) {
+                    // カスタムの場合は画像サイズから uiScale を逆算、標準の場合は s をそのまま使う
+                    val calculatedUiScale = if (type == "custom") scaledTpl.cols().toDouble() / standardWidth else s
+                    if (bestCandidate == null || sumScore > bestCandidate!!.score) {
+                        bestCandidate = PartyCandidate(currentConfigs.sortedBy { it.centerY }, sumScore, calculatedUiScale)
+                    }
+                }
+                result.release()
+                scaledTpl.release()
             }
-            if (currentConfigs.size == 3 && sumScore > bestOverallScore) {
-                bestOverallScore = sumScore
-                bestConfigs = currentConfigs.sortedBy { it.centerY }
-                bestScale = s.toFloat()
-            }
-            result.release()
-            scaledTpl.release()
+            grayTpl.release()
         }
+        
         grayScene.release()
         fullMat.release()
-        grayTemplate.release()
-        val finalConfigs = bestConfigs ?: return null
-        return finalConfigs to bestScale
+        
+        return bestCandidate?.let { it.configs to it.uiScale.toFloat() }
+    }
+
+    fun autoCalibrateResult(sceneBitmap: Bitmap, isWin: Boolean): Pair<BoxConfig, Float>? {
+        val standardTpl = (if (isWin) winTemplate else loseTemplate) ?: return null
+        val customTpl = if (isWin) winCustomTemplate else loseCustomTemplate
+        
+        val fullMat = Mat()
+        Utils.bitmapToMat(sceneBitmap, fullMat)
+        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+        
+        val standardWidth = standardTpl.cols().toDouble()
+        
+        // カスタムと標準の両方で検索（上半分 0.0〜0.5 を重点的に）
+        val customRes = findTemplateWithScale(fullMat, customTpl, false, 0.0f, 0.5f)
+        val assetRes = findTemplateWithScale(fullMat, standardTpl, false, 0.0f, 0.5f)
+        
+        val bestRes = listOfNotNull(customRes, assetRes).maxByOrNull { it.score }
+        
+        if (bestRes == null || bestRes.score < 0.4) {
+            fullMat.release()
+            return null
+        }
+        
+        // スケールの決定
+        val finalUiScale = if (assetRes != null) {
+            assetRes.scale
+        } else if (customRes != null) {
+            customRes.config.width.toDouble() / standardWidth
+        } else {
+            bestRes.scale
+        }
+        
+        fullMat.release()
+        return bestRes.config to finalUiScale.toFloat()
     }
 
     fun isVsDetected(bitmap: Bitmap): Boolean {

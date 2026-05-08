@@ -193,27 +193,29 @@ class CalibrationActivity : AppCompatActivity() {
                     } else null
                 }
                 "win" -> {
-                    val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getWinTemplate(), false, 0.0f, 0.5f)
-                    if (resRes != null) {
-                        val config = resRes.first
+                    val res = analyzer.autoCalibrateResult(bitmap, true)
+                    if (res != null) {
+                        val config = res.first
+                        newScale = res.second
                         
                         // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
                         analyzer.saveCustomTemplate(bitmap, config, "win_custom.png")
                         
                         val actual = lastWinRecord?.resultScore ?: -1.0
-                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), resRes.second, actual))
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), -1.0, actual)) // スコアは後で再計算されるため
                     } else null
                 }
                 "lose" -> {
-                    val resRes = analyzer.findTemplateGlobal(bitmap, analyzer.getLoseTemplate(), false, 0.0f, 0.5f)
-                    if (resRes != null) {
-                        val config = resRes.first
+                    val res = analyzer.autoCalibrateResult(bitmap, false)
+                    if (res != null) {
+                        val config = res.first
+                        newScale = res.second
 
                         // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
                         analyzer.saveCustomTemplate(bitmap, config, "lose_custom.png")
 
                         val actual = lastLoseRecord?.resultScore ?: -1.0
-                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), resRes.second, actual))
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), -1.0, actual))
                     } else null
                 }
                 else -> null
