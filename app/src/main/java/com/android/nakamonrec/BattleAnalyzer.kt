@@ -656,14 +656,19 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     private fun findBestMonsterMatchMicroScales(roiMat: Mat, monsters: List<MonsterData>): MatchResult {
+        // ROIのコントラストをカラーのまま正規化（GALAXY等の白っぽさを解消）
+        val workRoi = Mat()
+        roiMat.copyTo(workRoi)
+        Core.normalize(workRoi, workRoi, 0.0, 255.0, Core.NORM_MINMAX)
+
         var bestScore = -1.0
         var bestName = ""
         for (monster in monsters) {
             val variants = scaledMonsterTemplates[monster.name] ?: continue
             for (scaledTpl in variants) {
-                if (scaledTpl.cols() <= roiMat.cols() && scaledTpl.rows() <= roiMat.rows()) {
+                if (scaledTpl.cols() <= workRoi.cols() && scaledTpl.rows() <= workRoi.rows()) {
                     val result = Mat()
-                    Imgproc.matchTemplate(roiMat, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
+                    Imgproc.matchTemplate(workRoi, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
                     val score = Core.minMaxLoc(result).maxVal
                     if (score > bestScore) {
                         bestScore = score
@@ -673,6 +678,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 }
             }
         }
+        workRoi.release()
         return MatchResult(bestName, bestScore)
     }
 
