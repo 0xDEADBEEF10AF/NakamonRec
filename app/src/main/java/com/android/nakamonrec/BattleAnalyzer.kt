@@ -639,7 +639,15 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         
         return try {
             val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
-            val result = findBestMonsterMatchMicroScales(roi, monsters)
+            
+            // 【重要】ループに入る前に一度だけコントラスト補正を行う
+            val workRoi = Mat()
+            roi.copyTo(workRoi)
+            Core.normalize(workRoi, workRoi, 0.0, 255.0, Core.NORM_MINMAX)
+            
+            val result = findBestMonsterMatchMicroScales(workRoi, monsters)
+            
+            workRoi.release()
             roi.release()
             result
         } catch (_: Exception) { MatchResult("", -1.0) }
@@ -655,12 +663,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         saveRoi(bitmap, config, "monster_$slotIndex", pad, pad)
     }
 
-    private fun findBestMonsterMatchMicroScales(roiMat: Mat, monsters: List<MonsterData>): MatchResult {
-        // ROIのコントラストをカラーのまま正規化（GALAXY等の白っぽさを解消）
-        val workRoi = Mat()
-        roiMat.copyTo(workRoi)
-        Core.normalize(workRoi, workRoi, 0.0, 255.0, Core.NORM_MINMAX)
-
+    private fun findBestMonsterMatchMicroScales(workRoi: Mat, monsters: List<MonsterData>): MatchResult {
         var bestScore = -1.0
         var bestName = ""
         for (monster in monsters) {
@@ -678,7 +681,6 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 }
             }
         }
-        workRoi.release()
         return MatchResult(bestName, bestScore)
     }
 

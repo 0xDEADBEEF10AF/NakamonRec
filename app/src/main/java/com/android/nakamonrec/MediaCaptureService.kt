@@ -285,15 +285,21 @@ class MediaCaptureService : Service() {
         }
     }
 
-    private fun startBurstCapture(sessionId: Long) {
+    private fun startBurstCapture(sessionId: Long, onComplete: () -> Unit) {
         if (sessionId != currentSessionId) return
         isCapturingBurst = true
         
         var captureCount = 0
         val captureRunnable = object : Runnable {
             override fun run() {
-                if (sessionId != currentSessionId || captureCount >= 5) {
+                if (sessionId != currentSessionId) {
                     isCapturingBurst = false
+                    return
+                }
+
+                if (captureCount >= 5) {
+                    isCapturingBurst = false
+                    onComplete()
                     return
                 }
                 
@@ -306,11 +312,8 @@ class MediaCaptureService : Service() {
                     }
                 }
                 
-                if (captureCount < 5) {
-                    captureHandler?.postDelayed(this, 200L)
-                } else {
-                    isCapturingBurst = false
-                }
+                // 150ms間隔で5枚撮影 (約0.75秒)
+                captureHandler?.postDelayed(this, 150L)
             }
         }
         captureHandler?.post(captureRunnable)
@@ -344,12 +347,14 @@ class MediaCaptureService : Service() {
             analyzer.resetIdentification()
             
             clearBurstImages()
-            startBurstCapture(currentSessionId) // バースト撮影開始
+            // まずはバースト撮影に専念する
+            startBurstCapture(currentSessionId) {
+                // 撮影が完了してから解析ループを開始 (最大20回、約12〜15秒でタイムアウト)
+                repeatScan(currentSessionId, 20, 50L)
+            }
 
             val partyName = if (selectedPartyIndex != -1) "P${selectedPartyIndex + 1}" else "?"
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始 ($partyName)")
-            
-            repeatScan(currentSessionId, 40, 50L)
         }
     }
 
