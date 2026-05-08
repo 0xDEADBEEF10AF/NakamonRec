@@ -56,8 +56,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
          * ROI（探索範囲）を広げるためのパディング値（ピクセル）。
          */
         const val ROI_PAD_MONSTER = 20
-        const val ROI_PAD_PARTY_H = 5  // 水平方向は狭く
-        const val ROI_PAD_PARTY_V = 50  // 垂直方向は広く（スクロール耐性のため縦長に）
+        const val ROI_PAD_PARTY_H = 10
+        const val ROI_PAD_PARTY_V = 50
+        const val ROI_PAD_GENERAL_H = 10 // 一般的な水平マージン
     }
 
     data class ScanResult(val config: BoxConfig, val score: Double, val scale: Double)
@@ -446,32 +447,39 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun isVsDetected(bitmap: Bitmap): Boolean {
+        // VS検知には画面高さの10%程度の大きな垂直マージンを持たせる (GALAXY等のナビバー対策)
+        val vMargin = (bitmap.height * 0.1).toInt()
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+        
         if (vsCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled) > VS_THRESHOLD) return true
+            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) return true
         }
-        if (performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled) > VS_THRESHOLD) return true
-        return performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled) > VS_THRESHOLD
+        if (performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) return true
+        return performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin) > VS_THRESHOLD
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {
+        val vMargin = (bitmap.height * 0.05).toInt() // 勝敗ロゴは5%程度のマージン
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+
         // WIN判定
         if (winCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled) > WIN_THRESHOLD) return "WIN"
+            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled, vMargin, hMargin) > WIN_THRESHOLD) return "WIN"
         }
-        val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled)
+        val winScore = performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, vMargin, hMargin)
         if (winScore > WIN_THRESHOLD) return "WIN"
 
         // LOSE判定
         if (loseCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled) > LOSE_THRESHOLD) return "LOSE"
+            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled, vMargin, hMargin) > LOSE_THRESHOLD) return "LOSE"
         }
-        val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled)
+        val loseScore = performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, vMargin, hMargin)
         if (loseScore > LOSE_THRESHOLD) return "LOSE"
         
         return null
     }
 
-    private fun performColorMatchCached(bitmap: Bitmap, config: BoxConfig, scaledTemplate: Mat?): Double {
+    private fun performColorMatchCached(bitmap: Bitmap, config: BoxConfig, scaledTemplate: Mat?, verticalMargin: Int = 0, horizontalMargin: Int = 0): Double {
         if (scaledTemplate == null) return 0.0
         val fullMat = Mat()
         Utils.bitmapToMat(bitmap, fullMat)
@@ -479,27 +487,37 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val imgW = fullMat.cols()
         val imgH = fullMat.rows()
         
-        // 画像サイズに対してテンプレートが大きすぎる場合は即座に失敗とする
-        if (config.width > imgW || config.height > imgH) {
+        // テンプレートが画像より大きい場合は、テンプレート側に合わせるのではなく失敗とする
+        if (scaledTemplate.cols() > imgW || scaledTemplate.rows() > imgH) {
             fullMat.release()
             return 0.0
         }
 
         val centerX = (imgW * config.centerX).toInt()
         val centerY = (imgH * config.centerY).toInt()
-        val left = (centerX - config.width / 2).coerceIn(0, (imgW - config.width).coerceAtLeast(0))
-        val top = (centerY - config.height / 2).coerceIn(0, (imgH - config.height).coerceAtLeast(0))
+        
+        // 探索範囲の設定 (テンプレートサイズ + マージン)
+        // 探索範囲自体が画像サイズを超えないように制限
+        val roiW = (scaledTemplate.cols() + horizontalMargin * 2).coerceAtMost(imgW)
+        val roiH = (scaledTemplate.rows() + verticalMargin * 2).coerceAtMost(imgH)
+        
+        val left = (centerX - roiW / 2).coerceIn(0, (imgW - roiW).coerceAtLeast(0))
+        val top = (centerY - roiH / 2).coerceIn(0, (imgH - roiH).coerceAtLeast(0))
         
         var score = 0.0
         try {
-            val roi = fullMat.submat(top, top + config.height, left, left + config.width)
-            if (scaledTemplate.cols() <= roi.cols() && scaledTemplate.rows() <= roi.rows()) {
+            // submatの終点が画像サイズを超えないことを保証
+            val actualW = if (left + roiW > imgW) imgW - left else roiW
+            val actualH = if (top + roiH > imgH) imgH - top else roiH
+            
+            if (actualW >= scaledTemplate.cols() && actualH >= scaledTemplate.rows()) {
+                val roi = fullMat.submat(top, top + actualH, left, left + actualW)
                 val res = Mat()
                 Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
                 score = Core.minMaxLoc(res).maxVal
                 res.release()
+                roi.release()
             }
-            roi.release()
         } catch (_: Exception) {}
         fullMat.release()
         return score
@@ -650,53 +668,24 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     fun detectSelectedParty(bitmap: Bitmap): Pair<Int, List<Double>> {
         val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return -1 to emptyList()
-
-        val fullMat = Mat()
-        Utils.bitmapToMat(bitmap, fullMat)
-        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
-
-        val imgW = fullMat.cols().toFloat()
-        val imgH = fullMat.rows().toFloat()
-
+        val allScores = mutableListOf<Double>()
         var bestIndex = -1
         var maxScore = -1.0
-        val allScores = mutableListOf<Double>()
-        
-        val padH = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
-        val padV = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
 
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
-            val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + padH * 2, config.height + padV * 2)
-
-            // 画像サイズ制限ガード
-            if (expandedConfig.width > imgW || expandedConfig.height > imgH) {
-                allScores.add(0.0)
-                continue
-            }
-
-            val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, (imgW.toInt() - expandedConfig.width).coerceAtLeast(0))
-            val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, (imgH.toInt() - expandedConfig.height).coerceAtLeast(0))
+            // パーティ選択は垂直方向に大きな遊びを持たせる
+            val vMargin = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
+            // 水平方向にもマージンを持たせる
+            val hMargin = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
+            val score = performColorMatchCached(bitmap, config, template, vMargin, hMargin)
             
-            var score = 0.0
-            try {
-                val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
-                if (template.cols() <= roi.cols() && template.rows() <= roi.rows()) {
-                    val res = Mat()
-                    Imgproc.matchTemplate(roi, template, res, Imgproc.TM_CCOEFF_NORMED)
-                    score = Core.minMaxLoc(res).maxVal
-                    res.release()
-
-                    if (score > maxScore) {
-                        maxScore = score
-                        bestIndex = i
-                    }
-                }
-                roi.release()
-            } catch (_: Exception) {}
             allScores.add(score)
+            if (score > maxScore) {
+                maxScore = score
+                bestIndex = i
+            }
         }
-        fullMat.release()
 
         val finalIdx = if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
         return finalIdx to allScores
@@ -716,24 +705,32 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     fun detectVsScore(bitmap: Bitmap, config: BoxConfig): Double {
-        val s1 = if (vsCustomTemplateScaled != null) performColorMatchCached(bitmap, config, vsCustomTemplateScaled) else 0.0
-        val s2 = performColorMatchCached(bitmap, config, vsFmTemplateScaled)
-        val s3 = performColorMatchCached(bitmap, config, vsMgTemplateScaled)
+        val vMargin = (bitmap.height * 0.1).toInt()
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+        val s1 = if (vsCustomTemplateScaled != null) performColorMatchCached(bitmap, config, vsCustomTemplateScaled, vMargin, hMargin) else 0.0
+        val s2 = performColorMatchCached(bitmap, config, vsFmTemplateScaled, vMargin, hMargin)
+        val s3 = performColorMatchCached(bitmap, config, vsMgTemplateScaled, vMargin, hMargin)
         return maxOf(s1, maxOf(s2, s3))
     }
     fun detectWinScore(bitmap: Bitmap, config: BoxConfig): Double {
-        val s1 = if (winCustomTemplateScaled != null) performColorMatchCached(bitmap, config, winCustomTemplateScaled) else 0.0
-        val s2 = performColorMatchCached(bitmap, config, winTemplateScaled)
+        val vMargin = (bitmap.height * 0.05).toInt()
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+        val s1 = if (winCustomTemplateScaled != null) performColorMatchCached(bitmap, config, winCustomTemplateScaled, vMargin, hMargin) else 0.0
+        val s2 = performColorMatchCached(bitmap, config, winTemplateScaled, vMargin, hMargin)
         return maxOf(s1, s2)
     }
     fun detectLoseScore(bitmap: Bitmap, config: BoxConfig): Double {
-        val s1 = if (loseCustomTemplateScaled != null) performColorMatchCached(bitmap, config, loseCustomTemplateScaled) else 0.0
-        val s2 = performColorMatchCached(bitmap, config, loseTemplateScaled)
+        val vMargin = (bitmap.height * 0.05).toInt()
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+        val s1 = if (loseCustomTemplateScaled != null) performColorMatchCached(bitmap, config, loseCustomTemplateScaled, vMargin, hMargin) else 0.0
+        val s2 = performColorMatchCached(bitmap, config, loseTemplateScaled, vMargin, hMargin)
         return maxOf(s1, s2)
     }
     fun detectPartyScore(bitmap: Bitmap, config: BoxConfig): Double {
         val template = partyCustomTemplateScaled ?: partySelectTemplateScaled ?: return 0.0
-        return performColorMatchCached(bitmap, config, template)
+        val vMargin = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
+        val hMargin = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
+        return performColorMatchCached(bitmap, config, template, vMargin, hMargin)
     }
 
     fun detectMonsterScore(bitmap: Bitmap, config: BoxConfig): Double {

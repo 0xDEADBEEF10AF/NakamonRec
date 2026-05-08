@@ -117,7 +117,7 @@ class CalibrationView @JvmOverloads constructor(
             
             // 探索範囲の可視化
             if (box.label.startsWith("P")) {
-                // パーティ選択：垂直方向を広く（BattleAnalyzer.ROI_PAD_PARTY_V/Hと同期）
+                // パーティ選択：BattleAnalyzer.ROI_PAD_PARTY_V/Hと同期
                 val padH = (BattleAnalyzer.ROI_PAD_PARTY_H * uiScale) * scaleX
                 val padV = (BattleAnalyzer.ROI_PAD_PARTY_V * uiScale) * scaleY
                 bufferRect.set(reusableRect.left - padH, reusableRect.top - padV, reusableRect.right + padH, reusableRect.bottom + padV)

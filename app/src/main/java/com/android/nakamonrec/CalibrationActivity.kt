@@ -201,8 +201,9 @@ class CalibrationActivity : AppCompatActivity() {
                         // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
                         analyzer.saveCustomTemplate(bitmap, config, "win_custom.png")
                         
+                        val score = analyzer.detectWinScore(bitmap, config)
                         val actual = lastWinRecord?.resultScore ?: -1.0
-                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), -1.0, actual)) // スコアは後で再計算されるため
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_win_short), score, actual))
                     } else null
                 }
                 "lose" -> {
@@ -214,8 +215,9 @@ class CalibrationActivity : AppCompatActivity() {
                         // 自動校正で見つかった最適な枠をその場でカスタムテンプレートとして保存
                         analyzer.saveCustomTemplate(bitmap, config, "lose_custom.png")
 
+                        val score = analyzer.detectLoseScore(bitmap, config)
                         val actual = lastLoseRecord?.resultScore ?: -1.0
-                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), -1.0, actual))
+                        listOf(CalibrationView.CalibrationBox(0, config.centerX, config.centerY, config.width, config.height, getString(R.string.label_lose_short), score, actual))
                     } else null
                 }
                 else -> null
