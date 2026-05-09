@@ -303,7 +303,7 @@ class MediaCaptureService : Service() {
                     }
                 }
                 
-                // 150ms間隔で5枚撮影 (約0.75秒)
+                // 150ms間隔で次の撮影を予約
                 captureHandler?.postDelayed(this, 150L)
             }
         }

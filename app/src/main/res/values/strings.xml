@@ -94,7 +94,7 @@
     <string name="msg_record_added">レコードを追加しました</string>
 
     <!-- 校正用ガイド -->
-    <string name="calibrate_guide_party">パーティ枠の左上角の位置に枠を合わせてください</string>
+    <string name="calibrate_guide_party">パーティ枠の右上角の位置に枠を合わせてください</string>
     <string name="calibrate_guide_vs">「VS」ロゴと、各モンスターの顔の位置に枠を合わせてください</string>
     <string name="calibrate_guide_win">「勝利」ロゴの範囲を調整してください</string>
     <string name="calibrate_guide_lose">「ざんねん」ロゴの範囲を調整してください</string>
