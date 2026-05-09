@@ -233,10 +233,7 @@ class MediaCaptureService : Service() {
                 }
                 debugImageSavedInSession = true
             }
-            // バースト画像の解放
-            if (sessionId != currentSessionId || analyzer.isAllIdentified() || count <= 0) {
-                clearBurstImages()
-            }
+            // バースト画像の解放はここで行わない
             return
         }
 
@@ -246,15 +243,7 @@ class MediaCaptureService : Service() {
                     val snapshots = synchronized(this) { burstImages.toList() }
                     val foundNew = if (snapshots.isNotEmpty()) {
                         analyzer.identifyNextSlot(snapshots)
-                    } else {
-                        synchronized(this) {
-                            val bmp = latestBitmap
-                            if (bmp != null && !bmp.isRecycled) {
-                                analyzer.identifyStepByStep(bmp)
-                                true 
-                            } else false
-                        }
-                    }
+                    } else false
 
                     // 識別が進んだ場合、もし既にバトルが終了してレコードが作成済みなら更新する
                     if (foundNew && currentState == State.IDLE) {
@@ -297,7 +286,7 @@ class MediaCaptureService : Service() {
                     return
                 }
 
-                if (captureCount >= 5) {
+                if (captureCount >= 4) {
                     isCapturingBurst = false
                     onComplete()
                     return
@@ -347,10 +336,15 @@ class MediaCaptureService : Service() {
             analyzer.resetIdentification()
             
             clearBurstImages()
-            // まずはバースト撮影に専念する
+            // VSを検知した瞬間の最高鮮度なフレーム（0ms目）を最初の1枚として保存
+            synchronized(this) {
+                burstImages.add(Bitmap.createBitmap(bitmap))
+            }
+
+            // 残り4枚をバースト撮影する
             startBurstCapture(currentSessionId) {
-                // 撮影が完了してから解析ループを開始 (最大20回、約12〜15秒でタイムアウト)
-                repeatScan(currentSessionId, 20, 50L)
+                // 撮影が完了してから解析ループを開始
+                repeatScan(currentSessionId, 20, 100L)
             }
 
             val partyName = if (selectedPartyIndex != -1) "P${selectedPartyIndex + 1}" else "?"
