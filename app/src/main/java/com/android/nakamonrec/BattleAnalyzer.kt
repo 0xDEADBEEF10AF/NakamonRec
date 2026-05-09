@@ -546,15 +546,17 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
     fun isAllIdentified(): Boolean = identifiedNames.all { it != null }
 
-    fun identifyStepByStep(bitmap: Bitmap) {
-        val monsters = monsterMaster.sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
+    fun identifyStepByStep(bitmap: Bitmap, allowedMonsters: Set<String>? = null) {
+        val monsters = monsterMaster.filter { allowedMonsters == null || allowedMonsters.contains(it.name) }
+            .sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
         identifySlot(bitmap, (0..7).firstOrNull { identifiedNames[it] == null } ?: return, monsters)
     }
 
-    fun identifyNextSlot(bitmaps: List<Bitmap>): Boolean {
+    fun identifyNextSlot(bitmaps: List<Bitmap>, allowedMonsters: Set<String>? = null): Boolean {
         if (bitmaps.isEmpty()) return false
         
-        val sortedMonsters = monsterMaster.sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
+        val sortedMonsters = monsterMaster.filter { allowedMonsters == null || allowedMonsters.contains(it.name) }
+            .sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
         
         // ラウンドロビン方式で次の未確定スロットを探す
         for (offset in 0..7) {

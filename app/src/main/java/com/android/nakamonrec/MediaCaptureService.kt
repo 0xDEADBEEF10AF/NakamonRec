@@ -241,8 +241,10 @@ class MediaCaptureService : Service() {
             try {
                 if (sessionId == currentSessionId) {
                     val snapshots = synchronized(this) { burstImages.toList() }
+                    val allowed = if (dataManager.analysisMode == "light") dataManager.lightModeMonsters else null
+                    
                     val foundNew = if (snapshots.isNotEmpty()) {
-                        analyzer.identifyNextSlot(snapshots)
+                        analyzer.identifyNextSlot(snapshots, allowed)
                     } else false
 
                     // 識別が進んだ場合、もし既にバトルが終了してレコードが作成済みなら更新する

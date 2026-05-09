@@ -11,6 +11,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Typeface
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -20,12 +22,9 @@ import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Log
 import android.view.Gravity
-import android.widget.EditText
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import android.view.View
+import android.view.ViewGroup
+import android.widget.*
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -53,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var pendingCalibrationFileName: String? = null
     private var calibrationSelectorDialog: AlertDialog? = null
+    private val dataManager by lazy { BattleDataManager(this) }
 
     // GitHub API応答用
     data class GithubRelease(
@@ -394,7 +394,7 @@ class MainActivity : AppCompatActivity() {
             val lines = content.split(Regex("\\r?\\n")).filter { it.isNotBlank() }
             if (lines.size <= 6) return 
 
-            val dm = BattleDataManager(this).apply { currentFileName = csvFileName; resetHistory() }
+            val dm = dataManager.apply { currentFileName = csvFileName; resetHistory() }
             var importedCount = 0
             lines.drop(5).forEach { line ->
                 val parts = line.split(",").map { it.trim().removeSurrounding("\"") }
@@ -423,7 +423,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun exportHistoryToCsv(fileName: String) {
-        val dm = BattleDataManager(this).apply { loadHistory(fileName) }
+        val dm = dataManager.apply { loadHistory(fileName) }
         val csvBuilder = StringBuilder()
         csvBuilder.appendLine("総合戦績,${dm.history.records.size}戦 ${dm.history.totalWins}勝 ${dm.history.totalLosses}敗")
         (0..2).forEach { idx ->
@@ -458,7 +458,145 @@ class MainActivity : AppCompatActivity() {
             }
             container.addView(row)
         }
+
+        // 解析モード設定の追加
+        container.addView(TextView(this).apply { 
+            text = "モンスター識別の解析モード設定"
+            setPadding(0, 40, 0, 20) 
+            textSize = 18f 
+            setTextColor(Color.WHITE) 
+            setTypeface(null, Typeface.BOLD) 
+        })
+        
+        val modeRow = LinearLayout(this).apply { 
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 20, 0, 20)
+            isClickable = true
+            setBackgroundResource(android.R.drawable.list_selector_background)
+        }
+        val modeIcon = ImageView(this).apply { 
+            layoutParams = LinearLayout.LayoutParams(120, 120)
+            setImageResource(if (dataManager.analysisMode == "light") android.R.drawable.ic_lock_power_off else android.R.drawable.ic_menu_manage)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setColorFilter(Color.WHITE)
+        }
+        val modeTextContainer = LinearLayout(this).apply { 
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 0, 0, 0)
+        }
+        val modeStatusText = TextView(this).apply { 
+            text = if (dataManager.analysisMode == "light") "軽負荷モード (指定モンスターのみ)" else "通常モード (全モンスター対象)"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+        }
+        modeTextContainer.addView(modeStatusText)
+        modeRow.addView(modeIcon)
+        modeRow.addView(modeTextContainer)
+        
+        modeRow.setOnClickListener {
+            AlertDialog.Builder(this).setTitle("解析モードの選択")
+                .setSingleChoiceItems(arrayOf("通常モード (全127体スキャン)", "軽負荷モード (指定モンスターのみ)"), if (dataManager.analysisMode == "light") 1 else 0) { d, which ->
+                    dataManager.analysisMode = if (which == 1) "light" else "normal"
+                    dataManager.saveAnalysisSettings()
+                    modeStatusText.text = if (dataManager.analysisMode == "light") "軽負荷モード (指定モンスターのみ)" else "通常モード (全モンスター対象)"
+                    modeIcon.setImageResource(if (dataManager.analysisMode == "light") android.R.drawable.ic_lock_power_off else android.R.drawable.ic_menu_manage)
+                    d.dismiss()
+                    
+                    if (dataManager.analysisMode == "light") {
+                        showMonsterFilterDialog()
+                    }
+                }.show()
+        }
+        container.addView(modeRow)
+
         calibrationSelectorDialog = AlertDialog.Builder(this).setTitle("キャプチャー画面の校正").setView(container).setNegativeButton("閉じる", null).show()
+    }
+
+    private fun showMonsterFilterDialog() {
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 20)
+        }
+
+        val countText = TextView(this).apply {
+            text = "選択モンスター数：${dataManager.lightModeMonsters.size}体"
+            textSize = 14f
+            setTextColor(Color.LTGRAY)
+            setPadding(20, 0, 0, 10)
+        }
+        rootLayout.addView(countText)
+
+        val grid = GridView(this).apply {
+            numColumns = 4
+            horizontalSpacing = 10
+            verticalSpacing = 10
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        rootLayout.addView(grid)
+        
+        val monsters = dataManager.monsterMaster
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = monsters.size
+            override fun getItem(p0: Int): MonsterData = monsters[p0]
+            override fun getItemId(p0: Int) = p0.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                val monster = getItem(position)
+                val frame = FrameLayout(this@MainActivity)
+                val img = ImageView(this@MainActivity).apply {
+                    layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 200)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    alpha = if (dataManager.lightModeMonsters.contains(monster.name)) 1.0f else 0.3f
+                    try {
+                        assets.open("templates/${monster.fileName}").use { setImageBitmap(BitmapFactory.decodeStream(it)) }
+                    } catch (_: Exception) {}
+                }
+                frame.addView(img)
+                
+                if (dataManager.lightModeMonsters.contains(monster.name)) {
+                    val check = TextView(this@MainActivity).apply {
+                        layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { 
+                            gravity = Gravity.BOTTOM or Gravity.END
+                            setMargins(0, 0, 4, 4)
+                        }
+                        text = "✅"
+                        textSize = 20f
+                    }
+                    frame.addView(check)
+                }
+
+                frame.setOnClickListener {
+                    if (dataManager.lightModeMonsters.contains(monster.name)) {
+                        dataManager.lightModeMonsters.remove(monster.name)
+                    } else {
+                        dataManager.lightModeMonsters.add(monster.name)
+                    }
+                    countText.text = "選択モンスター数：${dataManager.lightModeMonsters.size}体"
+                    dataManager.saveAnalysisSettings()
+                    notifyDataSetChanged()
+                }
+                return frame
+            }
+        }
+        grid.adapter = adapter
+        
+        AlertDialog.Builder(this)
+            .setTitle("軽負荷モード: 解析対象の選択")
+            .setView(rootLayout)
+            .setNeutralButton("デフォルト") { _, _ ->
+                try {
+                    val targetJson = assets.open("target_monsters.json").bufferedReader().use { it.readText() }
+                    val defaultTargets = Gson().fromJson(targetJson, Array<MonsterData>::class.java)
+                    dataManager.lightModeMonsters.clear()
+                    dataManager.lightModeMonsters.addAll(defaultTargets.map { it.name })
+                    dataManager.saveAnalysisSettings()
+                    showMonsterFilterDialog() // ダイアログを再描画
+                } catch (e: Exception) {
+                    showTopToast("デフォルト値の読み込みに失敗しました")
+                }
+            }
+            .setPositiveButton("確定", null)
+            .show()
     }
 
     private fun showDeleteConfirmDialog(fileName: String) {
@@ -468,7 +606,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showResetHistoryConfirmDialog(fileName: String) {
         AlertDialog.Builder(this).setTitle("データのクリア").setMessage("「$fileName」の戦績データをすべて削除しますか？")
-            .setPositiveButton("クリア") { _, _ -> val dm = BattleDataManager(this); dm.loadHistory(fileName); dm.resetHistory(); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY }); showTopToast("データをクリアしました"); updateUI(MediaCaptureService.isRunning) }.setNegativeButton("キャンセル", null).show()
+            .setPositiveButton("クリア") { _, _ -> val dm = dataManager; dm.loadHistory(fileName); dm.resetHistory(); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY }); showTopToast("データをクリアしました"); updateUI(MediaCaptureService.isRunning) }.setNegativeButton("キャンセル", null).show()
     }
 
     private fun refreshServiceAndUI() {
@@ -500,7 +638,7 @@ class MainActivity : AppCompatActivity() {
         if (isRunning) { binding.btnToggleService.apply { text = getString(R.string.btn_stop); backgroundTintList = ColorStateList.valueOf("#90D7EC".toColorInt()); strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) }; binding.cardCurrentFile.apply { strokeWidth = (2f * resources.displayMetrics.density).toInt(); strokeColor = "#90D7EC".toColorInt() }; startPulseAnimation() }
         else { binding.btnToggleService.apply { text = getString(R.string.btn_rec); backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt()); strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) }; binding.cardCurrentFile.apply { strokeWidth = (1f * resources.displayMetrics.density).toInt(); strokeColor = "#444444".toColorInt() }; stopPulseAnimation() }
         val currentName = getCurrentFileName(); binding.textCurrentFile.text = getString(R.string.file_name_ext_format, currentName)
-        val stats = BattleDataManager(this).apply { loadHistory(currentName) }.getStatistics()
+        val stats = dataManager.apply { loadHistory(currentName) }.getStatistics()
         binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate); binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses); binding.valTotalWinLoseMain.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
     }
 
@@ -543,7 +681,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createNewFile(name: String) {
-        BattleDataManager(this).apply {
+        dataManager.apply {
             currentFileName = name
             resetHistory()
         }

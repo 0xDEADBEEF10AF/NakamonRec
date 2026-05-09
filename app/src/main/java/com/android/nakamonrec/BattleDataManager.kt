@@ -13,15 +13,42 @@ class BattleDataManager(private val context: Context) {
     var currentFileName: String = "default_record"
     var history: BattleHistory = BattleHistory()
     var monsterMaster: List<MonsterData> = emptyList()
+    var analysisMode: String = "normal" // "normal" or "light"
+    val lightModeMonsters = mutableSetOf<String>() // 軽負荷モードの対象モンスター名
 
     init {
         loadMasterData()
     }
 
     private fun loadMasterData() {
+        // 解析モードと絞り込み設定の読み込み
+        val prefs = context.getSharedPreferences("analysis_prefs", Context.MODE_PRIVATE)
+        analysisMode = prefs.getString("mode", "normal") ?: "normal"
+        
+        lightModeMonsters.clear()
+        if (prefs.contains("light_monsters")) {
+            lightModeMonsters.addAll(prefs.getStringSet("light_monsters", emptySet()) ?: emptySet())
+        }
+
         try {
+            // モンスターマスタの読み込み
             val json = context.assets.open("monsters.json").bufferedReader().use { it.readText() }
             monsterMaster = gson.fromJson(json, Array<MonsterData>::class.java).toList()
+
+            // 保存データが空（または未存在）の場合に target_monsters.json から初期値を読み込む
+            if (lightModeMonsters.isEmpty()) {
+                try {
+                    val targetJson = context.assets.open("target_monsters.json").bufferedReader().use { it.readText() }
+                    val defaultTargets = gson.fromJson(targetJson, Array<MonsterData>::class.java)
+                    if (defaultTargets != null) {
+                        lightModeMonsters.addAll(defaultTargets.map { it.name })
+                        // 初回起動時や、意図的に空にした場合でも「初期リスト」は一度保存する
+                        saveAnalysisSettings()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("DataManager", "Failed to load target_monsters.json: ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -98,5 +125,13 @@ class BattleDataManager(private val context: Context) {
         }
 
         return BattleStats(totalWins, totalLosses, totalWinRate, partyStats)
+    }
+
+    fun saveAnalysisSettings() {
+        val prefs = context.getSharedPreferences("analysis_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("mode", analysisMode)
+            .putStringSet("light_monsters", lightModeMonsters)
+            .apply()
     }
 }
