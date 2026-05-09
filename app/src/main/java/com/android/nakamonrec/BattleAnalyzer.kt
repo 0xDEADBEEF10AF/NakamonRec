@@ -73,7 +73,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
         scaledMonsterTemplates.clear()
         
-        val microScales = listOf(s * 0.98, s * 1.0, s * 1.02)
+        // GALAXY等の特殊なレンダリング（場所による縮小）に対応するため、探索範囲を +/- 10% に拡大
+        val microScales = listOf(s * 0.90, s * 0.95, s * 1.0, s * 1.05, s * 1.10)
         
         monsterMaster.forEach { data ->
             data.templateMat?.let { tpl ->
