@@ -634,6 +634,7 @@ class HistoryActivity : AppCompatActivity() {
             var lastUsed: Long = 0,
             var lastUsedIndex: Int = -1, // 最も新しく使われたパーティ番号
             var isLatest: Boolean = false,
+            var isTotal: Boolean = false, // 総合集計行か
             var historyRates: List<WinRateGraphView.PointData> = emptyList()
         ) {
             val total get() = wins + losses
@@ -657,7 +658,7 @@ class HistoryActivity : AppCompatActivity() {
 
         // キーを「ソート済みのモンスター名のリスト」にすることで、並び順が違ってもマージする
         val statsMap = mutableMapOf<List<String>, PartyStats>()
-        val totalStats = PartyStats(mutableSetOf(-1), emptyList())
+        val totalStats = PartyStats(members = emptyList(), isTotal = true)
         
         val latestMembersByIndex = mutableMapOf<Int, List<String>>()
         for (i in 0..2) {
@@ -669,8 +670,10 @@ class HistoryActivity : AppCompatActivity() {
         allRecords.forEach { record ->
             if (record.result == "WIN") totalStats.wins++ else totalStats.losses++
             val sortedMembers = record.myParty.filter { it.isNotEmpty() && it != "?" }.sorted()
-            val stats = statsMap.getOrPut(sortedMembers) { PartyStats(mutableSetOf(), record.myParty) }
-            stats.partyIndices.add(record.partyIndex)
+            val stats = statsMap.getOrPut(sortedMembers) { PartyStats(members = record.myParty) }
+            if (record.partyIndex != -1) {
+                stats.partyIndices.add(record.partyIndex)
+            }
             if (record.result == "WIN") stats.wins++ else stats.losses++
             val time = try { sdfInput.parse(record.timestamp)?.time ?: 0L } catch(_: Exception) { 0L }
             if (time > stats.lastUsed) {
@@ -744,7 +747,7 @@ class HistoryActivity : AppCompatActivity() {
                         gravity = Gravity.CENTER_VERTICAL
                         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                     }
-                    val titleText = if (stats.partyIndices.contains(-1)) {
+                    val titleText = if (stats.isTotal) {
                         "TOTAL"
                     } else {
                         // メインとなるパーティ（最後、または最新の利用スロット）
@@ -752,7 +755,7 @@ class HistoryActivity : AppCompatActivity() {
                         // その他の利用履歴スロットを昇順で抽出
                         val otherIndices = stats.partyIndices.filter { it != mainIdx && it >= 0 }.sorted()
                         
-                        val sb = StringBuilder("P${mainIdx + 1}")
+                        val sb = StringBuilder(if (mainIdx != -1) "P${mainIdx + 1}" else "P?")
                         if (otherIndices.isNotEmpty()) {
                             sb.append(",")
                             sb.append(otherIndices.map { it + 1 }.joinToString(","))
@@ -785,7 +788,7 @@ class HistoryActivity : AppCompatActivity() {
                         val matchesStr = getString(R.string.label_matches_format, stats.total)
                         val wlStr = getString(R.string.label_win_lose_format, stats.wins, stats.losses)
                         
-                        if (stats.partyIndices.contains(-1)) {
+                        if (stats.isTotal) {
                             text = "${matchesStr}\n${wlStr}"
                         } else {
                             val usageRate = (stats.total.toDouble() / allRecords.size * 100.0)
@@ -1081,6 +1084,7 @@ class HistoryActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             val p = (16 * resources.displayMetrics.density).toInt()
             setPadding(p, p, p, p)
+            setBackgroundColor(0xFF222222.toInt()) // 背景をダークに固定
         }
 
         fun createSectionTitle(text: String) = TextView(this).apply {

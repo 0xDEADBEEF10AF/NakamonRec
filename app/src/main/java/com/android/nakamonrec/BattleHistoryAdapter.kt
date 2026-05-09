@@ -109,7 +109,6 @@ class BattleHistoryAdapter(
 
             val imageView = ImageView(context)
             val params = LinearLayout.LayoutParams(iconSize, iconSize)
-            params.setMargins(1, 0, 1, 0)
             imageView.layoutParams = params
             imageView.scaleType = ImageView.ScaleType.CENTER_CROP
 

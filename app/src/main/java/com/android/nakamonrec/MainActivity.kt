@@ -440,7 +440,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun showCalibrationSelectorDialog() {
         val titles = arrayOf("パーティ選択画面", "VS画面", "勝利画面", "敗北画面"); val fileNames = arrayOf("base_party.png", "base_vs.png", "base_win.png", "base_lose.png"); val modes = arrayOf("party", "vs", "win", "lose")
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
+        val container = LinearLayout(this).apply { 
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+            setBackgroundColor(0xFF222222.toInt()) // 背景をダークに固定
+        }
+
+        // キャプチャー画面の校正 見出し
+        container.addView(TextView(this).apply { 
+            text = "キャプチャー画面の校正"
+            setPadding(0, 10, 0, 20) 
+            textSize = 18f 
+            setTextColor(Color.WHITE) 
+            setTypeface(null, Typeface.BOLD) 
+        })
+
         for (i in titles.indices) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 10, 0, 10); gravity = Gravity.CENTER_VERTICAL; isClickable = true; setBackgroundResource(android.R.drawable.list_selector_background) }
             val thumb = ImageView(this).apply { layoutParams = LinearLayout.LayoutParams(120, 120); scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF333333.toInt())
@@ -459,7 +473,7 @@ class MainActivity : AppCompatActivity() {
             container.addView(row)
         }
 
-        // 解析モード設定の追加
+        // 解析モード設定の見出し
         container.addView(TextView(this).apply { 
             text = "モンスター識別の解析モード設定"
             setPadding(0, 40, 0, 20) 
@@ -510,13 +524,14 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(modeRow)
 
-        calibrationSelectorDialog = AlertDialog.Builder(this).setTitle("キャプチャー画面の校正").setView(container).setNegativeButton("閉じる", null).show()
+        calibrationSelectorDialog = AlertDialog.Builder(this).setTitle("ユーザー設定").setView(container).setNegativeButton("閉じる", null).show()
     }
 
     private fun showMonsterFilterDialog() {
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 20, 20, 20)
+            setBackgroundColor(0xFF222222.toInt()) // 背景をダークに固定
         }
 
         val countText = TextView(this).apply {
