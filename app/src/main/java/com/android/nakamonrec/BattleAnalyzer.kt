@@ -56,8 +56,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
          * ROI（探索範囲）を広げるためのパディング値（ピクセル）。
          */
         const val ROI_PAD_MONSTER = 20
-        const val ROI_PAD_PARTY_H = 10
-        const val ROI_PAD_PARTY_V = 50
+        const val ROI_PAD_PARTY_H = 30  // GALAXY等の縦横比ズレを考慮
+        const val ROI_PAD_PARTY_V = 100 // GALAXY等の縦方向ズレを考慮
         const val ROI_PAD_GENERAL_H = 10 // 一般的な水平マージン
     }
 
