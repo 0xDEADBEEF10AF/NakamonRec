@@ -1134,7 +1134,17 @@ class HistoryActivity : AppCompatActivity() {
         // --- パーティ ＆ VS ---
         root.addView(createSectionTitle("【基本判定】"))
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        topRow.addView(createRoiImageView("party", record.partySelectScores?.maxOrNull() ?: 0.0, "選択パーティ"))
+        
+        // P1〜P3の3枚を並べて表示
+        val partyContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.5f)
+        }
+        repeat(3) { i ->
+            partyContainer.addView(createRoiImageView("party_p$i", record.partySelectScores?.getOrNull(i) ?: 0.0, "P${i + 1}"))
+        }
+        topRow.addView(partyContainer)
+
         topRow.addView(createRoiImageView("vs", record.vsScore ?: 0.0, "VSロゴ"))
         root.addView(topRow)
 

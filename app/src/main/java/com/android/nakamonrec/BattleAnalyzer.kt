@@ -716,11 +716,17 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         }
 
         val finalIdx = if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
+        
+        val vMargin = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
+        val hMargin = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
+
         if (finalIdx != -1) {
-            val vMargin = (50 * calibrationData.uiScale).toInt()
-            val hMargin = (10 * calibrationData.uiScale).toInt()
-            saveRoi(bitmap, calibrationData.partySelectBoxes[finalIdx], "party", vMargin, hMargin)
+            // 【成功時】3枚セットで保存。0.7を超えている間は常に最新状態で上書き（心変わり対応）
+            calibrationData.partySelectBoxes.forEachIndexed { i, config ->
+                saveRoi(bitmap, config, "party_p$i", vMargin, hMargin)
+            }
         }
+
         return finalIdx to allScores
     }
 
