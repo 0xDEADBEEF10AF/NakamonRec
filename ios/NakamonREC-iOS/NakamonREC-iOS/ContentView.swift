@@ -44,10 +44,23 @@ struct ContentView: View {
     }
 
     func loadImage(named fileName: String) -> UIImage? {
-        // 画像は "templates/XXX" という名前で読み込む
-        // iOSではファイル名から拡張子を除いた名前を指定するのが一般的です
-        let nameWithoutExt = (fileName as NSString).deletingPathExtension
-        return UIImage(named: "templates/\(nameWithoutExt)")
+        // 青色フォルダ (Folder Reference) の場合、Bundle内でのパス指定が必要です
+        // 1. ファイル名から拡張子を分離
+        let name = (fileName as NSString).deletingPathExtension
+        let ext = (fileName as NSString).pathExtension
+
+        // 2. "templates" フォルダの中にあるファイルを検索
+        if let path = Bundle.main.path(forResource: name, ofType: ext, inDirectory: "templates") {
+            return UIImage(contentsOfFile: path)
+        }
+
+        // 念のため、拡張子がない場合のフォールバック
+        if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates") {
+            return UIImage(contentsOfFile: path)
+        }
+
+        print("Image not found: templates/\(fileName)")
+        return nil
     }
 
     func loadMonsters() {
