@@ -13,11 +13,21 @@ struct ContentView: View {
         NavigationView {
             List(monsters) { monster in
                 HStack {
-                    // 画像表示（後ほどアセットを追加した際に反映されます）
-                    Image(systemName: "pawprint.circle.fill")
-                        .foregroundColor(.blue)
+                    // モンスター画像の表示
+                    if let uiImage = loadImage(named: monster.fileName) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 40, height: 40)
+                            .cornerRadius(4)
+                    } else {
+                        Image(systemName: "pawprint.circle.fill")
+                            .resizable()
+                            .frame(width: 40, height: 40)
+                            .foregroundColor(.blue)
+                    }
 
-                    V {
+                    VStack(alignment: .leading) {
                         Text(monster.name)
                             .font(.headline)
                         Text(monster.fileName)
@@ -31,6 +41,13 @@ struct ContentView: View {
                 loadMonsters()
             }
         }
+    }
+
+    func loadImage(named fileName: String) -> UIImage? {
+        // 画像は "templates/XXX" という名前で読み込む
+        // iOSではファイル名から拡張子を除いた名前を指定するのが一般的です
+        let nameWithoutExt = (fileName as NSString).deletingPathExtension
+        return UIImage(named: "templates/\(nameWithoutExt)")
     }
 
     func loadMonsters() {
