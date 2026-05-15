@@ -1,31 +1,27 @@
-# Build folders
-build/
-**/build/
-**/intermediates/
-**/generated/
-**/.cxx/
-**/.externalNativeBuild/
-
-# OpenCV specific
-opencv/.cxx/
-opencv/build/
-opencv/libcxx_helper/build/
-opencv/libcxx_helper/.cxx/
-
-# IDE and System
-.idea/
-.gradle/
+# Android
+.gradle
+/build
+/app/build
+/opencv/build
 *.iml
+.idea
 local.properties
-.DS_Store
 
-# APK and Logs
+# iOS / macOS
+ios/**/DerivedData/
+ios/**/build/
+ios/**/*.xcworkspace
+ios/**/*.xcuserdatad
+ios/**/.DS_Store
+
+# 巨大なライブラリ (GitHub制限回避)
+*.framework/
+opencv2.framework/
+
+# その他
+captures/
 apks/
-*.apk
-*.log
-*_timing.txt
-
-# Keystore files (Security)
-debug.keystore
-*.keystore
-*.jks
+*.png
+!app/src/main/res/**/*.png
+!app/src/main/assets/**/*.png
+!ios/**/templates/*.png

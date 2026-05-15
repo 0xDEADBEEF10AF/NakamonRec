@@ -1,44 +1,56 @@
-//
-//  SampleHandler.swift
-//  NakamonREC-ScreenCapture
-//
-//  Created by Yuki Kobayashi on 2026/05/16.
-//
-
 import ReplayKit
+import VideoToolbox
 
 class SampleHandler: RPBroadcastSampleHandler {
 
+    // 解析の間隔調整用
+    private var lastProcessTime: TimeInterval = 0
+    private let processInterval: TimeInterval = 0.5 // 0.5秒おきに解析を試みる
+
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
-        // User has requested to start the broadcast. Setup info from the UI extension can be supplied but optional. 
+        // 配信開始時の処理
+        print("NakamonREC: Broadcast Started")
+    }
+
+    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleType: RPSampleBufferType) {
+        switch sampleType {
+        case .video:
+            // 映像データが届いた！
+            handleVideoSample(sampleBuffer)
+        default:
+            break
+        }
+    }
+
+    private func handleVideoSample(_ sampleBuffer: CMSampleBuffer) {
+        let currentTime = CACurrentMediaTime()
+        guard currentTime - lastProcessTime >= processInterval else { return }
+        lastProcessTime = currentTime
+
+        // 1. CMSampleBuffer を UIImage に変換
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+        let uiImage = UIImage(cgImage: cgImage)
+
+        // 2. 解析エンジン (C++ Wrapper) を呼び出す
+        // ※ ここで Android と同じように VSロゴ検知 -> モンスター解析 を行う
+        print("NakamonREC: Processing frame... Size: \(uiImage.size)")
+
+        // TODO: ここに NakamonWrapper.performMatch... を実装していく
+        // 例: let score = NakamonWrapper.performMatch(withScene: uiImage, ...)
     }
     
     override func broadcastPaused() {
-        // User has requested to pause the broadcast. Samples will stop being delivered.
+        print("NakamonREC: Broadcast Paused")
     }
     
     override func broadcastResumed() {
-        // User has requested to resume the broadcast. Samples delivery will resume.
+        print("NakamonREC: Broadcast Resumed")
     }
     
     override func broadcastFinished() {
-        // User has requested to finish the broadcast.
-    }
-    
-    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
-        switch sampleBufferType {
-        case RPSampleBufferType.video:
-            // Handle video sample buffer
-            break
-        case RPSampleBufferType.audioApp:
-            // Handle audio sample buffer for app audio
-            break
-        case RPSampleBufferType.audioMic:
-            // Handle audio sample buffer for mic audio
-            break
-        @unknown default:
-            // Handle other sample buffer types
-            fatalError("Unknown type of sample buffer")
-        }
+        print("NakamonREC: Broadcast Finished")
     }
 }
