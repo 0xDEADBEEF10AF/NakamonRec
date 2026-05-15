@@ -1,7 +1,10 @@
+#ifdef __cplusplus
+#import <opencv2/opencv.hpp>
+#endif
+
+#import <opencv2/imgcodecs/ios.h>
 #import "NakamonWrapper.h"
 #import "../../../shared_cpp/NakamonAnalyzerCore.h"
-#import <opencv2/opencv.hpp>
-#import <opencv2/imgcodecs/ios.h>
 
 @implementation NakamonWrapper
 
