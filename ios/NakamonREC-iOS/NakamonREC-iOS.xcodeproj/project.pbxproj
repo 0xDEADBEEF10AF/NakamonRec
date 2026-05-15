@@ -6,14 +6,67 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		02BF2F832FB7422A00A0BD95 /* opencv2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02BF2F822FB7422A00A0BD95 /* opencv2.framework */; };
+		02BF30932FB7A03A00A0BD95 /* templates in Resources */ = {isa = PBXBuildFile; fileRef = 02BF30922FB7A03A00A0BD95 /* templates */; };
+		02BF309B2FB7A41F00A0BD95 /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02BF309A2FB7A41F00A0BD95 /* ReplayKit.framework */; };
+		02BF30A32FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 02BF30982FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		02BF30A02FB7A41F00A0BD95 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 02BF2F5C2FB60B8200A0BD95 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 02BF30972FB7A41F00A0BD95;
+			remoteInfo = "NakamonREC-ScreenCapture";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		02BF30A22FB7A41F00A0BD95 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				02BF30A32FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		02BF2F642FB60B8200A0BD95 /* NakamonREC-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "NakamonREC-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		02BF2F822FB7422A00A0BD95 /* opencv2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = opencv2.framework; path = "/Users/0xbeef10af/Documents/NakamonRec/ios/NakamonREC-iOS/opencv2.framework"; sourceTree = "<absolute>"; };
+		02BF30922FB7A03A00A0BD95 /* templates */ = {isa = PBXFileReference; lastKnownFileType = folder; name = templates; path = "NakamonREC-iOS/templates"; sourceTree = "<group>"; };
+		02BF30982FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "NakamonREC-ScreenCapture.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		02BF309A2FB7A41F00A0BD95 /* ReplayKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ReplayKit.framework; path = System/Library/Frameworks/ReplayKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		02BF30A42FB7A41F00A0BD95 /* Exceptions for "NakamonREC-ScreenCapture" folder in "NakamonREC-ScreenCapture" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		02BF2F662FB60B8200A0BD95 /* NakamonREC-iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "NakamonREC-iOS";
+			sourceTree = "<group>";
+		};
+		02BF309C2FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				02BF30A42FB7A41F00A0BD95 /* Exceptions for "NakamonREC-ScreenCapture" folder in "NakamonREC-ScreenCapture" target */,
+			);
+			path = "NakamonREC-ScreenCapture";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +76,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				02BF2F832FB7422A00A0BD95 /* opencv2.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		02BF30952FB7A41F00A0BD95 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				02BF309B2FB7A41F00A0BD95 /* ReplayKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -32,7 +94,11 @@
 		02BF2F5B2FB60B8200A0BD95 = {
 			isa = PBXGroup;
 			children = (
+				02BF30922FB7A03A00A0BD95 /* templates */,
+				02BF2F822FB7422A00A0BD95 /* opencv2.framework */,
 				02BF2F662FB60B8200A0BD95 /* NakamonREC-iOS */,
+				02BF309C2FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */,
+				02BF30992FB7A41F00A0BD95 /* Frameworks */,
 				02BF2F652FB60B8200A0BD95 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +107,17 @@
 			isa = PBXGroup;
 			children = (
 				02BF2F642FB60B8200A0BD95 /* NakamonREC-iOS.app */,
+				02BF30982FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		02BF30992FB7A41F00A0BD95 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				02BF309A2FB7A41F00A0BD95 /* ReplayKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -55,10 +130,12 @@
 				02BF2F602FB60B8200A0BD95 /* Sources */,
 				02BF2F612FB60B8200A0BD95 /* Frameworks */,
 				02BF2F622FB60B8200A0BD95 /* Resources */,
+				02BF30A22FB7A41F00A0BD95 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				02BF30A12FB7A41F00A0BD95 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				02BF2F662FB60B8200A0BD95 /* NakamonREC-iOS */,
@@ -69,6 +146,28 @@
 			productName = "NakamonREC-iOS";
 			productReference = 02BF2F642FB60B8200A0BD95 /* NakamonREC-iOS.app */;
 			productType = "com.apple.product-type.application";
+		};
+		02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 02BF30A52FB7A41F00A0BD95 /* Build configuration list for PBXNativeTarget "NakamonREC-ScreenCapture" */;
+			buildPhases = (
+				02BF30942FB7A41F00A0BD95 /* Sources */,
+				02BF30952FB7A41F00A0BD95 /* Frameworks */,
+				02BF30962FB7A41F00A0BD95 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				02BF309C2FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */,
+			);
+			name = "NakamonREC-ScreenCapture";
+			packageProductDependencies = (
+			);
+			productName = "NakamonREC-ScreenCapture";
+			productReference = 02BF30982FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -83,6 +182,9 @@
 					02BF2F632FB60B8200A0BD95 = {
 						CreatedOnToolsVersion = 26.5;
 						LastSwiftMigration = 2650;
+					};
+					02BF30972FB7A41F00A0BD95 = {
+						CreatedOnToolsVersion = 26.5;
 					};
 				};
 			};
@@ -101,12 +203,21 @@
 			projectRoot = "";
 			targets = (
 				02BF2F632FB60B8200A0BD95 /* NakamonREC-iOS */,
+				02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		02BF2F622FB60B8200A0BD95 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				02BF30932FB7A03A00A0BD95 /* templates in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		02BF30962FB7A41F00A0BD95 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -123,7 +234,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		02BF30942FB7A41F00A0BD95 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		02BF30A12FB7A41F00A0BD95 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */;
+			targetProxy = 02BF30A02FB7A41F00A0BD95 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		02BF2F6D2FB60B8300A0BD95 /* Debug */ = {
@@ -253,13 +379,20 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VAD44XWMR7;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/../../shared_cpp",
+					"$(PROJECT_DIR)/opencv2.framework/Headers",
+				);
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -287,13 +420,20 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VAD44XWMR7;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/../../shared_cpp",
+					"$(PROJECT_DIR)/opencv2.framework/Headers",
+				);
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -306,6 +446,62 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "NakamonREC-iOS/NakamonREC-iOS-Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		02BF30A62FB7A41F00A0BD95 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VAD44XWMR7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "NakamonREC-ScreenCapture/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "NakamonREC-ScreenCapture";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS.NakamonREC-ScreenCapture";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		02BF30A72FB7A41F00A0BD95 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VAD44XWMR7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "NakamonREC-ScreenCapture/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "NakamonREC-ScreenCapture";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS.NakamonREC-ScreenCapture";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -329,6 +525,15 @@
 			buildConfigurations = (
 				02BF2F702FB60B8300A0BD95 /* Debug */,
 				02BF2F712FB60B8300A0BD95 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		02BF30A52FB7A41F00A0BD95 /* Build configuration list for PBXNativeTarget "NakamonREC-ScreenCapture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				02BF30A62FB7A41F00A0BD95 /* Debug */,
+				02BF30A72FB7A41F00A0BD95 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
