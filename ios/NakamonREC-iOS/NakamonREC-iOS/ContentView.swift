@@ -30,7 +30,7 @@ struct ContentView: View {
                     .padding(.horizontal)
 
                 BroadcastButton()
-                    .frame(width: 200, height: 60)
+                    .frame(width: 220, height: 64)
 
                 Spacer()
 
@@ -47,26 +47,71 @@ struct ContentView: View {
     }
 }
 
-/// RPSystemBroadcastPickerView をラップして、自前 Extension のみを候補に出す REC ボタン
+/// 自前の REC ボタン UI + 非表示の RPSystemBroadcastPickerView で構成。
+/// SwiftUI ボタンのタップで PickerView 内部の UIButton を sendActions で発火させる。
 struct BroadcastButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .clear
+
+        // 非表示の RPSystemBroadcastPickerView (実際のピッカー起動を担当)
         let picker = RPSystemBroadcastPickerView(frame: .zero)
         picker.preferredExtension = "com.android.NakamonREC-iOS.NakamonREC-ScreenCapture"
         picker.showsMicrophoneButton = false
+        picker.translatesAutoresizingMaskIntoConstraints = false
+        picker.isHidden = true
+        container.addSubview(picker)
 
-        // デフォルトのシステムボタン見た目を REC 風にカスタマイズ
-        if let button = picker.subviews.compactMap({ $0 as? UIButton }).first {
-            button.imageView?.tintColor = .white
-            button.backgroundColor = UIColor.systemRed
-            button.layer.cornerRadius = 12
-            button.setTitle("  REC  ", for: .normal)
-            button.titleLabel?.font = .boldSystemFont(ofSize: 22)
-            button.setTitleColor(.white, for: .normal)
-        }
-        return picker
+        // 見た目用の REC ボタン (前面に表示しタップを受ける)
+        let recButton = UIButton(type: .system)
+        recButton.translatesAutoresizingMaskIntoConstraints = false
+        recButton.setTitle("● REC", for: .normal)
+        recButton.titleLabel?.font = .boldSystemFont(ofSize: 24)
+        recButton.setTitleColor(.white, for: .normal)
+        recButton.backgroundColor = .systemRed
+        recButton.layer.cornerRadius = 12
+        container.addSubview(recButton)
+
+        NSLayoutConstraint.activate([
+            recButton.topAnchor.constraint(equalTo: container.topAnchor),
+            recButton.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            recButton.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            recButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+
+        context.coordinator.picker = picker
+        recButton.addTarget(context.coordinator,
+                            action: #selector(Coordinator.tap),
+                            for: .touchUpInside)
+
+        return container
     }
 
-    func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject {
+        weak var picker: RPSystemBroadcastPickerView?
+
+        @objc func tap() {
+            guard let picker else { return }
+            // PickerView の内部 UIButton を再帰的に探して発火
+            if let innerButton = findButton(in: picker) {
+                innerButton.sendActions(for: .touchUpInside)
+            } else {
+                print("NakamonREC: Broadcast picker inner button not found")
+            }
+        }
+
+        private func findButton(in view: UIView) -> UIButton? {
+            if let b = view as? UIButton { return b }
+            for sub in view.subviews {
+                if let b = findButton(in: sub) { return b }
+            }
+            return nil
+        }
+    }
 }
 
 /// テスト用のなかまモンスター一覧 (元の ContentView の内容)

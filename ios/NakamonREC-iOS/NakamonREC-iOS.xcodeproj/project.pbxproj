@@ -11,6 +11,7 @@
 		02BF30932FB7A03A00A0BD95 /* templates in Resources */ = {isa = PBXBuildFile; fileRef = 02BF30922FB7A03A00A0BD95 /* templates */; };
 		02BF309B2FB7A41F00A0BD95 /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02BF309A2FB7A41F00A0BD95 /* ReplayKit.framework */; };
 		02BF30A32FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 02BF30982FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		02BF30AB2FB7A9CD00A0BD95 /* opencv2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02BF2F822FB7422A00A0BD95 /* opencv2.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,7 +47,15 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		02BF30A42FB7A41F00A0BD95 /* Exceptions for "NakamonREC-ScreenCapture" folder in "NakamonREC-ScreenCapture" target */ = {
+		02BF30A92FB7A99E00A0BD95 /* Exceptions for "NakamonREC-iOS" folder in "NakamonREC-ScreenCapture" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				NakamonAnalyzerCore.cpp,
+				NakamonWrapper.mm,
+			);
+			target = 02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */;
+		};
+		02BF30B42FB7E85000A0BD95 /* Exceptions for "NakamonREC-ScreenCapture" folder in "NakamonREC-ScreenCapture" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -58,13 +67,16 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		02BF2F662FB60B8200A0BD95 /* NakamonREC-iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				02BF30A92FB7A99E00A0BD95 /* Exceptions for "NakamonREC-iOS" folder in "NakamonREC-ScreenCapture" target */,
+			);
 			path = "NakamonREC-iOS";
 			sourceTree = "<group>";
 		};
 		02BF309C2FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				02BF30A42FB7A41F00A0BD95 /* Exceptions for "NakamonREC-ScreenCapture" folder in "NakamonREC-ScreenCapture" target */,
+				02BF30B42FB7E85000A0BD95 /* Exceptions for "NakamonREC-ScreenCapture" folder in "NakamonREC-ScreenCapture" target */,
 			);
 			path = "NakamonREC-ScreenCapture";
 			sourceTree = "<group>";
@@ -84,6 +96,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				02BF30AB2FB7A9CD00A0BD95 /* opencv2.framework in Frameworks */,
 				02BF309B2FB7A41F00A0BD95 /* ReplayKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -304,6 +317,8 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_PKGINFO_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -361,6 +376,8 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_PKGINFO_FILE = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -377,6 +394,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = "NakamonREC-iOS/NakamonREC-iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
@@ -418,6 +436,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = "NakamonREC-iOS/NakamonREC-iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
@@ -455,13 +474,20 @@
 		02BF30A62FB7A41F00A0BD95 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "NakamonREC-ScreenCapture/NakamonREC-ScreenCapture.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_PKGINFO_FILE = NO;
 				INFOPLIST_FILE = "NakamonREC-ScreenCapture/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "NakamonREC-ScreenCapture";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -474,6 +500,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "NakamonREC-ScreenCapture/ScreenCapture-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -483,13 +510,20 @@
 		02BF30A72FB7A41F00A0BD95 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "NakamonREC-ScreenCapture/NakamonREC-ScreenCapture.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_PKGINFO_FILE = NO;
 				INFOPLIST_FILE = "NakamonREC-ScreenCapture/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "NakamonREC-ScreenCapture";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -502,6 +536,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "NakamonREC-ScreenCapture/ScreenCapture-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
