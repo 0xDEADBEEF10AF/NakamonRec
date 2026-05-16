@@ -52,6 +52,8 @@
 			membershipExceptions = (
 				NakamonAnalyzerCore.cpp,
 				NakamonWrapper.mm,
+				templates/VS_FM.png,
+				templates/VS_MG.png,
 			);
 			target = 02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */;
 		};

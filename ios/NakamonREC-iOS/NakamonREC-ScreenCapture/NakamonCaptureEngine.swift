@@ -1,5 +1,9 @@
 import ReplayKit
 import VideoToolbox
+import OSLog
+
+private let logger = Logger(subsystem: "com.android.NakamonREC-iOS.NakamonREC-ScreenCapture",
+                            category: "NakamonCaptureEngine")
 
 class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
@@ -15,24 +19,41 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private var vsLogo: UIImage?
     private var monsterTemplates: [UIImage] = []
 
+    // 初回のみサイズログを出すフラグ
+    private var didLogFrameSize = false
+
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
-        print("NakamonREC Engine: Starting...")
+        logger.log("NakamonREC Engine: Starting...")
         loadTemplates()
     }
 
     private func loadTemplates() {
-        if let path = Bundle.main.path(forResource: "VS_MG", ofType: "png", inDirectory: "templates") {
-            vsLogo = UIImage(contentsOfFile: path)
+        vsLogo = loadTemplateImage(named: "VS_FM")
+        if vsLogo != nil {
+            logger.log("✅ VS_FM.png loaded")
+        } else {
+            logger.error("❌ VS_FM.png NOT FOUND in Extension bundle")
         }
-        // とりあえず10体ロード（実際には全件必要）
+
         for i in 1...30 {
             let name = String(format: "id%03d", i)
-            if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates") {
-                if let img = UIImage(contentsOfFile: path) {
-                    monsterTemplates.append(img)
-                }
+            if let img = loadTemplateImage(named: name) {
+                monsterTemplates.append(img)
             }
         }
+        logger.log("Loaded \(self.monsterTemplates.count) monster templates")
+    }
+
+    private func loadTemplateImage(named name: String) -> UIImage? {
+        if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates"),
+           let img = UIImage(contentsOfFile: path) {
+            return img
+        }
+        if let path = Bundle.main.path(forResource: name, ofType: "png"),
+           let img = UIImage(contentsOfFile: path) {
+            return img
+        }
+        return nil
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleType: RPSampleBufferType) {
@@ -63,6 +84,12 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
         guard let uiImage = sampleBufferToUIImage(sampleBuffer) else { return }
 
+        if !didLogFrameSize {
+            didLogFrameSize = true
+            let tplSize = vsLogo?.size ?? .zero
+            logger.log("Frame size: \(Int(uiImage.size.width))x\(Int(uiImage.size.height)), VS template size: \(Int(tplSize.width))x\(Int(tplSize.height))")
+        }
+
         // 1. VSロゴの検知 (スキャン)
         if let vs = vsLogo {
             // iPhone 13 mini の縦長比率に合わせた座標 (中央上部)
@@ -76,8 +103,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                   verticalMargin: 120,
                                                   horizontalMargin: 120)
 
+            logger.log("Scanning... VS Score: \(score, format: .fixed(precision: 3))")
             if score > 0.85 {
-                print("✅ VS Logo Found! (Score: \(score)). Starting burst capture...")
+                logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst capture...")
                 isAnalyzing = true
                 currentBurstImages.removeAll()
                 currentBurstImages.append(uiImage)
@@ -86,7 +114,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     }
 
     private func performDeepAnalysis() {
-        print("👾 Performing Deep Analysis on \(currentBurstImages.count) frames...")
+        logger.log("👾 Performing Deep Analysis on \(self.currentBurstImages.count) frames...")
 
         var bestMonsterName = "Unknown"
         var maxScore: Double = 0
@@ -100,7 +128,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             }
         }
 
-        print("🎯 Result: Best Score \(maxScore)")
+        logger.log("🎯 Result: Best Score \(maxScore, format: .fixed(precision: 3))")
 
         // 解析完了。次のチャンスを待つ
         isAnalyzing = false
