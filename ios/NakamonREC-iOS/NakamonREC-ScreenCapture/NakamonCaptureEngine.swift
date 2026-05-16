@@ -30,7 +30,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     }
 
     private func loadTemplates() {
-        if let path = Bundle.main.path(forResource: "VS_MG", ofType: "png", inDirectory: "templates") {
+        if let path = Bundle.main.path(forResource: "VS_FM", ofType: "png", inDirectory: "templates") {
             vsLogo = UIImage(contentsOfFile: path)
         }
         // とりあえず30体ロード
