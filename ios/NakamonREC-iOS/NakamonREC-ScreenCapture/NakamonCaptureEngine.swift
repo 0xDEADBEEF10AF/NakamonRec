@@ -18,11 +18,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private var vsLogo: UIImage?
     private var monsterTemplates: [UIImage] = []
 
-    private var didLogFrameSize = false
+    private var didCalibrate = false
 
-    // --- 案A: 目標とする校正サイズ ---
-    private let targetWidth: CGFloat = 1125
-    private let targetHeight: CGFloat = 2436
+    // テンプレ作成時のスクリーン基準幅 (Pixel 10 Pro: 1080)
+    private let templateReferenceWidth: CGFloat = 1080
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
         logger.log("NakamonREC Engine: Starting...")
@@ -32,17 +31,35 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private func loadTemplates() {
         if let path = Bundle.main.path(forResource: "VS_FM", ofType: "png", inDirectory: "templates") {
             vsLogo = UIImage(contentsOfFile: path)
+            logger.log("✅ VS_FM.png loaded")
+        } else {
+            logger.error("❌ VS_FM.png NOT FOUND in Extension bundle")
         }
-        // とりあえず30体ロード
         for i in 1...30 {
             let name = String(format: "id%03d", i)
-            if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates") {
-                if let img = UIImage(contentsOfFile: path) {
-                    monsterTemplates.append(img)
-                }
+            if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates"),
+               let img = UIImage(contentsOfFile: path) {
+                monsterTemplates.append(img)
             }
         }
-        logger.log("Loaded \(self.monsterTemplates.count) templates")
+        logger.log("Loaded \(self.monsterTemplates.count) monster templates")
+    }
+
+    /// 初回フレーム到着時、フレーム幅に合わせて全テンプレートを1回だけリサイズする
+    private func calibrateTemplates(forFrameWidth frameWidth: CGFloat) {
+        let scale = frameWidth / templateReferenceWidth
+        logger.log("Calibrating templates: frameWidth=\(Int(frameWidth)), scale=\(scale, format: .fixed(precision: 3))")
+
+        if let vs = vsLogo {
+            let newSize = CGSize(width: vs.size.width * scale, height: vs.size.height * scale)
+            vsLogo = resizeImage(vs, targetSize: newSize)
+            logger.log("VS template resized to \(Int(newSize.width))x\(Int(newSize.height))")
+        }
+
+        monsterTemplates = monsterTemplates.map { tpl in
+            let newSize = CGSize(width: tpl.size.width * scale, height: tpl.size.height * scale)
+            return resizeImage(tpl, targetSize: newSize)
+        }
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleType: RPSampleBufferType) {
@@ -58,9 +75,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         if isAnalyzing {
             if currentBurstImages.count < burstCount {
                 if let uiImage = sampleBufferToUIImage(sampleBuffer) {
-                    // --- 案A: リサイズして蓄積 ---
-                    let resized = resizeImage(uiImage, targetSize: CGSize(width: targetWidth, height: targetHeight))
-                    currentBurstImages.append(resized)
+                    currentBurstImages.append(uiImage)
                 }
                 if currentBurstImages.count == burstCount {
                     performDeepAnalysis()
@@ -75,33 +90,30 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
         guard let uiImage = sampleBufferToUIImage(sampleBuffer) else { return }
 
-        if !didLogFrameSize {
-            didLogFrameSize = true
-            let tplSize = vsLogo?.size ?? .zero
-            logger.log("Original Frame: \(Int(uiImage.size.width))x\(Int(uiImage.size.height)), Target: \(Int(self.targetWidth))x\(Int(self.targetHeight))")
+        // 初回のみ、フレーム幅に合わせて全テンプレートをリサイズ
+        if !didCalibrate {
+            didCalibrate = true
+            logger.log("Frame size: \(Int(uiImage.size.width))x\(Int(uiImage.size.height))")
+            calibrateTemplates(forFrameWidth: uiImage.size.width)
         }
 
-        // --- 案A: 解析前にリサイズ (886 -> 1125) ---
-        let targetScene = resizeImage(uiImage, targetSize: CGSize(width: targetWidth, height: targetHeight))
-
-        // 1. VSロゴの検知 (スキャン)
+        // 1. VSロゴの検知 (スキャン) — シーンはネイティブサイズのまま
         if let vs = vsLogo {
-            // リサイズ後の 1125x2436 座標系で計算
-            let centerX = Int32(targetScene.size.width * 0.5)
-            let centerY = Int32(targetScene.size.height * 0.23)
+            let centerX = Int32(uiImage.size.width * 0.5)
+            let centerY = Int32(uiImage.size.height * 0.23)
 
-            let score = NakamonWrapper.performMatch(withScene: targetScene,
+            let score = NakamonWrapper.performMatch(withScene: uiImage,
                                                   templateImg: vs,
                                                   centerX: centerX,
                                                   centerY: centerY,
-                                                  verticalMargin: 120,
-                                                  horizontalMargin: 120)
+                                                  verticalMargin: 500,
+                                                  horizontalMargin: 200)
 
-            if score > 0.85 {
+            if score > 0.4 {
                 logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
                 isAnalyzing = true
                 currentBurstImages.removeAll()
-                currentBurstImages.append(targetScene)
+                currentBurstImages.append(uiImage)
             } else if score > 0.1 {
                 logger.log("🔎 Scanning... VS Score: \(score, format: .fixed(precision: 3))")
             }
@@ -120,7 +132,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             }
         }
 
-        logger.log("🎯 Result: Best Monster Score \(maxScore, format: .fixed(precision: 3))")
+        if maxScore > 0.7 {
+            logger.log("✅ Monster identified! Score: \(maxScore, format: .fixed(precision: 3))")
+        } else {
+            logger.log("❓ Monster unclear. Best Score: \(maxScore, format: .fixed(precision: 3))")
+        }
 
         isAnalyzing = false
         currentBurstImages.removeAll()

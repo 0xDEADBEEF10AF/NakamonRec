@@ -12,6 +12,7 @@
 		02BF309B2FB7A41F00A0BD95 /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02BF309A2FB7A41F00A0BD95 /* ReplayKit.framework */; };
 		02BF30A32FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 02BF30982FB7A41F00A0BD95 /* NakamonREC-ScreenCapture.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		02BF30AB2FB7A9CD00A0BD95 /* opencv2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02BF2F822FB7422A00A0BD95 /* opencv2.framework */; };
+		02E122C72FB8AB8200116A7A /* templates in Resources */ = {isa = PBXBuildFile; fileRef = 02BF30922FB7A03A00A0BD95 /* templates */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,8 +53,6 @@
 			membershipExceptions = (
 				NakamonAnalyzerCore.cpp,
 				NakamonWrapper.mm,
-				templates/VS_FM.png,
-				templates/VS_MG.png,
 			);
 			target = 02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */;
 		};
@@ -236,6 +235,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				02E122C72FB8AB8200116A7A /* templates in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
