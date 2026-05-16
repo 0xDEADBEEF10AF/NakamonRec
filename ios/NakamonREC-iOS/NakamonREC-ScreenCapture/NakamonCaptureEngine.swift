@@ -1,6 +1,7 @@
 import ReplayKit
 import VideoToolbox
 import OSLog
+import UserNotifications
 
 class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
@@ -9,56 +10,33 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private var lastProcessTime: TimeInterval = 0
     private let processInterval: TimeInterval = 0.5
 
-    // バースト解析用
+    // 状態管理
     private var isAnalyzing = false
-    private let burstCount = 5
-    private var currentBurstImages: [UIImage] = []
+    private var isBattleInProgress = false
 
-    // テンプレートキャッシュ
+    // テンプレート
     private var vsLogo: UIImage?
-    private var monsterTemplates: [UIImage] = []
+    private var winLogo: UIImage?
+    private var loseLogo: UIImage?
 
-    private var didCalibrate = false
-
-    // テンプレ作成時のスクリーン基準幅 (Pixel 10 Pro: 1080)
-    private let templateReferenceWidth: CGFloat = 1080
+    private let targetWidth: CGFloat = 1125
+    private let targetHeight: CGFloat = 2436
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
         logger.log("NakamonREC Engine: Starting...")
         loadTemplates()
+        sendLocalNotification(title: "NakamonREC 起動", body: "バトルの監視を開始しました。")
     }
 
     private func loadTemplates() {
         if let path = Bundle.main.path(forResource: "VS_FM", ofType: "png", inDirectory: "templates") {
             vsLogo = UIImage(contentsOfFile: path)
-            logger.log("✅ VS_FM.png loaded")
-        } else {
-            logger.error("❌ VS_FM.png NOT FOUND in Extension bundle")
         }
-        for i in 1...30 {
-            let name = String(format: "id%03d", i)
-            if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates"),
-               let img = UIImage(contentsOfFile: path) {
-                monsterTemplates.append(img)
-            }
+        if let path = Bundle.main.path(forResource: "WIN", ofType: "png", inDirectory: "templates") {
+            winLogo = UIImage(contentsOfFile: path)
         }
-        logger.log("Loaded \(self.monsterTemplates.count) monster templates")
-    }
-
-    /// 初回フレーム到着時、フレーム幅に合わせて全テンプレートを1回だけリサイズする
-    private func calibrateTemplates(forFrameWidth frameWidth: CGFloat) {
-        let scale = frameWidth / templateReferenceWidth
-        logger.log("Calibrating templates: frameWidth=\(Int(frameWidth)), scale=\(scale, format: .fixed(precision: 3))")
-
-        if let vs = vsLogo {
-            let newSize = CGSize(width: vs.size.width * scale, height: vs.size.height * scale)
-            vsLogo = resizeImage(vs, targetSize: newSize)
-            logger.log("VS template resized to \(Int(newSize.width))x\(Int(newSize.height))")
-        }
-
-        monsterTemplates = monsterTemplates.map { tpl in
-            let newSize = CGSize(width: tpl.size.width * scale, height: tpl.size.height * scale)
-            return resizeImage(tpl, targetSize: newSize)
+        if let path = Bundle.main.path(forResource: "LOSE", ofType: "png", inDirectory: "templates") {
+            loseLogo = UIImage(contentsOfFile: path)
         }
     }
 
@@ -70,76 +48,79 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     private func handleVideoSample(_ sampleBuffer: CMSampleBuffer) {
         let currentTime = CACurrentMediaTime()
-
-        // 解析中なら画像を蓄積 (バースト撮影)
-        if isAnalyzing {
-            if currentBurstImages.count < burstCount {
-                if let uiImage = sampleBufferToUIImage(sampleBuffer) {
-                    currentBurstImages.append(uiImage)
-                }
-                if currentBurstImages.count == burstCount {
-                    performDeepAnalysis()
-                }
-            }
-            return
-        }
-
-        // インターバル制限
         guard currentTime - lastProcessTime >= processInterval else { return }
         lastProcessTime = currentTime
 
         guard let uiImage = sampleBufferToUIImage(sampleBuffer) else { return }
+        let targetScene = resizeImage(uiImage, targetSize: CGSize(width: targetWidth, height: targetHeight))
 
-        // 初回のみ、フレーム幅に合わせて全テンプレートをリサイズ
-        if !didCalibrate {
-            didCalibrate = true
-            logger.log("Frame size: \(Int(uiImage.size.width))x\(Int(uiImage.size.height))")
-            calibrateTemplates(forFrameWidth: uiImage.size.width)
+        if !isBattleInProgress {
+            // --- 戦闘開始の監視 (VSロゴ) ---
+            if let vs = vsLogo {
+                let score = NakamonWrapper.performMatch(withScene: targetScene,
+                                                      templateImg: vs,
+                                                      centerX: Int32(targetWidth * 0.5),
+                                                      centerY: Int32(targetHeight * 0.23),
+                                                      verticalMargin: 120,
+                                                      horizontalMargin: 120)
+
+                if score > 0.85 {
+                    isBattleInProgress = true
+                    logger.log("✅ Battle Started!")
+                    sendLocalNotification(title: "バトル開始！", body: "対戦相手を検知しました。解析中...")
+                }
+            }
+        } else {
+            // --- 戦闘終了の監視 (WIN/LOSEロゴ) ---
+            checkBattleEnd(targetScene)
+        }
+    }
+
+    private func checkBattleEnd(_ scene: UIImage) {
+        // WIN判定
+        if let win = winLogo {
+            let score = NakamonWrapper.performMatch(withScene: scene,
+                                                  templateImg: win,
+                                                  centerX: Int32(targetWidth * 0.5),
+                                                  centerY: Int32(targetHeight * 0.25),
+                                                  verticalMargin: 150,
+                                                  horizontalMargin: 150)
+            if score > 0.8 {
+                isBattleInProgress = false
+                logger.log("🏆 Battle Won!")
+                sendLocalNotification(title: "バトル終了", body: "勝利しました！")
+                return
+            }
         }
 
-        // 1. VSロゴの検知 (スキャン) — シーンはネイティブサイズのまま
-        if let vs = vsLogo {
-            let centerX = Int32(uiImage.size.width * 0.5)
-            let centerY = Int32(uiImage.size.height * 0.23)
-
-            let score = NakamonWrapper.performMatch(withScene: uiImage,
-                                                  templateImg: vs,
-                                                  centerX: centerX,
-                                                  centerY: centerY,
-                                                  verticalMargin: 500,
-                                                  horizontalMargin: 200)
-
-            if score > 0.4 {
-                logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
-                isAnalyzing = true
-                currentBurstImages.removeAll()
-                currentBurstImages.append(uiImage)
-            } else if score > 0.1 {
-                logger.log("🔎 Scanning... VS Score: \(score, format: .fixed(precision: 3))")
+        // LOSE判定
+        if let lose = loseLogo {
+            let score = NakamonWrapper.performMatch(withScene: scene,
+                                                  templateImg: lose,
+                                                  centerX: Int32(targetWidth * 0.5),
+                                                  centerY: Int32(targetHeight * 0.25),
+                                                  verticalMargin: 150,
+                                                  horizontalMargin: 150)
+            if score > 0.8 {
+                isBattleInProgress = false
+                logger.log("💀 Battle Lost...")
+                sendLocalNotification(title: "バトル終了", body: "敗北しました。")
             }
         }
     }
 
-    private func performDeepAnalysis() {
-        logger.log("👾 Performing Deep Analysis on \(self.currentBurstImages.count) frames...")
+    private func sendLocalNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
 
-        var maxScore: Double = 0
-
-        for frame in currentBurstImages {
-            let score = NakamonWrapper.findBestMonsterMatch(frame, templates: monsterTemplates)
-            if score > maxScore {
-                maxScore = score
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                self.logger.error("Failed to send notification: \(error.localizedDescription)")
             }
         }
-
-        if maxScore > 0.7 {
-            logger.log("✅ Monster identified! Score: \(maxScore, format: .fixed(precision: 3))")
-        } else {
-            logger.log("❓ Monster unclear. Best Score: \(maxScore, format: .fixed(precision: 3))")
-        }
-
-        isAnalyzing = false
-        currentBurstImages.removeAll()
     }
 
     private func sampleBufferToUIImage(_ sampleBuffer: CMSampleBuffer) -> UIImage? {
@@ -157,17 +138,5 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
-    }
-
-    override func broadcastPaused() {
-        logger.log("NakamonREC: Broadcast Paused")
-    }
-
-    override func broadcastResumed() {
-        logger.log("NakamonREC: Broadcast Resumed")
-    }
-
-    override func broadcastFinished() {
-        logger.log("NakamonREC: Broadcast Finished")
     }
 }
