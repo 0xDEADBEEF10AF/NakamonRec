@@ -485,48 +485,61 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     private func checkBattleEnd(_ scene: UIImage) {
         if let win = winLogo {
+            let roi = calibrationConfig.winROI
+            let cx = Int32(scene.size.width * roi.centerXRatio)
+            let cy = Int32(scene.size.height * roi.centerYRatio)
+            let hMargin = Int32(scene.size.width * roi.searchHMarginRatio)
+            let vMargin = Int32(scene.size.height * roi.searchVMarginRatio)
             let score = NakamonWrapper.performMatch(withScene: scene,
                                                   templateImg: win,
-                                                  centerX: Int32(scene.size.width * 0.5),
-                                                  centerY: Int32(scene.size.height * 0.25),
-                                                  verticalMargin: 500,
-                                                  horizontalMargin: 200)
+                                                  centerX: cx,
+                                                  centerY: cy,
+                                                  verticalMargin: vMargin,
+                                                  horizontalMargin: hMargin)
             if score > 0.4 {
                 logger.log("🏆 Battle Won! (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "🏆 勝利検知 Score %.3f", score))
                 isBattleInProgress = false
-                saveResultSnapshot(scene: scene, template: win, label: "WIN", score: score)
+                saveResultSnapshot(scene: scene, template: win, label: "WIN", score: score,
+                                   cx: cx, cy: cy, hMargin: hMargin, vMargin: vMargin)
                 recordBattleResult(result: "WIN", score: score)
                 return
             }
         }
 
         if let lose = loseLogo {
+            let roi = calibrationConfig.loseROI
+            let cx = Int32(scene.size.width * roi.centerXRatio)
+            let cy = Int32(scene.size.height * roi.centerYRatio)
+            let hMargin = Int32(scene.size.width * roi.searchHMarginRatio)
+            let vMargin = Int32(scene.size.height * roi.searchVMarginRatio)
             let score = NakamonWrapper.performMatch(withScene: scene,
                                                   templateImg: lose,
-                                                  centerX: Int32(scene.size.width * 0.5),
-                                                  centerY: Int32(scene.size.height * 0.25),
-                                                  verticalMargin: 500,
-                                                  horizontalMargin: 200)
+                                                  centerX: cx,
+                                                  centerY: cy,
+                                                  verticalMargin: vMargin,
+                                                  horizontalMargin: hMargin)
             if score > 0.4 {
                 logger.log("💀 Battle Lost... (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "💀 敗北検知 Score %.3f", score))
                 isBattleInProgress = false
-                saveResultSnapshot(scene: scene, template: lose, label: "LOSE", score: score)
+                saveResultSnapshot(scene: scene, template: lose, label: "LOSE", score: score,
+                                   cx: cx, cy: cy, hMargin: hMargin, vMargin: vMargin)
                 recordBattleResult(result: "LOSE", score: score)
             }
         }
     }
 
     /// マッチングスコア詳細用に WIN/LOSE 検知時の ROI を result.png として保存し metadata 更新
-    private func saveResultSnapshot(scene: UIImage, template: UIImage, label: String, score: Double) {
+    private func saveResultSnapshot(scene: UIImage, template: UIImage, label: String, score: Double,
+                                    cx: Int32, cy: Int32, hMargin: Int32, vMargin: Int32) {
         let path = MatchingScoreSnapshot.path(forFile: "result.png")
         _ = NakamonWrapper.performMatchAndSave(withScene: scene,
                                                templateImg: template,
-                                               centerX: Int32(scene.size.width * 0.5),
-                                               centerY: Int32(scene.size.height * 0.25),
-                                               verticalMargin: 500,
-                                               horizontalMargin: 200,
+                                               centerX: cx,
+                                               centerY: cy,
+                                               verticalMargin: vMargin,
+                                               horizontalMargin: hMargin,
                                                savePath: path)
         MatchingScoreSnapshot.updateMetadata { meta in
             meta.resultLabel = label

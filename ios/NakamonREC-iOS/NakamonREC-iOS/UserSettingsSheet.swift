@@ -90,29 +90,20 @@ struct UserSettingsSheet: View {
     }
 
     private func calibrationRow(_ screen: CalibrationScreen) -> some View {
-        let supported = (screen == .partySelect || screen == .battlePrep)
-        return Button {
-            if supported { calibrationTarget = screen }
+        Button {
+            calibrationTarget = screen
         } label: {
             HStack {
                 Image(systemName: screen.iconName)
-                    .foregroundStyle(supported ? Color.recCoral : .gray)
+                    .foregroundStyle(Color.recCoral)
                     .frame(width: 28)
                 Text(screen.title)
                     .foregroundStyle(.white)
-                if !supported {
-                    Spacer()
-                    Text("(C3 で実装予定)")
-                        .font(.caption2)
-                        .foregroundStyle(.gray)
-                } else {
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.gray)
-                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.gray)
             }
         }
-        .disabled(!supported)
         .listRowBackground(Color.cardBackground)
     }
 }

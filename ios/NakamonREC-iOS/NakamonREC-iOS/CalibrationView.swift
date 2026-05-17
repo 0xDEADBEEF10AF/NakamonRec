@@ -313,9 +313,67 @@ struct CalibrationView: View {
         switch screen {
         case .partySelect: runPartySelectAutoCal(scene: scene)
         case .battlePrep:  runBattlePrepAutoCal(scene: scene)
-        case .win, .lose:
-            statusMessage = "この画面の自動校正は C3 で実装予定です。"
+        case .win:         runResultAutoCal(scene: scene, kind: .win)
+        case .lose:        runResultAutoCal(scene: scene, kind: .lose)
         }
+    }
+
+    /// 勝利 / ざんねん画面用の自動校正。
+    /// アルゴリズム:
+    ///   1. BASE WIN.png または LOSE.png で findBestMatchLocation
+    ///   2. 最高スコア位置にロゴ ROI を移動
+    ///   3. クロップして 1080-ref に正規化 → WIN_custom.png または LOSE_custom.png
+    private func runResultAutoCal(scene: UIImage, kind: CustomTemplateKind) {
+        let baseName = (kind == .win) ? "WIN" : "LOSE"
+        guard let base = loadTemplate(baseName) else {
+            statusMessage = "BASE \(baseName).png が見つかりません。"
+            return
+        }
+        isAutoCalibrating = true
+        CustomTemplateStore.remove(kind)
+        hasCustomTemplate = false
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loc = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: base)
+            DispatchQueue.main.async {
+                handleResultAutoCalResult(matchLocation: loc, kind: kind, scene: scene)
+            }
+        }
+    }
+
+    private func handleResultAutoCalResult(matchLocation: NakamonMatchLocation,
+                                           kind: CustomTemplateKind,
+                                           scene: UIImage) {
+        defer { isAutoCalibrating = false }
+        guard matchLocation.score >= 0.4 else {
+            statusMessage = String(format: "%@ ロゴを検出できませんでした (最高スコア %.3f)",
+                                   (kind == .win ? "勝利" : "ざんねん"),
+                                   matchLocation.score)
+            return
+        }
+        let sceneW = Double(scene.size.width)
+        let sceneH = Double(scene.size.height)
+        let matchX = Double(matchLocation.centerX) / sceneW
+        let matchY = Double(matchLocation.centerY) / sceneH
+
+        let defaultROI = (kind == .win) ? CalibrationDefaults.winROI : CalibrationDefaults.loseROI
+        var updated = defaultROI
+        updated.centerXRatio = clamp(matchX, 0, 1)
+        updated.centerYRatio = clamp(matchY, 0, 1)
+        rois = [updated]
+
+        if let custom = generateCustomTemplate(scene: scene,
+                                               matchCenterXRatio: matchX,
+                                               matchCenterYRatio: matchY,
+                                               templateWidthRatio: defaultROI.widthRatio,
+                                               templateHeightRatio: defaultROI.heightRatio) {
+            CustomTemplateStore.save(custom, as: kind)
+            hasCustomTemplate = true
+        }
+
+        recomputeScores()
+        statusMessage = String(format: "自動校正完了 (スコア %.3f)\nこの位置で決定 を押すと保存されます。",
+                               matchLocation.score)
     }
 
     private func runPartySelectAutoCal(scene: UIImage) {
