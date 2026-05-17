@@ -90,7 +90,7 @@ struct UserSettingsSheet: View {
     }
 
     private func calibrationRow(_ screen: CalibrationScreen) -> some View {
-        let supported = (screen == .partySelect)
+        let supported = (screen == .partySelect || screen == .battlePrep)
         return Button {
             if supported { calibrationTarget = screen }
         } label: {
@@ -102,7 +102,7 @@ struct UserSettingsSheet: View {
                     .foregroundStyle(.white)
                 if !supported {
                     Spacer()
-                    Text("(C2/C3 で実装予定)")
+                    Text("(C3 で実装予定)")
                         .font(.caption2)
                         .foregroundStyle(.gray)
                 } else {

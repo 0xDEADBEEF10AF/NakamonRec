@@ -151,7 +151,8 @@ struct CalibrationView: View {
 
     private func scoreString(_ idx: Int) -> String {
         guard idx < scores.count else { return "—" }
-        return String(format: "%.3f", scores[idx])
+        let s = scores[idx]
+        return s < 0 ? "—" : String(format: "%.3f", s)
     }
 
     // MARK: - Layout helper
@@ -245,14 +246,23 @@ struct CalibrationView: View {
 
     /// 現在の ROI 位置で BASE テンプレマッチを実行し、各 ROI のライブスコアを更新
     private func recomputeScores() {
-        guard let scene = screenshotImage, let tpl = baseTemplate() else {
+        guard let scene = screenshotImage else {
             scores = Array(repeating: 0, count: rois.count)
             return
         }
         var newScores: [Double] = []
         let w = scene.size.width
         let h = scene.size.height
-        for roi in rois {
+        for (idx, roi) in rois.enumerated() {
+            // 対戦じゅんびのモンスタースロット (idx >= 1) は 126 体マッチが重いのでスキップ (— 表示)
+            if screen == .battlePrep && idx >= 1 {
+                newScores.append(-1)
+                continue
+            }
+            guard let tpl = baseTemplateForScore(roiIndex: idx) else {
+                newScores.append(0)
+                continue
+            }
             let cx = Int32(w * roi.centerXRatio)
             let cy = Int32(h * roi.centerYRatio)
             let hMargin = Int32(w * roi.searchHMarginRatio)
@@ -266,6 +276,11 @@ struct CalibrationView: View {
             newScores.append(s)
         }
         scores = newScores
+    }
+
+    /// 対戦じゅんびの VS ロゴだけ "VS_FM" を返す。それ以外は baseTemplate と同じ
+    private func baseTemplateForScore(roiIndex: Int) -> UIImage? {
+        baseTemplate()
     }
 
     private func baseTemplate() -> UIImage? {
@@ -291,14 +306,19 @@ struct CalibrationView: View {
     ///   3. Y で昇順ソートして P1/P2/P3 にそのまま割り当て
     ///   4. 最高スコア位置 (水色) で screenshot を切り出し、1080-ref サイズに正規化 → SELECT_custom.png
     private func runAutoCalibration() {
-        guard screen == .partySelect else {
-            statusMessage = "この画面の自動校正は C2/C3 で実装予定です。"
-            return
-        }
         guard let scene = screenshotImage else {
             statusMessage = "スクショが読み込めていません。"
             return
         }
+        switch screen {
+        case .partySelect: runPartySelectAutoCal(scene: scene)
+        case .battlePrep:  runBattlePrepAutoCal(scene: scene)
+        case .win, .lose:
+            statusMessage = "この画面の自動校正は C3 で実装予定です。"
+        }
+    }
+
+    private func runPartySelectAutoCal(scene: UIImage) {
         guard let baseSelect = baseTemplate() else {
             statusMessage = "BASE SELECT テンプレが見つかりません。"
             return
@@ -307,8 +327,6 @@ struct CalibrationView: View {
         CustomTemplateStore.remove(.select)
         hasCustomTemplate = false
 
-        // 上下の SELECT 同士は約 400px (1080-ref Y で 0.17 ぶん) 離れている。
-        // 抑制範囲はその半分以下、かつテンプレ自身の大きさより十分大きく取る
         let sceneW = scene.size.width
         let sceneH = scene.size.height
         let suppressHalfW = Int32(sceneW * 0.05)
@@ -325,6 +343,90 @@ struct CalibrationView: View {
                                             scene: scene)
             }
         }
+    }
+
+    /// 対戦じゅんび画面用の自動校正。
+    /// アルゴリズム:
+    ///   1. BASE VS_FM と VS_MG の両方で findBestMatchLocation
+    ///   2. 高スコア側を採用 (どちらの VS ロゴが映っているかを自動判別)
+    ///   3. VS の新位置のみ更新 + VS マッチ位置から VS_custom.png を生成
+    ///   4. モンスタースロット 8 個はデフォルト位置をそのまま維持
+    ///      → 既に iPhone 13 mini で 0.94+ スコアの実績があるため。
+    ///      機種固有のモンスター位置ズレが必要になったら per-slot 探索を C2.5 で実装する
+    private func runBattlePrepAutoCal(scene: UIImage) {
+        guard let vsFM = loadTemplate("VS_FM") else {
+            statusMessage = "BASE VS_FM テンプレが見つかりません。"
+            return
+        }
+        let vsMG = loadTemplate("VS_MG")
+        isAutoCalibrating = true
+        CustomTemplateStore.remove(.vs)
+        hasCustomTemplate = false
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFM)
+            var bestLoc = locFM
+            var bestTemplate: UIImage = vsFM
+            if let vsMG = vsMG {
+                let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMG)
+                if locMG.score > bestLoc.score {
+                    bestLoc = locMG
+                    bestTemplate = vsMG
+                }
+            }
+            DispatchQueue.main.async {
+                handleBattlePrepAutoCalResult(matchLocation: bestLoc,
+                                              matchedTemplate: bestTemplate,
+                                              scene: scene)
+            }
+        }
+    }
+
+    private func handleBattlePrepAutoCalResult(matchLocation: NakamonMatchLocation,
+                                               matchedTemplate: UIImage,
+                                               scene: UIImage) {
+        defer { isAutoCalibrating = false }
+        guard matchLocation.score >= 0.4 else {
+            statusMessage = String(format: "VS ロゴを検出できませんでした (最高スコア %.3f)", matchLocation.score)
+            return
+        }
+        let sceneW = Double(scene.size.width)
+        let sceneH = Double(scene.size.height)
+        let matchX = Double(matchLocation.centerX) / sceneW
+        let matchY = Double(matchLocation.centerY) / sceneH
+
+        // VS のみ位置を更新。モンスタースロット 8 個はデフォルトのまま維持
+        // (デフォルトは iPhone 13 mini 実機で 0.94+ スコア実績あり、シフトすると逆に精度が落ちる)
+        var newROIs: [CalibrationROI] = []
+        var newVS = CalibrationDefaults.battlePrepVSROI
+        newVS.centerXRatio = clamp(matchX, 0, 1)
+        newVS.centerYRatio = clamp(matchY, 0, 1)
+        newROIs.append(newVS)
+        newROIs.append(contentsOf: CalibrationDefaults.battlePrepMonsterROIs)
+        rois = newROIs
+
+        // VS カスタムテンプレを生成 (検出された VS の解像度を 1080-ref に正規化)
+        let defaultVS = CalibrationDefaults.battlePrepVSROI
+        if let custom = generateCustomTemplate(scene: scene,
+                                               matchCenterXRatio: matchX,
+                                               matchCenterYRatio: matchY,
+                                               templateWidthRatio: defaultVS.widthRatio,
+                                               templateHeightRatio: defaultVS.heightRatio) {
+            CustomTemplateStore.save(custom, as: .vs)
+            hasCustomTemplate = true
+        }
+
+        recomputeScores()
+        statusMessage = String(format: "自動校正完了 (VS スコア %.3f)\nVS 位置のみ更新しました。\nモンスター 8 スロットはデフォルト位置を維持しています。\nこの位置で決定 を押すと保存されます。",
+                               matchLocation.score)
+    }
+
+    /// 名前を指定して templates フォルダから BASE テンプレを取得
+    private func loadTemplate(_ name: String) -> UIImage? {
+        guard let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates") else {
+            return nil
+        }
+        return UIImage(contentsOfFile: path)
     }
 
     private func handleAutoCalibrationResult(locations: [NakamonMatchLocation],

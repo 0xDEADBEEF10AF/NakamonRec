@@ -77,8 +77,8 @@ public enum CalibrationDefaults {
         centerYRatio: 0.23,
         widthRatio:  242.0 / 1080.0,
         heightRatio: 148.0 / 2364.0,
-        searchHMarginRatio: 200.0 / 1080.0,
-        searchVMarginRatio: 500.0 / 2364.0
+        searchHMarginRatio: 100.0 / 1080.0,
+        searchVMarginRatio: 150.0 / 2364.0
     )
 
     // 対戦じゅんびの 8 モンスタースロット (NakamonCaptureEngine の slotConfigs と整合)
@@ -113,16 +113,16 @@ public enum CalibrationDefaults {
         centerYRatio: 0.25,
         widthRatio:  850.0 / 1080.0,
         heightRatio: 330.0 / 2364.0,
-        searchHMarginRatio: 200.0 / 1080.0,
-        searchVMarginRatio: 500.0 / 2364.0
+        searchHMarginRatio: 100.0 / 1080.0,
+        searchVMarginRatio: 150.0 / 2364.0
     )
     public static let loseROI = CalibrationROI(
         centerXRatio: 0.5,
         centerYRatio: 0.25,
         widthRatio:  780.0 / 1080.0,
         heightRatio: 190.0 / 2364.0,
-        searchHMarginRatio: 200.0 / 1080.0,
-        searchVMarginRatio: 500.0 / 2364.0
+        searchHMarginRatio: 100.0 / 1080.0,
+        searchVMarginRatio: 150.0 / 2364.0
     )
 
     public static let defaultConfig = CalibrationConfig(

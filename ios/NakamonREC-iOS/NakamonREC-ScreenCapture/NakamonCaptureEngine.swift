@@ -31,31 +31,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     /// 校正設定 (broadcastStarted 時に読み込み)
     private var calibrationConfig: CalibrationConfig = CalibrationDefaults.defaultConfig
 
-    // モンスター 8 スロットの位置 (1080×2364 リファレンスの比率)。Android DataModels.kt 由来
-    // 0..3 = myParty (画面下)、4..7 = enemy (画面上)
-    private struct SlotConfig {
-        let centerXRatio: Double
-        let centerYRatio: Double
-        let isEnemy: Bool
-    }
-    private let slotConfigs: [SlotConfig] = [
-        // myParty: y = 1560/2364 = 0.660 (Android 1635 から 75px 上にシフト。iOS では立ち絵が上寄り)
-        SlotConfig(centerXRatio: 196.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
-        SlotConfig(centerXRatio: 391.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
-        SlotConfig(centerXRatio: 585.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
-        SlotConfig(centerXRatio: 780.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
-        // enemy: y = 840/2364 = 0.355 (Android 915 から 75px 上にシフト)
-        SlotConfig(centerXRatio: 201.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true),
-        SlotConfig(centerXRatio: 396.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true),
-        SlotConfig(centerXRatio: 590.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true),
-        SlotConfig(centerXRatio: 785.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true)
-    ]
-    // 各スロット ROI のサイズ比率
-    // テンプレ 80x130 + 各辺 40px パディング (Android BattleAnalyzer.kt の wide 検索パス相当)。
-    // 旧値 280x380 では横方向にクロストーク (隣スロット中心 ±195px に届く) が発生。
-    // 横 160px → 隣スロット間隔 195px の 82% 内に収まり、適切な探索余地も維持する。
-    private let slotROIWidthRatio: Double = 160.0 / 1080.0     // ≈ 0.148 (was 0.259)
-    private let slotROIHeightRatio: Double = 210.0 / 2364.0    // ≈ 0.089 (was 0.161)
+    // モンスター 8 スロットの位置 + ROI サイズは CalibrationConfig.battlePrepMonsterROIs を使う。
+    // インデックス 0..3 = myParty (画面下)、4..7 = enemy (画面上)
+    private func isEnemySlot(_ slotIdx: Int) -> Bool { slotIdx >= 4 }
 
     private var didCalibrate = false
 
@@ -405,17 +383,17 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
         struct SlotBest { var score: Double = 0; var index: Int = -1; var bestFrame: Int = -1 }
-        var perSlot = Array(repeating: SlotBest(), count: slotConfigs.count)
+        let slotROIs = calibrationConfig.battlePrepMonsterROIs
+        var perSlot = Array(repeating: SlotBest(), count: slotROIs.count)
 
         for (frameIdx, frame) in frames.enumerated() {
             let w = frame.size.width
             let h = frame.size.height
-            let rw = Int32(w * slotROIWidthRatio)
-            let rh = Int32(h * slotROIHeightRatio)
-
-            for (slotIdx, config) in slotConfigs.enumerated() {
-                let cx = Int32(w * config.centerXRatio)
-                let cy = Int32(h * config.centerYRatio)
+            for (slotIdx, roi) in slotROIs.enumerated() {
+                let cx = Int32(w * roi.centerXRatio)
+                let cy = Int32(h * roi.centerYRatio)
+                let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
+                let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
                 let result = NakamonWrapper.bestMonster(inRegion: frame,
                                                         centerX: cx,
                                                         centerY: cy,
@@ -435,11 +413,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             let frame = frames[best.bestFrame]
             let w = frame.size.width
             let h = frame.size.height
-            let rw = Int32(w * slotROIWidthRatio)
-            let rh = Int32(h * slotROIHeightRatio)
-            let config = slotConfigs[slotIdx]
-            let cx = Int32(w * config.centerXRatio)
-            let cy = Int32(h * config.centerYRatio)
+            let roi = slotROIs[slotIdx]
+            let cx = Int32(w * roi.centerXRatio)
+            let cy = Int32(h * roi.centerYRatio)
+            let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
+            let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
             let path = MatchingScoreSnapshot.path(forFile: "slot_\(slotIdx).png")
             _ = NakamonWrapper.bestMonsterAndSave(inRegion: frame,
                                                   centerX: cx,
@@ -459,9 +437,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         var myPartyScores: [Double] = []
         var enemyPartyScores: [Double] = []
         for (slotIdx, best) in perSlot.enumerated() {
-            let config = slotConfigs[slotIdx]
-            let side = config.isEnemy ? "敵"  : "味方"
-            let withinSide = config.isEnemy ? slotIdx - 4 : slotIdx
+            let isEnemy = isEnemySlot(slotIdx)
+            let side = isEnemy ? "敵"  : "味方"
+            let withinSide = isEnemy ? slotIdx - 4 : slotIdx
             // スコアが 0.7 未満の場合は識別失敗扱い ("?") で保存
             let name: String
             if best.index >= 0 && best.index < monsterNames.count && best.score >= 0.7 {
@@ -469,7 +447,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             } else {
                 name = "?"
             }
-            if config.isEnemy {
+            if isEnemy {
                 enemyParty.append(name)
                 enemyPartyScores.append(best.score)
             } else {
