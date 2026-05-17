@@ -63,6 +63,28 @@ NS_ASSUME_NONNULL_BEGIN
                                       width:(int)width
                                      height:(int)height;
 
+/**
+ * performMatchWithScene と同じ。加えて検索 ROI を PNG として savePath に書き出す。
+ * マッチングスコア詳細画面用のサムネ生成に使う。
+ */
++ (double)performMatchAndSaveWithScene:(UIImage *)scene
+                            templateImg:(UIImage *)templateImg
+                                centerX:(int)centerX
+                                centerY:(int)centerY
+                         verticalMargin:(int)vMargin
+                       horizontalMargin:(int)hMargin
+                               savePath:(nullable NSString *)savePath;
+
+/**
+ * bestMonsterInRegion と同じ。加えて検索 ROI を PNG として savePath に書き出す。
+ */
++ (NakamonMatchResult *)bestMonsterAndSaveInRegion:(UIImage *)scene
+                                            centerX:(int)centerX
+                                            centerY:(int)centerY
+                                              width:(int)width
+                                             height:(int)height
+                                           savePath:(nullable NSString *)savePath;
+
 @end
 
 NS_ASSUME_NONNULL_END

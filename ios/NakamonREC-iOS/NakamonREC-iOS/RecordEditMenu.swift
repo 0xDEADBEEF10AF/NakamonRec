@@ -69,8 +69,6 @@ struct RecordEditMenu: View {
                     } label: {
                         rowLabel(systemIcon: "scope", title: "マッチングスコアを確認")
                     }
-                    .disabled(true)
-                    .opacity(0.4)
                 }
             }
             .listStyle(.insetGrouped)

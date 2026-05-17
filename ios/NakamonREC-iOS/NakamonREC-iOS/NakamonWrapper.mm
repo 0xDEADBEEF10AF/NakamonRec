@@ -121,6 +121,74 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                     centerY:(int)centerY
                                       width:(int)width
                                      height:(int)height {
+    return [self bestMonsterAndSaveInRegion:scene
+                                    centerX:centerX
+                                    centerY:centerY
+                                      width:width
+                                     height:height
+                                   savePath:nil];
+}
+
+/**
+ * cv::Mat (RGB) を PNG として savePath に書き出すヘルパー。
+ * savePath が nil の場合は何もしない。失敗してもサイレント (詳細画面は無いだけ)。
+ *
+ * 注: OpenCV iOS の MatToUIImage は CGColorSpaceCreateDeviceRGB を使い R,G,B 順の
+ *     バイト列をそのまま CGImage 化する。cvMatFromUIImage 側で既に RGB に変換済みなので
+ *     ここでは追加の色変換は不要。BGR に変換すると R↔B が入れ替わり、見た目が
+ *     "ネガポジ反転" のような色になる。
+ */
++ (void)saveMat:(const cv::Mat &)mat toPath:(NSString *)savePath {
+    if (!savePath || mat.empty()) return;
+    UIImage *img = MatToUIImage(mat);
+    if (!img) return;
+    NSData *png = UIImagePNGRepresentation(img);
+    if (!png) return;
+    [png writeToFile:savePath atomically:YES];
+}
+
++ (double)performMatchAndSaveWithScene:(UIImage *)scene
+                            templateImg:(UIImage *)templateImg
+                                centerX:(int)centerX
+                                centerY:(int)centerY
+                         verticalMargin:(int)vMargin
+                       horizontalMargin:(int)hMargin
+                               savePath:(NSString *)savePath {
+
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    cv::Mat tplMat = [self cvMatFromUIImage:templateImg];
+
+    // C++ 側と同じロジックで ROI を切り出して保存する
+    if (savePath && !sceneMat.empty() && !tplMat.empty()) {
+        int imgW = sceneMat.cols;
+        int imgH = sceneMat.rows;
+        if (tplMat.cols <= imgW && tplMat.rows <= imgH) {
+            int roiW = std::min(tplMat.cols + hMargin * 2, imgW);
+            int roiH = std::min(tplMat.rows + vMargin * 2, imgH);
+            int left = std::max(0, std::min(centerX - roiW / 2, imgW - roiW));
+            int top  = std::max(0, std::min(centerY - roiH / 2, imgH - roiH));
+            cv::Rect roiRect(left, top, roiW, roiH);
+            if ((roiRect.x + roiRect.width) <= imgW &&
+                (roiRect.y + roiRect.height) <= imgH) {
+                cv::Mat roi;
+                sceneMat(roiRect).copyTo(roi);
+                [self saveMat:roi toPath:savePath];
+            }
+        }
+    }
+
+    double score = Nakamon::NakamonAnalyzerCore::performColorMatch(
+        sceneMat, tplMat, centerX, centerY, vMargin, hMargin
+    );
+    return score;
+}
+
++ (NakamonMatchResult *)bestMonsterAndSaveInRegion:(UIImage *)scene
+                                            centerX:(int)centerX
+                                            centerY:(int)centerY
+                                              width:(int)width
+                                             height:(int)height
+                                           savePath:(NSString *)savePath {
     if (gCachedMonsterTemplates.empty()) {
         return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
     }
@@ -135,6 +203,11 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
     cv::Rect roiRect(left, top, w, h);
     cv::Mat workRoi;
     sceneMat(roiRect).copyTo(workRoi);
+
+    // 正規化 *前* のオリジナル ROI を保存 (人が見たときに自然な色味)
+    if (savePath) {
+        [self saveMat:workRoi toPath:savePath];
+    }
 
     Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
     Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(workRoi, gCachedMonsterTemplates);

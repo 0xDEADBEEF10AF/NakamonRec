@@ -84,6 +84,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         logger.log("NakamonREC Engine: Starting...")
         BattleLogger.rotate()
         BattleLogger.append("Extension起動")
+        BroadcastStatus.setActive(true)
         loadTemplates()
     }
 
@@ -238,6 +239,38 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             let partyNumber = bestIndex + 1
             logger.log("Party P[\(partyNumber)] selected (Score: \(bestScore, format: .fixed(precision: 3)))")
             BattleLogger.append(String(format: "パーティ選択検知 P[%d] Score %.3f", partyNumber, bestScore))
+
+            // マッチングスコア詳細用に p0/p1/p2 の ROI を保存し直す
+            saveMatchingScorePartySnapshots(scene: scene, select: select,
+                                            partyCentersY: partyCentersY,
+                                            centerXRatio: centerXRatio,
+                                            hMargin: hMargin, vMargin: vMargin,
+                                            scores: allScores)
+        }
+    }
+
+    /// パーティ選択 3 box ぶんの ROI を p0/p1/p2.png として書き出し、metadata の partyScores を更新する
+    private func saveMatchingScorePartySnapshots(scene: UIImage,
+                                                 select: UIImage,
+                                                 partyCentersY: [Double],
+                                                 centerXRatio: Double,
+                                                 hMargin: Int32, vMargin: Int32,
+                                                 scores: [Double]) {
+        let w = scene.size.width
+        let h = scene.size.height
+        let cx = Int32(w * centerXRatio)
+        for (i, cy) in partyCentersY.enumerated() {
+            let path = MatchingScoreSnapshot.path(forFile: "p\(i).png")
+            _ = NakamonWrapper.performMatchAndSave(withScene: scene,
+                                                   templateImg: select,
+                                                   centerX: cx,
+                                                   centerY: Int32(h * cy),
+                                                   verticalMargin: vMargin,
+                                                   horizontalMargin: hMargin,
+                                                   savePath: path)
+        }
+        MatchingScoreSnapshot.updateMetadata { meta in
+            meta.partyScores = scores
         }
     }
 
@@ -263,13 +296,39 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             currentBurstImages.removeAll()
             currentBurstImages.append(scene)
 
+            let startedAt = Date()
+
             // BattleRecord 用に進行中バトルを初期化
             pendingLock.lock()
-            pending = PendingBattle(startedAt: Date(),
+            pending = PendingBattle(startedAt: startedAt,
                                     vsScore: score,
                                     partyIndex: lastDetectedPartyIndex,
                                     partySelectScores: lastPartySelectScores)
             pendingLock.unlock()
+
+            // マッチングスコア詳細: 古い vs/slot/result サムネをクリアし、新しい vs.png を保存
+            MatchingScoreSnapshot.clearBattleArtifacts()
+            let vsPath = MatchingScoreSnapshot.path(forFile: "vs.png")
+            _ = NakamonWrapper.performMatchAndSave(withScene: scene,
+                                                   templateImg: vs,
+                                                   centerX: Int32(scene.size.width * 0.5),
+                                                   centerY: Int32(scene.size.height * 0.23),
+                                                   verticalMargin: 500,
+                                                   horizontalMargin: 200,
+                                                   savePath: vsPath)
+            let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
+            MatchingScoreSnapshot.updateMetadata { meta in
+                meta.battleTimestamp = ts
+                meta.vsScore = score
+                meta.partyScores = self.lastPartySelectScores.isEmpty ? meta.partyScores : self.lastPartySelectScores
+                // 戦闘ごとにリセット
+                meta.myPartyScores = nil
+                meta.enemyPartyScores = nil
+                meta.myPartyNames = nil
+                meta.enemyPartyNames = nil
+                meta.resultLabel = nil
+                meta.resultScore = nil
+            }
 
             // 次の戦闘でも検知ログが出るようリセット
             lastDetectedPartyIndex = -1
@@ -288,10 +347,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         BattleLogger.append("モンスター解析開始 (\(frames.count)枚 × 8スロット)")
 
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
-        struct SlotBest { var score: Double = 0; var index: Int = -1 }
+        struct SlotBest { var score: Double = 0; var index: Int = -1; var bestFrame: Int = -1 }
         var perSlot = Array(repeating: SlotBest(), count: slotConfigs.count)
 
-        for frame in frames {
+        for (frameIdx, frame) in frames.enumerated() {
             let w = frame.size.width
             let h = frame.size.height
             let rw = Int32(w * slotROIWidthRatio)
@@ -308,8 +367,29 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 if result.score > perSlot[slotIdx].score {
                     perSlot[slotIdx].score = result.score
                     perSlot[slotIdx].index = result.index
+                    perSlot[slotIdx].bestFrame = frameIdx
                 }
             }
+        }
+
+        // マッチングスコア詳細用: 各スロットの最良フレームから ROI を切り出して slot_<i>.png を書き出す
+        for (slotIdx, best) in perSlot.enumerated() {
+            guard best.bestFrame >= 0 && best.bestFrame < frames.count else { continue }
+            let frame = frames[best.bestFrame]
+            let w = frame.size.width
+            let h = frame.size.height
+            let rw = Int32(w * slotROIWidthRatio)
+            let rh = Int32(h * slotROIHeightRatio)
+            let config = slotConfigs[slotIdx]
+            let cx = Int32(w * config.centerXRatio)
+            let cy = Int32(h * config.centerYRatio)
+            let path = MatchingScoreSnapshot.path(forFile: "slot_\(slotIdx).png")
+            _ = NakamonWrapper.bestMonsterAndSave(inRegion: frame,
+                                                  centerX: cx,
+                                                  centerY: cy,
+                                                  width: rw,
+                                                  height: rh,
+                                                  savePath: path)
         }
 
         let elapsed = Date().timeIntervalSince(startedAt)
@@ -352,6 +432,15 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         pending?.enemyPartyScores = enemyPartyScores
         let readyToFinalize = pending?.result != nil && pending?.myParty != nil
         pendingLock.unlock()
+
+        // マッチングスコア詳細メタデータ更新
+        MatchingScoreSnapshot.updateMetadata { meta in
+            meta.myPartyNames = myParty
+            meta.enemyPartyNames = enemyParty
+            meta.myPartyScores = myPartyScores
+            meta.enemyPartyScores = enemyPartyScores
+        }
+
         if readyToFinalize {
             finalizePendingBattle()
         }
@@ -371,6 +460,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 logger.log("🏆 Battle Won! (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "🏆 勝利検知 Score %.3f", score))
                 isBattleInProgress = false
+                saveResultSnapshot(scene: scene, template: win, label: "WIN", score: score)
                 recordBattleResult(result: "WIN", score: score)
                 return
             }
@@ -387,8 +477,25 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 logger.log("💀 Battle Lost... (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "💀 敗北検知 Score %.3f", score))
                 isBattleInProgress = false
+                saveResultSnapshot(scene: scene, template: lose, label: "LOSE", score: score)
                 recordBattleResult(result: "LOSE", score: score)
             }
+        }
+    }
+
+    /// マッチングスコア詳細用に WIN/LOSE 検知時の ROI を result.png として保存し metadata 更新
+    private func saveResultSnapshot(scene: UIImage, template: UIImage, label: String, score: Double) {
+        let path = MatchingScoreSnapshot.path(forFile: "result.png")
+        _ = NakamonWrapper.performMatchAndSave(withScene: scene,
+                                               templateImg: template,
+                                               centerX: Int32(scene.size.width * 0.5),
+                                               centerY: Int32(scene.size.height * 0.25),
+                                               verticalMargin: 500,
+                                               horizontalMargin: 200,
+                                               savePath: path)
+        MatchingScoreSnapshot.updateMetadata { meta in
+            meta.resultLabel = label
+            meta.resultScore = score
         }
     }
 
@@ -476,6 +583,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     override func broadcastFinished() {
         logger.log("NakamonREC: Broadcast Finished")
         BattleLogger.append("ブロードキャスト終了")
+        BroadcastStatus.setActive(false)
         // Android 同様、戦闘終了 (WIN/LOSE) を検知していない進行中バトルは破棄
         pendingLock.lock()
         if pending != nil {

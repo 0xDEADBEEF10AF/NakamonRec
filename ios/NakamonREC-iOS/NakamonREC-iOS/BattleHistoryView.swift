@@ -49,6 +49,7 @@ struct BattleHistoryView: View {
     @State private var mode: BattleHistoryMode = .edit
     @State private var editingRecord: BattleRecord? = nil
     @State private var editingMonstersFor: BattleRecord? = nil
+    @State private var matchingScoreFor: BattleRecord? = nil
     @Environment(\.dismiss) private var dismiss
 
     /// フィルタ後の records (古い順)
@@ -115,7 +116,7 @@ struct BattleHistoryView: View {
                     editingMonstersFor = record
                 },
                 onShowMatchingScore: {
-                    // Phase 7 で実装
+                    matchingScoreFor = record
                 }
             )
             .presentationDetents([.medium, .large])
@@ -125,6 +126,9 @@ struct BattleHistoryView: View {
                 BattleHistoryStore.shared.updateRecord(updated)
                 reload()
             }
+        }
+        .sheet(item: $matchingScoreFor) { record in
+            MatchingScoreDetailView(record: record)
         }
     }
 

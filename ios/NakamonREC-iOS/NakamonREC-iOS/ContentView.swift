@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showDebugMenu = false
     @State private var nakamonRotation: Double = 180   // 起動時はアプリアイコンと同じ「NAKAMON が下」の状態。180° → 0° まで反時計回りに半周して着地
     @State private var hasAnimatedLogo: Bool = false
+    @State private var isBroadcasting: Bool = BroadcastStatus.isActive
 
     private var totalWins: Int { history.totalWins }
     private var totalLosses: Int { history.totalLosses }
@@ -58,6 +59,21 @@ struct ContentView: View {
             .onAppear {
                 reloadHistory()
                 playLogoIntroIfNeeded()
+                isBroadcasting = BroadcastStatus.isActive
+            }
+            .task {
+                // Extension からの放送状態を 0.5 秒ごとに polling。
+                // SwiftUI の .task は view が消えると自動でキャンセルされる
+                while !Task.isCancelled {
+                    let active = BroadcastStatus.isActive
+                    if active != isBroadcasting {
+                        isBroadcasting = active
+                        if !active {
+                            reloadHistory()
+                        }
+                    }
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
             }
         }
         .sheet(isPresented: $showDebugMenu) {
@@ -151,7 +167,7 @@ struct ContentView: View {
             )
             .rotationEffect(.degrees(nakamonRotation))
 
-            BroadcastButton()
+            BroadcastButton(isBroadcasting: isBroadcasting)
                 .frame(width: 175, height: 175)
         }
         .frame(maxWidth: .infinity)
@@ -232,9 +248,23 @@ struct CurvedText: View {
     }
 }
 
-// MARK: - Broadcast button (大型コーラル円形)
+// MARK: - Broadcast button (REC / STOP トグル)
 
+/// Android 版と同じ挙動: 録画中は STOP (水色) に切り替わり、タップで放送停止を Extension に要求する。
 struct BroadcastButton: UIViewRepresentable {
+    /// 現在放送中か。true なら STOP 表示、false なら REC 表示
+    var isBroadcasting: Bool
+
+    // REC (放送開始前) のカラー
+    private static let recFill = UIColor(red: 0xF0/255.0, green: 0x91/255.0, blue: 0x99/255.0, alpha: 1.0) // #F09199
+    private static let recText = UIColor(red: 1.0, green: 0.90, blue: 0.92, alpha: 1.0)                  // 薄ピンク
+    private static let recBorder = UIColor(red: 1.0, green: 0.90, blue: 0.92, alpha: 0.6).cgColor
+
+    // STOP (放送中) のカラー
+    private static let stopFill = UIColor(red: 0x90/255.0, green: 0xD7/255.0, blue: 0xEC/255.0, alpha: 1.0) // #90D7EC
+    private static let stopText = UIColor(red: 0.90, green: 0.98, blue: 1.0, alpha: 1.0)                   // 薄水色
+    private static let stopBorder = UIColor(red: 0.90, green: 0.98, blue: 1.0, alpha: 0.6).cgColor
+
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
         container.backgroundColor = .clear
@@ -247,35 +277,35 @@ struct BroadcastButton: UIViewRepresentable {
         picker.isHidden = true
         container.addSubview(picker)
 
-        // 見た目用の REC ボタン (前面に表示しタップを受ける)
-        let recButton = UIButton(type: .system)
-        recButton.translatesAutoresizingMaskIntoConstraints = false
-        recButton.setTitle("REC", for: .normal)
-        recButton.titleLabel?.font = .systemFont(ofSize: 28, weight: .bold)
-        recButton.setTitleColor(.white, for: .normal)
-        recButton.backgroundColor = UIColor(red: 0xF0/255.0, green: 0x91/255.0, blue: 0x99/255.0, alpha: 1.0)
-        recButton.layer.borderWidth = 4
-        recButton.layer.borderColor = UIColor(red: 1, green: 0.9, blue: 0.9, alpha: 0.6).cgColor
-        container.addSubview(recButton)
+        // 見た目用ボタン (前面に表示しタップを受ける)
+        let button = UIButton(type: .custom)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.titleLabel?.font = .systemFont(ofSize: 28, weight: .bold)
+        button.layer.borderWidth = 4
+        container.addSubview(button)
 
         NSLayoutConstraint.activate([
-            recButton.topAnchor.constraint(equalTo: container.topAnchor),
-            recButton.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            recButton.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            recButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            button.topAnchor.constraint(equalTo: container.topAnchor),
+            button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
 
         context.coordinator.picker = picker
-        context.coordinator.recButton = recButton
-        recButton.addTarget(context.coordinator,
-                            action: #selector(Coordinator.tap),
-                            for: .touchUpInside)
+        context.coordinator.button = button
+        button.addTarget(context.coordinator,
+                         action: #selector(Coordinator.tap),
+                         for: .touchUpInside)
 
+        applyAppearance(to: button, isBroadcasting: isBroadcasting)
+        context.coordinator.isBroadcasting = isBroadcasting
         return container
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        if let btn = context.coordinator.recButton {
+        context.coordinator.isBroadcasting = isBroadcasting
+        if let btn = context.coordinator.button {
+            applyAppearance(to: btn, isBroadcasting: isBroadcasting)
             // 円形に保つため、レイアウト後にコーナーラディウスを調整
             DispatchQueue.main.async {
                 btn.layer.cornerRadius = min(btn.bounds.width, btn.bounds.height) / 2
@@ -283,14 +313,34 @@ struct BroadcastButton: UIViewRepresentable {
         }
     }
 
+    private func applyAppearance(to button: UIButton, isBroadcasting: Bool) {
+        if isBroadcasting {
+            button.setTitle("STOP", for: .normal)
+            button.setTitleColor(Self.stopText, for: .normal)
+            button.backgroundColor = Self.stopFill
+            button.layer.borderColor = Self.stopBorder
+        } else {
+            button.setTitle("REC", for: .normal)
+            button.setTitleColor(Self.recText, for: .normal)
+            button.backgroundColor = Self.recFill
+            button.layer.borderColor = Self.recBorder
+        }
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject {
         weak var picker: RPSystemBroadcastPickerView?
-        weak var recButton: UIButton?
+        weak var button: UIButton?
+        var isBroadcasting: Bool = false
 
         @objc func tap() {
-            logger.log("REC button tapped")
+            // REC / STOP のいずれも RPSystemBroadcastPickerView を起動するだけ。
+            // ピッカーは iOS 側が放送中か否かを判定して、「ブロードキャストを開始」
+            // または「ブロードキャストを停止」シートを自動で出し分けてくれる。
+            // (Extension 側で finishBroadcastWithError: を呼ばないので、
+            // 「次の理由により停止しました」ダイアログも出ない。)
+            logger.log("\(self.isBroadcasting ? "STOP" : "REC") tapped → open system sheet")
             guard let picker else { return }
             if let innerButton = findButton(in: picker) {
                 innerButton.sendActions(for: .touchUpInside)
