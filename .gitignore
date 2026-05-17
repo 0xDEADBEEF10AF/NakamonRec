@@ -25,3 +25,4 @@ apks/
 !app/src/main/res/**/*.png
 !app/src/main/assets/**/*.png
 !ios/**/templates/*.png
+!ios/**/AppIcon.appiconset/*.png
