@@ -39,6 +39,13 @@ struct ContentView: View {
                 Spacer()
 
                 NavigationLink {
+                    BattleHistoryView()
+                } label: {
+                    Label("戦績履歴", systemImage: "chart.line.uptrend.xyaxis")
+                        .font(.footnote)
+                }
+
+                NavigationLink {
                     BattleLogViewerView()
                 } label: {
                     Label("直近の解析ログ", systemImage: "doc.text.magnifyingglass")

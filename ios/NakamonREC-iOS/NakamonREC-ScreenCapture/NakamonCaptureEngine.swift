@@ -56,6 +56,26 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     // 直近検知済みのパーティインデックス (1〜3)。再ログを抑制するため
     private var lastDetectedPartyIndex: Int = -1
+    // 直近のパーティ選択 3 box ぶんスコア (BattleRecord 用)
+    private var lastPartySelectScores: [Double] = []
+
+    // 現在進行中の戦闘の集計中データ。WIN/LOSE 確定 + モンスター解析完了で finalize → JSON 保存
+    private struct PendingBattle {
+        var startedAt: Date
+        var vsScore: Double
+        var partyIndex: Int
+        var partySelectScores: [Double]
+        // モンスター解析が非同期で後から入る
+        var myParty: [String]? = nil
+        var enemyParty: [String]? = nil
+        var myPartyScores: [Double]? = nil
+        var enemyPartyScores: [Double]? = nil
+        // 戦闘終了情報
+        var result: String? = nil          // "WIN" / "LOSE"
+        var resultScore: Double? = nil
+    }
+    private var pending: PendingBattle?
+    private let pendingLock = NSLock()
 
     // テンプレ作成時のスクリーン基準幅 (Pixel 10 Pro: 1080)
     private let templateReferenceWidth: CGFloat = 1080
@@ -197,6 +217,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
         var bestScore: Double = 0
         var bestIndex: Int = -1
+        var allScores: [Double] = []
         for (i, cy) in partyCentersY.enumerated() {
             let score = NakamonWrapper.performMatch(withScene: scene,
                                                   templateImg: select,
@@ -204,11 +225,13 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                   centerY: Int32(h * cy),
                                                   verticalMargin: vMargin,
                                                   horizontalMargin: hMargin)
+            allScores.append(score)
             if score > bestScore {
                 bestScore = score
                 bestIndex = i
             }
         }
+        lastPartySelectScores = allScores
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
             lastDetectedPartyIndex = bestIndex
@@ -239,6 +262,15 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             isAnalyzing = true
             currentBurstImages.removeAll()
             currentBurstImages.append(scene)
+
+            // BattleRecord 用に進行中バトルを初期化
+            pendingLock.lock()
+            pending = PendingBattle(startedAt: Date(),
+                                    vsScore: score,
+                                    partyIndex: lastDetectedPartyIndex,
+                                    partySelectScores: lastPartySelectScores)
+            pendingLock.unlock()
+
             // 次の戦闘でも検知ログが出るようリセット
             lastDetectedPartyIndex = -1
         } else if score > 0.1 {
@@ -284,20 +316,44 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s")
         BattleLogger.append(String(format: "モンスター解析完了 (%.2fs)", elapsed))
 
-        // 結果を 8 行で書き出す
+        // 結果を 8 行で書き出す + pending に格納
+        var myParty: [String] = []
+        var enemyParty: [String] = []
+        var myPartyScores: [Double] = []
+        var enemyPartyScores: [Double] = []
         for (slotIdx, best) in perSlot.enumerated() {
             let config = slotConfigs[slotIdx]
             let side = config.isEnemy ? "敵"  : "味方"
             let withinSide = config.isEnemy ? slotIdx - 4 : slotIdx
+            // スコアが 0.7 未満の場合は識別失敗扱い ("?") で保存
             let name: String
-            if best.index >= 0 && best.index < monsterNames.count {
+            if best.index >= 0 && best.index < monsterNames.count && best.score >= 0.7 {
                 name = monsterNames[best.index]
             } else {
-                name = "(不明)"
+                name = "?"
+            }
+            if config.isEnemy {
+                enemyParty.append(name)
+                enemyPartyScores.append(best.score)
+            } else {
+                myParty.append(name)
+                myPartyScores.append(best.score)
             }
             let marker = best.score >= 0.7 ? "✅" : "❓"
             BattleLogger.append(String(format: "%@ %@[%d] %@ Score %.3f",
                                        marker, side, withinSide, name, best.score))
+        }
+
+        // pending に格納し、戦闘終了が既に来ていれば finalize
+        pendingLock.lock()
+        pending?.myParty = myParty
+        pending?.enemyParty = enemyParty
+        pending?.myPartyScores = myPartyScores
+        pending?.enemyPartyScores = enemyPartyScores
+        let readyToFinalize = pending?.result != nil && pending?.myParty != nil
+        pendingLock.unlock()
+        if readyToFinalize {
+            finalizePendingBattle()
         }
     }
 
@@ -315,6 +371,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 logger.log("🏆 Battle Won! (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "🏆 勝利検知 Score %.3f", score))
                 isBattleInProgress = false
+                recordBattleResult(result: "WIN", score: score)
                 return
             }
         }
@@ -330,8 +387,56 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 logger.log("💀 Battle Lost... (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "💀 敗北検知 Score %.3f", score))
                 isBattleInProgress = false
+                recordBattleResult(result: "LOSE", score: score)
             }
         }
+    }
+
+    // MARK: - BattleRecord finalization
+
+    private func recordBattleResult(result: String, score: Double) {
+        pendingLock.lock()
+        pending?.result = result
+        pending?.resultScore = score
+        let readyToFinalize = pending?.myParty != nil
+        pendingLock.unlock()
+        if readyToFinalize {
+            finalizePendingBattle()
+        }
+    }
+
+    /// pending を BattleRecord に変換して JSON に永続化。完了後 pending をクリア
+    private func finalizePendingBattle() {
+        pendingLock.lock()
+        guard let p = pending,
+              let myParty = p.myParty,
+              let enemyParty = p.enemyParty,
+              let result = p.result,
+              let resultScore = p.resultScore else {
+            pendingLock.unlock()
+            return
+        }
+        pending = nil
+        pendingLock.unlock()
+
+        let record = BattleRecord(
+            timestamp: BattleTimestampFormatter.formatter.string(from: p.startedAt),
+            result: result,
+            partyIndex: p.partyIndex,
+            myParty: myParty,
+            enemyParty: enemyParty,
+            vsScore: p.vsScore,
+            myPartyScores: p.myPartyScores,
+            enemyPartyScores: p.enemyPartyScores,
+            resultScore: resultScore,
+            partySelectScores: p.partySelectScores
+        )
+        BattleHistoryStore.shared.append(record)
+        BattleLogger.append(String(format: "📝 戦績記録: %@ P[%d] 味方=%@ vs 敵=%@",
+                                   result,
+                                   p.partyIndex + 1,
+                                   myParty.joined(separator: ","),
+                                   enemyParty.joined(separator: ",")))
     }
 
     // MARK: - Helpers
@@ -371,5 +476,15 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     override func broadcastFinished() {
         logger.log("NakamonREC: Broadcast Finished")
         BattleLogger.append("ブロードキャスト終了")
+        // Android 同様、戦闘終了 (WIN/LOSE) を検知していない進行中バトルは破棄
+        pendingLock.lock()
+        if pending != nil {
+            BattleLogger.append("⚠️ 進行中バトルを破棄 (WIN/LOSE 未検知のためレコード化せず)")
+            pending = nil
+        }
+        pendingLock.unlock()
+        isBattleInProgress = false
+        isAnalyzing = false
+        currentBurstImages.removeAll()
     }
 }
