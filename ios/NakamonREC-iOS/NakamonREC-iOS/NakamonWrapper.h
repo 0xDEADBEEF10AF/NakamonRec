@@ -23,6 +23,28 @@ NS_ASSUME_NONNULL_BEGIN
 + (double)findBestMonsterMatch:(UIImage *)roi
                      templates:(NSArray<UIImage *> *)templates;
 
+/**
+ * モンスターテンプレートを cv::Mat に変換してプロセス内キャッシュに保持する。
+ * 初期化 (calibrate) 直後に 1 回だけ呼ぶことで、以降のマッチ呼び出しで再変換を不要にする。
+ */
++ (void)cacheMonsterTemplates:(NSArray<UIImage *> *)templates;
+
+/**
+ * cacheMonsterTemplates: で保持されたキャッシュを使ってマッチングを行う。
+ * UIImage → cv::Mat 変換コストが 1 フレームぶん (ROI のみ) に圧縮される。
+ */
++ (double)findBestMonsterMatchUsingCache:(UIImage *)roi;
+
+/**
+ * 指定領域 (center + width + height) だけを切り出してキャッシュ済みテンプレでマッチング。
+ * 全画面検索ではなく敵モンスター行などの小領域に絞ることで matchTemplate のコストを大幅削減する。
+ */
++ (double)findBestMonsterMatchInRegion:(UIImage *)scene
+                               centerX:(int)centerX
+                               centerY:(int)centerY
+                                 width:(int)width
+                                height:(int)height;
+
 @end
 
 NS_ASSUME_NONNULL_END

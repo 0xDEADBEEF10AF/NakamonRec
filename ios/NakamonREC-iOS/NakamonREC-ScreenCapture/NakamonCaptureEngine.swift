@@ -82,6 +82,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         winLogo = winLogo.map { resizeImage($0, scale: scale) }
         loseLogo = loseLogo.map { resizeImage($0, scale: scale) }
         monsterTemplates = monsterTemplates.map { resizeImage($0, scale: scale) }
+
+        // C++ 側にもモンスターテンプレを cv::Mat で 1 回だけ変換してキャッシュ
+        NakamonWrapper.cacheMonsterTemplates(monsterTemplates)
+        BattleLogger.append("モンスターテンプレ cv::Mat キャッシュ完了")
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleType: RPSampleBufferType) {
@@ -158,25 +162,53 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // MARK: - Monster Identification (バースト解析)
 
     /// バックグラウンドキューで実行される重い解析処理
+    /// Android 版の `enemyPartyBoxes` (y=0.387) と `myPartyBoxes` (y=0.692) の 2 領域でマッチング
     private func performDeepAnalysis(frames: [UIImage]) {
+        let startedAt = Date()
         logger.log("👾 Performing Deep Analysis on \(frames.count) frames...")
         BattleLogger.append("モンスター解析開始 (\(frames.count)枚)")
-        let templates = monsterTemplates // calibrate 後は不変なのでスレッド間で安全に参照可
 
-        var maxScore: Double = 0
+        // Android DataModels.kt 基準: 1080×2364 reference
+        //   enemy x:161〜825 (centerX 493/1080=0.456, 横幅 0.63), y center 915/2364=0.387
+        //   myParty 同じ x 範囲、y center 1635/2364=0.692
+        //   いずれも幅 0.63 / 縦 0.093 (テンプレ縦 130 + 余裕)
+        let regionWidthRatio: Double = 0.63
+        let regionHeightRatio: Double = 0.093
+        let enemyCenterYRatio: Double = 0.387
+        let myCenterYRatio: Double = 0.692
+        let centerXRatio: Double = 0.456
+
+        var bestEnemyScore: Double = 0
+        var bestMyScore: Double = 0
         for frame in frames {
-            let score = NakamonWrapper.findBestMonsterMatch(frame, templates: templates)
-            if score > maxScore {
-                maxScore = score
-            }
+            let w = frame.size.width
+            let h = frame.size.height
+            let cx = Int32(w * centerXRatio)
+            let rw = Int32(w * regionWidthRatio)
+            let rh = Int32(h * regionHeightRatio)
+
+            let eScore = NakamonWrapper.findBestMonsterMatch(inRegion: frame,
+                                                             centerX: cx,
+                                                             centerY: Int32(h * enemyCenterYRatio),
+                                                             width: rw,
+                                                             height: rh)
+            if eScore > bestEnemyScore { bestEnemyScore = eScore }
+
+            let mScore = NakamonWrapper.findBestMonsterMatch(inRegion: frame,
+                                                             centerX: cx,
+                                                             centerY: Int32(h * myCenterYRatio),
+                                                             width: rw,
+                                                             height: rh)
+            if mScore > bestMyScore { bestMyScore = mScore }
         }
 
+        let elapsed = Date().timeIntervalSince(startedAt)
+        let maxScore = max(bestEnemyScore, bestMyScore)
+        logger.log("👾 enemy=\(bestEnemyScore, format: .fixed(precision: 3)) my=\(bestMyScore, format: .fixed(precision: 3)) elapsed=\(elapsed, format: .fixed(precision: 2))s")
         if maxScore > 0.7 {
-            logger.log("✅ Monster identified! Score: \(maxScore, format: .fixed(precision: 3))")
-            BattleLogger.append(String(format: "モンスター識別OK Score %.3f", maxScore))
+            BattleLogger.append(String(format: "モンスター識別OK 敵=%.3f 味方=%.3f (解析 %.2fs)", bestEnemyScore, bestMyScore, elapsed))
         } else {
-            logger.log("❓ Monster unclear. Best Score: \(maxScore, format: .fixed(precision: 3))")
-            BattleLogger.append(String(format: "モンスター識別不明瞭 Best %.3f", maxScore))
+            BattleLogger.append(String(format: "モンスター識別不明瞭 敵=%.3f 味方=%.3f (解析 %.2fs)", bestEnemyScore, bestMyScore, elapsed))
         }
     }
 

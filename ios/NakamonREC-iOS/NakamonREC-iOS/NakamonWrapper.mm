@@ -8,6 +8,10 @@
 
 @implementation NakamonWrapper
 
+// プロセス内モンスターテンプレキャッシュ。
+// Extension 起動から終了までの間、calibrate 後に 1 回 populate される。
+static std::vector<cv::Mat> gCachedMonsterTemplates;
+
 /**
  * UIImage を cv::Mat (RGB) に変換するヘルパー
  */
@@ -67,6 +71,49 @@
 
     Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(roiMat, tplMats);
 
+    return res.score;
+}
+
++ (void)cacheMonsterTemplates:(NSArray<UIImage *> *)templates {
+    gCachedMonsterTemplates.clear();
+    gCachedMonsterTemplates.reserve(templates.count);
+    for (UIImage *img in templates) {
+        gCachedMonsterTemplates.push_back([self cvMatFromUIImage:img]);
+    }
+}
+
++ (double)findBestMonsterMatchUsingCache:(UIImage *)roi {
+    if (gCachedMonsterTemplates.empty()) {
+        return 0.0;
+    }
+    cv::Mat roiMat = [self cvMatFromUIImage:roi];
+    Nakamon::NakamonAnalyzerCore::normalizeImage(roiMat);
+    Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(roiMat, gCachedMonsterTemplates);
+    return res.score;
+}
+
++ (double)findBestMonsterMatchInRegion:(UIImage *)scene
+                               centerX:(int)centerX
+                               centerY:(int)centerY
+                                 width:(int)width
+                                height:(int)height {
+    if (gCachedMonsterTemplates.empty()) {
+        return 0.0;
+    }
+
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    int imgW = sceneMat.cols;
+    int imgH = sceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    sceneMat(roiRect).copyTo(workRoi);
+
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+    Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(workRoi, gCachedMonsterTemplates);
     return res.score;
 }
 
