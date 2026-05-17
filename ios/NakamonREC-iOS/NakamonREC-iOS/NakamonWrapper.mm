@@ -17,6 +17,18 @@
 }
 @end
 
+@implementation NakamonMatchLocation
+- (instancetype)initWithCenterX:(CGFloat)cx centerY:(CGFloat)cy score:(double)score {
+    self = [super init];
+    if (self) {
+        _centerX = cx;
+        _centerY = cy;
+        _score = score;
+    }
+    return self;
+}
+@end
+
 @implementation NakamonWrapper
 
 // プロセス内モンスターテンプレキャッシュ。
@@ -181,6 +193,61 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
         sceneMat, tplMat, centerX, centerY, vMargin, hMargin
     );
     return score;
+}
+
++ (NakamonMatchLocation *)findBestMatchLocationInScene:(UIImage *)scene
+                                            templateImg:(UIImage *)templateImg {
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    cv::Mat tplMat = [self cvMatFromUIImage:templateImg];
+    if (sceneMat.empty() || tplMat.empty() ||
+        tplMat.cols > sceneMat.cols || tplMat.rows > sceneMat.rows) {
+        return [[NakamonMatchLocation alloc] initWithCenterX:0 centerY:0 score:0];
+    }
+    cv::Mat result;
+    cv::matchTemplate(sceneMat, tplMat, result, cv::TM_CCOEFF_NORMED);
+    double maxVal = 0;
+    cv::Point maxLoc;
+    cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+    // maxLoc は scene 内のテンプレート左上座標。中心に変換して返す
+    CGFloat cx = maxLoc.x + tplMat.cols * 0.5;
+    CGFloat cy = maxLoc.y + tplMat.rows * 0.5;
+    return [[NakamonMatchLocation alloc] initWithCenterX:cx centerY:cy score:maxVal];
+}
+
++ (NSArray<NakamonMatchLocation *> *)findTopKMatchesInScene:(UIImage *)scene
+                                                templateImg:(UIImage *)templateImg
+                                                          k:(int)k
+                                       suppressHalfWidth:(int)halfW
+                                      suppressHalfHeight:(int)halfH {
+    NSMutableArray<NakamonMatchLocation *> *results = [NSMutableArray array];
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    cv::Mat tplMat = [self cvMatFromUIImage:templateImg];
+    if (sceneMat.empty() || tplMat.empty() ||
+        tplMat.cols > sceneMat.cols || tplMat.rows > sceneMat.rows ||
+        k <= 0) {
+        return results;
+    }
+    cv::Mat result;
+    cv::matchTemplate(sceneMat, tplMat, result, cv::TM_CCOEFF_NORMED);
+
+    for (int i = 0; i < k; i++) {
+        double maxVal = 0;
+        cv::Point maxLoc;
+        cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+        CGFloat cx = maxLoc.x + tplMat.cols * 0.5;
+        CGFloat cy = maxLoc.y + tplMat.rows * 0.5;
+        [results addObject:[[NakamonMatchLocation alloc] initWithCenterX:cx centerY:cy score:maxVal]];
+
+        // 周辺を抑制 (次の minMaxLoc が同じ位置を返さないように)
+        int x0 = std::max(0, maxLoc.x - halfW);
+        int y0 = std::max(0, maxLoc.y - halfH);
+        int x1 = std::min(result.cols, maxLoc.x + halfW);
+        int y1 = std::min(result.rows, maxLoc.y + halfH);
+        if (x1 > x0 && y1 > y0) {
+            result(cv::Rect(x0, y0, x1 - x0, y1 - y0)).setTo(cv::Scalar(-1.0));
+        }
+    }
+    return results;
 }
 
 + (NakamonMatchResult *)bestMonsterAndSaveInRegion:(UIImage *)scene

@@ -11,6 +11,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)init NS_UNAVAILABLE;
 @end
 
+/// 自動校正用: scene 内で best match した中心位置とスコア
+@interface NakamonMatchLocation : NSObject
+@property (nonatomic, readonly) CGFloat centerX;   // scene のピクセル座標
+@property (nonatomic, readonly) CGFloat centerY;
+@property (nonatomic, readonly) double score;
+- (instancetype)initWithCenterX:(CGFloat)cx centerY:(CGFloat)cy score:(double)score NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
+@end
+
 @interface NakamonWrapper : NSObject
 
 /**
@@ -84,6 +93,26 @@ NS_ASSUME_NONNULL_BEGIN
                                               width:(int)width
                                              height:(int)height
                                            savePath:(nullable NSString *)savePath;
+
+/**
+ * 自動校正用: scene 全体 (もしくは大きい探索範囲) でテンプレートを探し、最高スコア位置を返す。
+ * - 戻り値の center は scene のピクセル座標
+ * - 自動校正のために 1 回だけ呼ぶ想定 (本番のフレーム毎マッチング用ではない)
+ */
++ (NakamonMatchLocation *)findBestMatchLocationInScene:(UIImage *)scene
+                                            templateImg:(UIImage *)templateImg;
+
+/**
+ * 自動校正用: NMS (Non-Maximum Suppression) で上位 k 件の match を返す。
+ * - 各 match 検出後、その周辺の result matrix を抑制して次の match を探す
+ * - パーティ選択 3 枠のように、同じテンプレが複数位置に出現するケースに使う
+ * - 戻り値はスコア降順 (= 信頼度の高い順)
+ */
++ (NSArray<NakamonMatchLocation *> *)findTopKMatchesInScene:(UIImage *)scene
+                                                templateImg:(UIImage *)templateImg
+                                                          k:(int)k
+                                       suppressHalfWidth:(int)halfW
+                                      suppressHalfHeight:(int)halfH;
 
 @end
 

@@ -20,12 +20,16 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private var isBattleInProgress = false
 
     // テンプレートキャッシュ
-    private var vsLogo: UIImage?
+    // VS は BASE 2 種 (FM=フレンドマッチング, MG=大会用) + カスタムテンプレ対応。
+    // カスタムが存在すれば BASE を完全に置き換える。
+    private var vsLogos: [UIImage] = []
     private var winLogo: UIImage?
     private var loseLogo: UIImage?
     private var selectLogo: UIImage?
     private var monsterTemplates: [UIImage] = []
     private var monsterNames: [String] = []   // monsterTemplates と同じ index で対応する名前 "id001" 等
+    /// 校正設定 (broadcastStarted 時に読み込み)
+    private var calibrationConfig: CalibrationConfig = CalibrationDefaults.defaultConfig
 
     // モンスター 8 スロットの位置 (1080×2364 リファレンスの比率)。Android DataModels.kt 由来
     // 0..3 = myParty (画面下)、4..7 = enemy (画面上)
@@ -90,36 +94,66 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     }
 
     private func loadTemplates() {
-        if let path = Bundle.main.path(forResource: "VS_FM", ofType: "png", inDirectory: "templates") {
-            vsLogo = UIImage(contentsOfFile: path)
-            logger.log("✅ VS_FM.png loaded")
+        // 校正設定をロード (ROI 位置)
+        calibrationConfig = CalibrationStore.load()
+
+        // VS: カスタムがあれば BASE 2 種 (FM/MG) を上書き
+        if let custom = loadCustomTemplate(.vs) {
+            vsLogos = [custom]
+            logger.log("✅ VS custom テンプレを使用")
+            BattleLogger.append("✅ VS custom テンプレを使用")
         } else {
-            logger.error("❌ VS_FM.png NOT FOUND in Extension bundle")
-            BattleLogger.append("❌ VS_FM.png ロード失敗")
+            var baseList: [UIImage] = []
+            if let fm = loadBaseTemplate("VS_FM") {
+                baseList.append(fm)
+                logger.log("✅ VS_FM.png loaded")
+            } else {
+                BattleLogger.append("❌ VS_FM.png ロード失敗")
+            }
+            if let mg = loadBaseTemplate("VS_MG") {
+                baseList.append(mg)
+                logger.log("✅ VS_MG.png loaded")
+            } else {
+                BattleLogger.append("⚠️ VS_MG.png 未配置 (大会用)")
+            }
+            vsLogos = baseList
         }
-        if let path = Bundle.main.path(forResource: "WIN", ofType: "png", inDirectory: "templates"),
-           let img = UIImage(contentsOfFile: path) {
-            winLogo = img
-            logger.log("✅ WIN.png loaded")
-        } else {
-            logger.error("❌ WIN.png NOT FOUND")
-            BattleLogger.append("❌ WIN.png ロード失敗")
-        }
-        if let path = Bundle.main.path(forResource: "LOSE", ofType: "png", inDirectory: "templates"),
-           let img = UIImage(contentsOfFile: path) {
-            loseLogo = img
-            logger.log("✅ LOSE.png loaded")
-        } else {
-            logger.error("❌ LOSE.png NOT FOUND")
-            BattleLogger.append("❌ LOSE.png ロード失敗")
-        }
-        if let path = Bundle.main.path(forResource: "SELECT", ofType: "png", inDirectory: "templates"),
-           let img = UIImage(contentsOfFile: path) {
-            selectLogo = img
+
+        // SELECT (カスタム優先)
+        if let custom = loadCustomTemplate(.select) {
+            selectLogo = custom
+            logger.log("✅ SELECT custom テンプレを使用")
+            BattleLogger.append("✅ SELECT custom テンプレを使用")
+        } else if let base = loadBaseTemplate("SELECT") {
+            selectLogo = base
             logger.log("✅ SELECT.png loaded")
         } else {
             logger.error("❌ SELECT.png NOT FOUND")
             BattleLogger.append("❌ SELECT.png ロード失敗")
+        }
+
+        // WIN (カスタム優先)
+        if let custom = loadCustomTemplate(.win) {
+            winLogo = custom
+            logger.log("✅ WIN custom テンプレを使用")
+            BattleLogger.append("✅ WIN custom テンプレを使用")
+        } else if let base = loadBaseTemplate("WIN") {
+            winLogo = base
+            logger.log("✅ WIN.png loaded")
+        } else {
+            BattleLogger.append("❌ WIN.png ロード失敗")
+        }
+
+        // LOSE (カスタム優先)
+        if let custom = loadCustomTemplate(.lose) {
+            loseLogo = custom
+            logger.log("✅ LOSE custom テンプレを使用")
+            BattleLogger.append("✅ LOSE custom テンプレを使用")
+        } else if let base = loadBaseTemplate("LOSE") {
+            loseLogo = base
+            logger.log("✅ LOSE.png loaded")
+        } else {
+            BattleLogger.append("❌ LOSE.png ロード失敗")
         }
         // monsters.json (シェアパッケージ) と LightLoadConfig からマッチング対象 ID 集合を決定
         let effectiveIDs = LightLoadConfig.effectiveMonsterIDs()
@@ -135,13 +169,27 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         BattleLogger.append("テンプレート読み込み完了 (\(modeLabel)モード, モンスター\(monsterTemplates.count)体)")
     }
 
+    /// templates フォルダから BASE テンプレを読み込むヘルパー
+    private func loadBaseTemplate(_ name: String) -> UIImage? {
+        guard let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates") else {
+            return nil
+        }
+        return UIImage(contentsOfFile: path)
+    }
+
+    /// カスタムテンプレを App Group から読み込むヘルパー
+    private func loadCustomTemplate(_ kind: CustomTemplateKind) -> UIImage? {
+        guard let data = CustomTemplateStore.read(kind) else { return nil }
+        return UIImage(data: data)
+    }
+
     /// 初回フレーム到着時、フレーム幅に合わせて全テンプレートを1回だけリサイズする
     private func calibrateTemplates(forFrameWidth frameWidth: CGFloat) {
         let scale = frameWidth / templateReferenceWidth
         logger.log("Calibrating templates: frameWidth=\(Int(frameWidth)), scale=\(scale, format: .fixed(precision: 3))")
         BattleLogger.append(String(format: "校正完了 frame幅=%d scale=%.3f", Int(frameWidth), scale))
 
-        vsLogo = vsLogo.map { resizeImage($0, scale: scale) }
+        vsLogos = vsLogos.map { resizeImage($0, scale: scale) }
         winLogo = winLogo.map { resizeImage($0, scale: scale) }
         loseLogo = loseLogo.map { resizeImage($0, scale: scale) }
         selectLogo = selectLogo.map { resizeImage($0, scale: scale) }
@@ -208,25 +256,22 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     /// 直近検知済みインデックスと異なる時だけログ出力 (連続出力抑制)。
     private func scanForPartySelect(_ scene: UIImage) {
         guard let select = selectLogo else { return }
-
-        // Android partySelectBoxes 基準: centerX=0.787、centerY=0.436/0.605/0.774
-        let partyCentersY: [Double] = [0.436, 0.605, 0.774]
-        let centerXRatio: Double = 0.787
-        // Android: ROI_PAD_PARTY_H=30, ROI_PAD_PARTY_V=100
-        let hMargin: Int32 = 30
-        let vMargin: Int32 = 100
+        let rois = calibrationConfig.partySelectROIs
         let w = scene.size.width
         let h = scene.size.height
-        let cx = Int32(w * centerXRatio)
 
         var bestScore: Double = 0
         var bestIndex: Int = -1
         var allScores: [Double] = []
-        for (i, cy) in partyCentersY.enumerated() {
+        for (i, roi) in rois.enumerated() {
+            let cx = Int32(w * roi.centerXRatio)
+            let cy = Int32(h * roi.centerYRatio)
+            let hMargin = Int32(w * roi.searchHMarginRatio)
+            let vMargin = Int32(h * roi.searchVMarginRatio)
             let score = NakamonWrapper.performMatch(withScene: scene,
                                                   templateImg: select,
                                                   centerX: cx,
-                                                  centerY: Int32(h * cy),
+                                                  centerY: cy,
                                                   verticalMargin: vMargin,
                                                   horizontalMargin: hMargin)
             allScores.append(score)
@@ -245,29 +290,27 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
             // マッチングスコア詳細用に p0/p1/p2 の ROI を保存し直す
             saveMatchingScorePartySnapshots(scene: scene, select: select,
-                                            partyCentersY: partyCentersY,
-                                            centerXRatio: centerXRatio,
-                                            hMargin: hMargin, vMargin: vMargin,
-                                            scores: allScores)
+                                            rois: rois, scores: allScores)
         }
     }
 
     /// パーティ選択 3 box ぶんの ROI を p0/p1/p2.png として書き出し、metadata の partyScores を更新する
     private func saveMatchingScorePartySnapshots(scene: UIImage,
                                                  select: UIImage,
-                                                 partyCentersY: [Double],
-                                                 centerXRatio: Double,
-                                                 hMargin: Int32, vMargin: Int32,
+                                                 rois: [CalibrationROI],
                                                  scores: [Double]) {
         let w = scene.size.width
         let h = scene.size.height
-        let cx = Int32(w * centerXRatio)
-        for (i, cy) in partyCentersY.enumerated() {
+        for (i, roi) in rois.enumerated() {
             let path = MatchingScoreSnapshot.path(forFile: "p\(i).png")
+            let cx = Int32(w * roi.centerXRatio)
+            let cy = Int32(h * roi.centerYRatio)
+            let hMargin = Int32(w * roi.searchHMarginRatio)
+            let vMargin = Int32(h * roi.searchVMarginRatio)
             _ = NakamonWrapper.performMatchAndSave(withScene: scene,
                                                    templateImg: select,
                                                    centerX: cx,
-                                                   centerY: Int32(h * cy),
+                                                   centerY: cy,
                                                    verticalMargin: vMargin,
                                                    horizontalMargin: hMargin,
                                                    savePath: path)
@@ -280,13 +323,24 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // MARK: - VS Logo (戦闘開始)
 
     private func scanForVS(_ scene: UIImage) {
-        guard let vs = vsLogo else { return }
-        let score = NakamonWrapper.performMatch(withScene: scene,
+        guard !vsLogos.isEmpty else { return }
+        let roi = calibrationConfig.battlePrepVSROI
+        let cx = Int32(scene.size.width * roi.centerXRatio)
+        let cy = Int32(scene.size.height * roi.centerYRatio)
+        let hMargin = Int32(scene.size.width * roi.searchHMarginRatio)
+        let vMargin = Int32(scene.size.height * roi.searchVMarginRatio)
+        // VS_FM + VS_MG (or 単一カスタム) のうち最高スコアを採用
+        var score: Double = 0
+        var bestVS: UIImage = vsLogos[0]
+        for vs in vsLogos {
+            let s = NakamonWrapper.performMatch(withScene: scene,
                                               templateImg: vs,
-                                              centerX: Int32(scene.size.width * 0.5),
-                                              centerY: Int32(scene.size.height * 0.23),
-                                              verticalMargin: 500,
-                                              horizontalMargin: 200)
+                                              centerX: cx,
+                                              centerY: cy,
+                                              verticalMargin: vMargin,
+                                              horizontalMargin: hMargin)
+            if s > score { score = s; bestVS = vs }
+        }
         if score > 0.4 {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             BattleLogger.rotate()
@@ -313,11 +367,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             MatchingScoreSnapshot.clearBattleArtifacts()
             let vsPath = MatchingScoreSnapshot.path(forFile: "vs.png")
             _ = NakamonWrapper.performMatchAndSave(withScene: scene,
-                                                   templateImg: vs,
-                                                   centerX: Int32(scene.size.width * 0.5),
-                                                   centerY: Int32(scene.size.height * 0.23),
-                                                   verticalMargin: 500,
-                                                   horizontalMargin: 200,
+                                                   templateImg: bestVS,
+                                                   centerX: cx,
+                                                   centerY: cy,
+                                                   verticalMargin: vMargin,
+                                                   horizontalMargin: hMargin,
                                                    savePath: vsPath)
             let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
             MatchingScoreSnapshot.updateMetadata { meta in

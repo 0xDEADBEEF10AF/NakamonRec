@@ -2,13 +2,15 @@ import SwiftUI
 import NakamonREC_Shared
 
 /// ユーザー設定シート (Android `ユーザー設定` 相当)
-/// Step B 時点: 軽負荷モードトグルとモンスターピッカーが機能。校正項目は Step C プレースホルダ
+/// Step B: 軽負荷モード
+/// Step C1: パーティ選択画面の校正が機能。他 3 画面は C2/C3 で実装予定
 struct UserSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isLightMode: Bool = LightLoadConfig.mode == .light
     @State private var lightCount: Int = LightLoadConfig.lightMonsterIDs.count
     @State private var showLightPicker = false
+    @State private var calibrationTarget: CalibrationScreen? = nil
 
     var body: some View {
         NavigationStack {
@@ -16,15 +18,11 @@ struct UserSettingsSheet: View {
                 Color.black.ignoresSafeArea()
                 List {
                     Section {
-                        ForEach(CalibrationScreen.allCases) { screen in
+                        ForEach(CalibrationScreen.allCases, id: \.self) { screen in
                             calibrationRow(screen)
                         }
                     } header: {
                         Text("キャプチャー画面の校正")
-                            .foregroundStyle(.gray)
-                    } footer: {
-                        Text("(Step C で機能予定)")
-                            .font(.caption2)
                             .foregroundStyle(.gray)
                     }
 
@@ -84,34 +82,42 @@ struct UserSettingsSheet: View {
                     lightCount = LightLoadConfig.lightMonsterIDs.count
                 }
             }
+            .sheet(item: $calibrationTarget) { screen in
+                CalibrationActionMenu(screen: screen)
+                    .presentationDetents([.fraction(0.4)])
+            }
         }
     }
 
     private func calibrationRow(_ screen: CalibrationScreen) -> some View {
-        HStack {
-            Image(systemName: screen.iconName)
-                .foregroundStyle(.gray)
-                .frame(width: 28)
-            Text(screen.title)
-                .foregroundStyle(.white)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .foregroundStyle(.gray)
+        let supported = (screen == .partySelect)
+        return Button {
+            if supported { calibrationTarget = screen }
+        } label: {
+            HStack {
+                Image(systemName: screen.iconName)
+                    .foregroundStyle(supported ? Color.recCoral : .gray)
+                    .frame(width: 28)
+                Text(screen.title)
+                    .foregroundStyle(.white)
+                if !supported {
+                    Spacer()
+                    Text("(C2/C3 で実装予定)")
+                        .font(.caption2)
+                        .foregroundStyle(.gray)
+                } else {
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.gray)
+                }
+            }
         }
-        .opacity(0.5)
+        .disabled(!supported)
         .listRowBackground(Color.cardBackground)
     }
 }
 
-/// 校正対象の 4 画面
-enum CalibrationScreen: String, CaseIterable, Identifiable {
-    case partySelect
-    case battlePrep
-    case win
-    case lose
-
-    var id: String { rawValue }
-
+extension CalibrationScreen {
     var title: String {
         switch self {
         case .partySelect: return "パーティ選択画面"
