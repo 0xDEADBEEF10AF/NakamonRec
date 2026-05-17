@@ -145,4 +145,77 @@ public final class BattleHistoryStore: @unchecked Sendable {
         history.recomputeTotals()
         saveActive(history)
     }
+
+    // MARK: - File management
+
+    /// 新しい空の JSON ファイルを作成する。重複名は失敗 (false)
+    @discardableResult
+    public func createFile(name: String) -> Bool {
+        let safe = sanitizeFileName(name)
+        guard !safe.isEmpty,
+              let url = url(forFileName: safe),
+              !fileManager.fileExists(atPath: url.path) else {
+            return false
+        }
+        save(BattleHistory(), fileName: safe)
+        return true
+    }
+
+    /// 既存ファイルをリネーム。新名重複は失敗 (false)
+    @discardableResult
+    public func renameFile(from oldName: String, to newName: String) -> Bool {
+        let newSafe = sanitizeFileName(newName)
+        guard !newSafe.isEmpty,
+              newSafe != oldName,
+              let src = url(forFileName: oldName),
+              let dst = url(forFileName: newSafe),
+              fileManager.fileExists(atPath: src.path),
+              !fileManager.fileExists(atPath: dst.path) else {
+            return false
+        }
+        do {
+            try fileManager.moveItem(at: src, to: dst)
+            // アクティブだった場合は追従
+            if activeFileName == oldName {
+                activeFileName = newSafe
+            }
+            return true
+        } catch {
+            NSLog("BattleHistoryStore: rename failed \(oldName) → \(newSafe): \(error)")
+            return false
+        }
+    }
+
+    /// ファイルを削除。最後の 1 件は削除させない (空保護)
+    @discardableResult
+    public func deleteFile(name: String) -> Bool {
+        guard let url = url(forFileName: name),
+              fileManager.fileExists(atPath: url.path) else {
+            return false
+        }
+        // 最後の 1 ファイルは消させない
+        if availableFiles().count <= 1 {
+            return false
+        }
+        do {
+            try fileManager.removeItem(at: url)
+            // アクティブだった場合は別のファイルに切替
+            if activeFileName == name, let next = availableFiles().first {
+                activeFileName = next
+            }
+            return true
+        } catch {
+            NSLog("BattleHistoryStore: delete failed \(name): \(error)")
+            return false
+        }
+    }
+
+    /// ファイル名から不正文字を除去し ".json" を保証する
+    private func sanitizeFileName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let illegal: Set<Character> = ["/", "\\", ":", "?", "*", "<", ">", "|", "\""]
+        let stripped = String(trimmed.filter { !illegal.contains($0) })
+        if stripped.isEmpty { return "" }
+        return stripped.hasSuffix(".json") ? stripped : "\(stripped).json"
+    }
 }

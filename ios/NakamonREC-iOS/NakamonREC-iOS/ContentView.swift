@@ -19,6 +19,9 @@ struct ContentView: View {
     @State private var nakamonRotation: Double = 180   // 起動時はアプリアイコンと同じ「NAKAMON が下」の状態。180° → 0° まで反時計回りに半周して着地
     @State private var hasAnimatedLogo: Bool = false
     @State private var isBroadcasting: Bool = BroadcastStatus.isActive
+    @State private var showFileManager = false
+    @State private var showUserSettings = false
+    @State private var activeFileName: String = BattleHistoryStore.shared.activeFileName
 
     private var totalWins: Int { history.totalWins }
     private var totalLosses: Int { history.totalLosses }
@@ -80,10 +83,20 @@ struct ContentView: View {
             DebugMenuView()
                 .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showFileManager) {
+            JSONFileManagerView {
+                reloadHistory()
+            }
+            .presentationDetents([.fraction(0.5), .large])
+        }
+        .sheet(isPresented: $showUserSettings) {
+            UserSettingsSheet()
+        }
     }
 
     private func reloadHistory() {
         history = BattleHistoryStore.shared.loadActive()
+        activeFileName = BattleHistoryStore.shared.activeFileName
     }
 
     /// 初回のみ NAKAMON ロゴが反時計回りに 1 周してから着地するアニメーション
@@ -126,23 +139,27 @@ struct ContentView: View {
 
     private var topActionBar: some View {
         HStack(spacing: 8) {
-            // JSON ファイル管理 (Phase 8 で機能)
-            HStack(spacing: 8) {
-                Image(systemName: "tray.full")
-                    .foregroundStyle(.gray)
-                Text(BattleHistoryStore.shared.activeFileName)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            // 校正画面 (Phase 8 で機能)
+            // JSON ファイル管理: タップでファイル一覧を開く
             Button {
-                // TODO: Phase 8
+                showFileManager = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "tray.full")
+                        .foregroundStyle(.gray)
+                    Text(activeFileName)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+
+            // ユーザー設定シート (校正 / 軽負荷モード)
+            Button {
+                showUserSettings = true
             } label: {
                 Image(systemName: "camera")
                     .font(.title3)
