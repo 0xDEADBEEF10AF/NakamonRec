@@ -3,6 +3,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// per-slot 識別結果 (スコアとマッチしたモンスターのインデックス)
+@interface NakamonMatchResult : NSObject
+@property (nonatomic, readonly) double score;
+@property (nonatomic, readonly) NSInteger index;
+- (instancetype)initWithScore:(double)score index:(NSInteger)index NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
+@end
+
 @interface NakamonWrapper : NSObject
 
 /**
@@ -44,6 +52,16 @@ NS_ASSUME_NONNULL_BEGIN
                                centerY:(int)centerY
                                  width:(int)width
                                 height:(int)height;
+
+/**
+ * 指定領域でキャッシュ済テンプレすべてを照合し、最高スコアとそのインデックスを返す。
+ * per-slot 識別 (8 スロット × 30 テンプレ) で使う。
+ */
++ (NakamonMatchResult *)bestMonsterInRegion:(UIImage *)scene
+                                    centerX:(int)centerX
+                                    centerY:(int)centerY
+                                      width:(int)width
+                                     height:(int)height;
 
 @end
 

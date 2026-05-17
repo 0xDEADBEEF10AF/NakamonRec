@@ -6,6 +6,17 @@
 #import "NakamonWrapper.h"
 #import "../../../shared_cpp/NakamonAnalyzerCore.h"
 
+@implementation NakamonMatchResult
+- (instancetype)initWithScore:(double)score index:(NSInteger)index {
+    self = [super init];
+    if (self) {
+        _score = score;
+        _index = index;
+    }
+    return self;
+}
+@end
+
 @implementation NakamonWrapper
 
 // プロセス内モンスターテンプレキャッシュ。
@@ -97,8 +108,21 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                centerY:(int)centerY
                                  width:(int)width
                                 height:(int)height {
+    NakamonMatchResult *result = [self bestMonsterInRegion:scene
+                                                   centerX:centerX
+                                                   centerY:centerY
+                                                     width:width
+                                                    height:height];
+    return result.score;
+}
+
++ (NakamonMatchResult *)bestMonsterInRegion:(UIImage *)scene
+                                    centerX:(int)centerX
+                                    centerY:(int)centerY
+                                      width:(int)width
+                                     height:(int)height {
     if (gCachedMonsterTemplates.empty()) {
-        return 0.0;
+        return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
     }
 
     cv::Mat sceneMat = [self cvMatFromUIImage:scene];
@@ -114,7 +138,7 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
 
     Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
     Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(workRoi, gCachedMonsterTemplates);
-    return res.score;
+    return [[NakamonMatchResult alloc] initWithScore:res.score index:res.bestScaleIndex];
 }
 
 @end

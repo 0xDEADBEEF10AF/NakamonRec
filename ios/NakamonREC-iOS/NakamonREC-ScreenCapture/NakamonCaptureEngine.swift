@@ -25,6 +25,32 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private var loseLogo: UIImage?
     private var selectLogo: UIImage?
     private var monsterTemplates: [UIImage] = []
+    private var monsterNames: [String] = []   // monsterTemplates と同じ index で対応する名前 "id001" 等
+
+    // モンスター 8 スロットの位置 (1080×2364 リファレンスの比率)。Android DataModels.kt 由来
+    // 0..3 = myParty (画面下)、4..7 = enemy (画面上)
+    private struct SlotConfig {
+        let centerXRatio: Double
+        let centerYRatio: Double
+        let isEnemy: Bool
+    }
+    private let slotConfigs: [SlotConfig] = [
+        // myParty: y = 1635/2364 = 0.692
+        SlotConfig(centerXRatio: 196.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
+        SlotConfig(centerXRatio: 391.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
+        SlotConfig(centerXRatio: 585.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
+        SlotConfig(centerXRatio: 780.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
+        // enemy: y = 915/2364 = 0.387
+        SlotConfig(centerXRatio: 201.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true),
+        SlotConfig(centerXRatio: 396.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true),
+        SlotConfig(centerXRatio: 590.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true),
+        SlotConfig(centerXRatio: 785.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true)
+    ]
+    // 各スロット ROI のサイズ比率
+    // 試験的に従来比 2.5x に拡大 (テンプレ 80x130 に対し十分な padding を確保)
+    // ベビーパンサー (id001) が低スコアでしか拾われない問題の切り分け用
+    private let slotROIWidthRatio: Double = 350.0 / 1080.0     // ≈ 0.324
+    private let slotROIHeightRatio: Double = 475.0 / 2364.0    // ≈ 0.201
 
     private var didCalibrate = false
 
@@ -78,6 +104,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates"),
                let img = UIImage(contentsOfFile: path) {
                 monsterTemplates.append(img)
+                monsterNames.append(name)
             }
         }
         logger.log("Loaded \(self.monsterTemplates.count) monster templates")
@@ -222,53 +249,55 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // MARK: - Monster Identification (バースト解析)
 
     /// バックグラウンドキューで実行される重い解析処理
-    /// Android 版の `enemyPartyBoxes` (y=0.387) と `myPartyBoxes` (y=0.692) の 2 領域でマッチング
+    /// 8 スロット (myParty 0..3 + enemy 4..7) × 30 テンプレート × 5 フレームを per-slot 逐次で識別
     private func performDeepAnalysis(frames: [UIImage]) {
         let startedAt = Date()
-        logger.log("👾 Performing Deep Analysis on \(frames.count) frames...")
-        BattleLogger.append("モンスター解析開始 (\(frames.count)枚)")
+        logger.log("👾 Performing Deep Analysis on \(frames.count) frames (8 slots)...")
+        BattleLogger.append("モンスター解析開始 (\(frames.count)枚 × 8スロット)")
 
-        // Android DataModels.kt 基準: 1080×2364 reference
-        //   enemy x:161〜825 (centerX 493/1080=0.456, 横幅 0.63), y center 915/2364=0.387
-        //   myParty 同じ x 範囲、y center 1635/2364=0.692
-        //   いずれも幅 0.63 / 縦 0.093 (テンプレ縦 130 + 余裕)
-        let regionWidthRatio: Double = 0.63
-        let regionHeightRatio: Double = 0.093
-        let enemyCenterYRatio: Double = 0.387
-        let myCenterYRatio: Double = 0.692
-        let centerXRatio: Double = 0.456
+        // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
+        struct SlotBest { var score: Double = 0; var index: Int = -1 }
+        var perSlot = Array(repeating: SlotBest(), count: slotConfigs.count)
 
-        var bestEnemyScore: Double = 0
-        var bestMyScore: Double = 0
         for frame in frames {
             let w = frame.size.width
             let h = frame.size.height
-            let cx = Int32(w * centerXRatio)
-            let rw = Int32(w * regionWidthRatio)
-            let rh = Int32(h * regionHeightRatio)
+            let rw = Int32(w * slotROIWidthRatio)
+            let rh = Int32(h * slotROIHeightRatio)
 
-            let eScore = NakamonWrapper.findBestMonsterMatch(inRegion: frame,
-                                                             centerX: cx,
-                                                             centerY: Int32(h * enemyCenterYRatio),
-                                                             width: rw,
-                                                             height: rh)
-            if eScore > bestEnemyScore { bestEnemyScore = eScore }
-
-            let mScore = NakamonWrapper.findBestMonsterMatch(inRegion: frame,
-                                                             centerX: cx,
-                                                             centerY: Int32(h * myCenterYRatio),
-                                                             width: rw,
-                                                             height: rh)
-            if mScore > bestMyScore { bestMyScore = mScore }
+            for (slotIdx, config) in slotConfigs.enumerated() {
+                let cx = Int32(w * config.centerXRatio)
+                let cy = Int32(h * config.centerYRatio)
+                let result = NakamonWrapper.bestMonster(inRegion: frame,
+                                                        centerX: cx,
+                                                        centerY: cy,
+                                                        width: rw,
+                                                        height: rh)
+                if result.score > perSlot[slotIdx].score {
+                    perSlot[slotIdx].score = result.score
+                    perSlot[slotIdx].index = result.index
+                }
+            }
         }
 
         let elapsed = Date().timeIntervalSince(startedAt)
-        let maxScore = max(bestEnemyScore, bestMyScore)
-        logger.log("👾 enemy=\(bestEnemyScore, format: .fixed(precision: 3)) my=\(bestMyScore, format: .fixed(precision: 3)) elapsed=\(elapsed, format: .fixed(precision: 2))s")
-        if maxScore > 0.7 {
-            BattleLogger.append(String(format: "モンスター識別OK 敵=%.3f 味方=%.3f (解析 %.2fs)", bestEnemyScore, bestMyScore, elapsed))
-        } else {
-            BattleLogger.append(String(format: "モンスター識別不明瞭 敵=%.3f 味方=%.3f (解析 %.2fs)", bestEnemyScore, bestMyScore, elapsed))
+        logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s")
+        BattleLogger.append(String(format: "モンスター解析完了 (%.2fs)", elapsed))
+
+        // 結果を 8 行で書き出す
+        for (slotIdx, best) in perSlot.enumerated() {
+            let config = slotConfigs[slotIdx]
+            let side = config.isEnemy ? "敵"  : "味方"
+            let withinSide = config.isEnemy ? slotIdx - 4 : slotIdx
+            let name: String
+            if best.index >= 0 && best.index < monsterNames.count {
+                name = monsterNames[best.index]
+            } else {
+                name = "(不明)"
+            }
+            let marker = best.score >= 0.7 ? "✅" : "❓"
+            BattleLogger.append(String(format: "%@ %@[%d] %@ Score %.3f",
+                                       marker, side, withinSide, name, best.score))
         }
     }
 
