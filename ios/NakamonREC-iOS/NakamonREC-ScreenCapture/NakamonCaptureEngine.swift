@@ -47,10 +47,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         SlotConfig(centerXRatio: 785.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true)
     ]
     // 各スロット ROI のサイズ比率
-    // 試験的に従来比 2.5x に拡大 (テンプレ 80x130 に対し十分な padding を確保)
-    // ベビーパンサー (id001) が低スコアでしか拾われない問題の切り分け用
-    private let slotROIWidthRatio: Double = 350.0 / 1080.0     // ≈ 0.324
-    private let slotROIHeightRatio: Double = 475.0 / 2364.0    // ≈ 0.201
+    // テンプレ 80x130 + 十分な padding。2.5x → 2.0x に縮小して sweet spot 探索中。
+    // 2.5x では識別 OK (Score 0.96+) だが 23 秒。1.0x では未検出。
+    private let slotROIWidthRatio: Double = 280.0 / 1080.0     // ≈ 0.259
+    private let slotROIHeightRatio: Double = 380.0 / 2364.0    // ≈ 0.161
 
     private var didCalibrate = false
 
