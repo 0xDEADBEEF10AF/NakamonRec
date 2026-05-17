@@ -1,5 +1,9 @@
 import SwiftUI
 import ReplayKit
+import OSLog
+import NakamonREC_Shared
+
+private let logger = Logger(subsystem: "com.android.NakamonREC-iOS", category: "Host")
 
 struct MonsterData: Codable, Identifiable {
     var id: String { name }
@@ -33,6 +37,13 @@ struct ContentView: View {
                     .frame(width: 220, height: 64)
 
                 Spacer()
+
+                NavigationLink {
+                    BattleLogViewerView()
+                } label: {
+                    Label("直近の解析ログ", systemImage: "doc.text.magnifyingglass")
+                        .font(.footnote)
+                }
 
                 NavigationLink {
                     MonsterListView()
@@ -95,12 +106,13 @@ struct BroadcastButton: UIViewRepresentable {
         weak var picker: RPSystemBroadcastPickerView?
 
         @objc func tap() {
+            logger.log("REC button tapped")
             guard let picker else { return }
             // PickerView の内部 UIButton を再帰的に探して発火
             if let innerButton = findButton(in: picker) {
                 innerButton.sendActions(for: .touchUpInside)
             } else {
-                print("NakamonREC: Broadcast picker inner button not found")
+                logger.error("Broadcast picker inner button not found")
             }
         }
 

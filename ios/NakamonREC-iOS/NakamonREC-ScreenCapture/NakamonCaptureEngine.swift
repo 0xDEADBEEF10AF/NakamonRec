@@ -1,7 +1,7 @@
 import ReplayKit
 import VideoToolbox
 import OSLog
-import UserNotifications
+import NakamonREC_Shared
 
 class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
@@ -32,8 +32,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
         logger.log("NakamonREC Engine: Starting...")
+        BattleLogger.rotate()
+        BattleLogger.append("Extension起動")
         loadTemplates()
-        sendLocalNotification(title: "NakamonREC 起動", body: "バトルの監視を開始しました。")
     }
 
     private func loadTemplates() {
@@ -42,6 +43,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.log("✅ VS_FM.png loaded")
         } else {
             logger.error("❌ VS_FM.png NOT FOUND in Extension bundle")
+            BattleLogger.append("❌ VS_FM.png ロード失敗")
         }
         if let path = Bundle.main.path(forResource: "WIN", ofType: "png", inDirectory: "templates"),
            let img = UIImage(contentsOfFile: path) {
@@ -49,6 +51,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.log("✅ WIN.png loaded")
         } else {
             logger.error("❌ WIN.png NOT FOUND")
+            BattleLogger.append("❌ WIN.png ロード失敗")
         }
         if let path = Bundle.main.path(forResource: "LOSE", ofType: "png", inDirectory: "templates"),
            let img = UIImage(contentsOfFile: path) {
@@ -56,6 +59,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.log("✅ LOSE.png loaded")
         } else {
             logger.error("❌ LOSE.png NOT FOUND")
+            BattleLogger.append("❌ LOSE.png ロード失敗")
         }
         for i in 1...30 {
             let name = String(format: "id%03d", i)
@@ -65,12 +69,14 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             }
         }
         logger.log("Loaded \(self.monsterTemplates.count) monster templates")
+        BattleLogger.append("テンプレート読み込み完了 (モンスター\(monsterTemplates.count)体)")
     }
 
     /// 初回フレーム到着時、フレーム幅に合わせて全テンプレートを1回だけリサイズする
     private func calibrateTemplates(forFrameWidth frameWidth: CGFloat) {
         let scale = frameWidth / templateReferenceWidth
         logger.log("Calibrating templates: frameWidth=\(Int(frameWidth)), scale=\(scale, format: .fixed(precision: 3))")
+        BattleLogger.append(String(format: "校正完了 frame幅=%d scale=%.3f", Int(frameWidth), scale))
 
         vsLogo = vsLogo.map { resizeImage($0, scale: scale) }
         winLogo = winLogo.map { resizeImage($0, scale: scale) }
@@ -138,11 +144,12 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                               horizontalMargin: 200)
         if score > 0.4 {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
+            BattleLogger.rotate()
+            BattleLogger.append(String(format: "VS検知 Score %.3f → バースト開始", score))
             isBattleInProgress = true
             isAnalyzing = true
             currentBurstImages.removeAll()
             currentBurstImages.append(scene)
-            sendLocalNotification(title: "バトル開始！", body: "対戦相手を検知しました。解析中...")
         } else if score > 0.1 {
             logger.log("🔎 Scanning... VS Score: \(score, format: .fixed(precision: 3))")
         }
@@ -153,6 +160,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     /// バックグラウンドキューで実行される重い解析処理
     private func performDeepAnalysis(frames: [UIImage]) {
         logger.log("👾 Performing Deep Analysis on \(frames.count) frames...")
+        BattleLogger.append("モンスター解析開始 (\(frames.count)枚)")
         let templates = monsterTemplates // calibrate 後は不変なのでスレッド間で安全に参照可
 
         var maxScore: Double = 0
@@ -165,8 +173,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
         if maxScore > 0.7 {
             logger.log("✅ Monster identified! Score: \(maxScore, format: .fixed(precision: 3))")
+            BattleLogger.append(String(format: "モンスター識別OK Score %.3f", maxScore))
         } else {
             logger.log("❓ Monster unclear. Best Score: \(maxScore, format: .fixed(precision: 3))")
+            BattleLogger.append(String(format: "モンスター識別不明瞭 Best %.3f", maxScore))
         }
     }
 
@@ -182,8 +192,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                   horizontalMargin: 200)
             if score > 0.4 {
                 logger.log("🏆 Battle Won! (Score: \(score, format: .fixed(precision: 3)))")
+                BattleLogger.append(String(format: "🏆 勝利検知 Score %.3f", score))
                 isBattleInProgress = false
-                sendLocalNotification(title: "バトル終了", body: "勝利しました！")
                 return
             }
         }
@@ -197,27 +207,13 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                   horizontalMargin: 200)
             if score > 0.4 {
                 logger.log("💀 Battle Lost... (Score: \(score, format: .fixed(precision: 3)))")
+                BattleLogger.append(String(format: "💀 敗北検知 Score %.3f", score))
                 isBattleInProgress = false
-                sendLocalNotification(title: "バトル終了", body: "敗北しました。")
             }
         }
     }
 
     // MARK: - Helpers
-
-    private func sendLocalNotification(title: String, body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                self.logger.error("Failed to send notification: \(error.localizedDescription)")
-            }
-        }
-    }
 
     private func sampleBufferToUIImage(_ sampleBuffer: CMSampleBuffer) -> UIImage? {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
@@ -243,13 +239,16 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     override func broadcastPaused() {
         logger.log("NakamonREC: Broadcast Paused")
+        BattleLogger.append("ブロードキャスト一時停止")
     }
 
     override func broadcastResumed() {
         logger.log("NakamonREC: Broadcast Resumed")
+        BattleLogger.append("ブロードキャスト再開")
     }
 
     override func broadcastFinished() {
         logger.log("NakamonREC: Broadcast Finished")
+        BattleLogger.append("ブロードキャスト終了")
     }
 }
