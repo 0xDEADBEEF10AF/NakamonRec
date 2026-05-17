@@ -23,9 +23,13 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private var vsLogo: UIImage?
     private var winLogo: UIImage?
     private var loseLogo: UIImage?
+    private var selectLogo: UIImage?
     private var monsterTemplates: [UIImage] = []
 
     private var didCalibrate = false
+
+    // 直近検知済みのパーティインデックス (1〜3)。再ログを抑制するため
+    private var lastDetectedPartyIndex: Int = -1
 
     // テンプレ作成時のスクリーン基準幅 (Pixel 10 Pro: 1080)
     private let templateReferenceWidth: CGFloat = 1080
@@ -61,6 +65,14 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.error("❌ LOSE.png NOT FOUND")
             BattleLogger.append("❌ LOSE.png ロード失敗")
         }
+        if let path = Bundle.main.path(forResource: "SELECT", ofType: "png", inDirectory: "templates"),
+           let img = UIImage(contentsOfFile: path) {
+            selectLogo = img
+            logger.log("✅ SELECT.png loaded")
+        } else {
+            logger.error("❌ SELECT.png NOT FOUND")
+            BattleLogger.append("❌ SELECT.png ロード失敗")
+        }
         for i in 1...30 {
             let name = String(format: "id%03d", i)
             if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates"),
@@ -81,6 +93,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         vsLogo = vsLogo.map { resizeImage($0, scale: scale) }
         winLogo = winLogo.map { resizeImage($0, scale: scale) }
         loseLogo = loseLogo.map { resizeImage($0, scale: scale) }
+        selectLogo = selectLogo.map { resizeImage($0, scale: scale) }
         monsterTemplates = monsterTemplates.map { resizeImage($0, scale: scale) }
 
         // C++ 側にもモンスターテンプレを cv::Mat で 1 回だけ変換してキャッシュ
@@ -130,9 +143,51 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         }
 
         if !isBattleInProgress {
+            scanForPartySelect(uiImage)
             scanForVS(uiImage)
         } else {
             checkBattleEnd(uiImage)
+        }
+    }
+
+    // MARK: - Party Selection (戦闘開始前のパーティ選択画面)
+
+    /// Android `partySelectBoxes` (1080×2364 基準で x=850、y=1030/1430/1830) を見て
+    /// SELECT.png がどのスロットにあるかを検知する。
+    /// 直近検知済みインデックスと異なる時だけログ出力 (連続出力抑制)。
+    private func scanForPartySelect(_ scene: UIImage) {
+        guard let select = selectLogo else { return }
+
+        // Android partySelectBoxes 基準: centerX=0.787、centerY=0.436/0.605/0.774
+        let partyCentersY: [Double] = [0.436, 0.605, 0.774]
+        let centerXRatio: Double = 0.787
+        // Android: ROI_PAD_PARTY_H=30, ROI_PAD_PARTY_V=100
+        let hMargin: Int32 = 30
+        let vMargin: Int32 = 100
+        let w = scene.size.width
+        let h = scene.size.height
+        let cx = Int32(w * centerXRatio)
+
+        var bestScore: Double = 0
+        var bestIndex: Int = -1
+        for (i, cy) in partyCentersY.enumerated() {
+            let score = NakamonWrapper.performMatch(withScene: scene,
+                                                  templateImg: select,
+                                                  centerX: cx,
+                                                  centerY: Int32(h * cy),
+                                                  verticalMargin: vMargin,
+                                                  horizontalMargin: hMargin)
+            if score > bestScore {
+                bestScore = score
+                bestIndex = i
+            }
+        }
+
+        if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
+            lastDetectedPartyIndex = bestIndex
+            let partyNumber = bestIndex + 1
+            logger.log("Party P[\(partyNumber)] selected (Score: \(bestScore, format: .fixed(precision: 3)))")
+            BattleLogger.append(String(format: "パーティ選択検知 P[%d] Score %.3f", partyNumber, bestScore))
         }
     }
 
@@ -149,11 +204,16 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         if score > 0.4 {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             BattleLogger.rotate()
+            if lastDetectedPartyIndex >= 0 {
+                BattleLogger.append(String(format: "パーティ P[%d] で戦闘開始", lastDetectedPartyIndex + 1))
+            }
             BattleLogger.append(String(format: "VS検知 Score %.3f → バースト開始", score))
             isBattleInProgress = true
             isAnalyzing = true
             currentBurstImages.removeAll()
             currentBurstImages.append(scene)
+            // 次の戦闘でも検知ログが出るようリセット
+            lastDetectedPartyIndex = -1
         } else if score > 0.1 {
             logger.log("🔎 Scanning... VS Score: \(score, format: .fixed(precision: 3))")
         }
