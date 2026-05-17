@@ -114,27 +114,12 @@ private struct SlotKey: Identifiable {
 }
 
 /// モンスター選択用グリッド (Android 軽負荷モード画面の選択 UI と同等)
-/// `monsters.json` に定義されたモンスターのみを 4 列グリッドで表示。タップで選択。
+/// シェアパッケージの `MonsterCatalog` を 4 列グリッドで表示。タップで選択。
 struct MonsterPickerGrid: View {
     let onSelect: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
-
-    /// monsters.json から読み込んだカタログ (静的キャッシュ)
-    private static let catalog: [MonsterData] = {
-        guard let url = Bundle.main.url(forResource: "monsters", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let list = try? JSONDecoder().decode([MonsterData].self, from: data) else {
-            return []
-        }
-        return list
-    }()
-
-    /// `id001.png` → `id001` に変換
-    private func templateID(from fileName: String) -> String {
-        (fileName as NSString).deletingPathExtension
-    }
 
     var body: some View {
         NavigationStack {
@@ -154,13 +139,12 @@ struct MonsterPickerGrid: View {
                                     .lineLimit(1)
                             }
                         }
-                        ForEach(Self.catalog) { monster in
-                            let tid = templateID(from: monster.fileName)
+                        ForEach(MonsterCatalog.all) { monster in
                             Button {
-                                onSelect(tid)
+                                onSelect(monster.id)
                             } label: {
                                 VStack(spacing: 2) {
-                                    MonsterThumb(name: tid, size: 64)
+                                    MonsterThumb(name: monster.id, size: 64)
                                     Text(monster.name)
                                         .font(.system(size: 10))
                                         .foregroundStyle(.white)
@@ -173,7 +157,7 @@ struct MonsterPickerGrid: View {
                     .padding(8)
                 }
             }
-            .navigationTitle("モンスター選択 (\(Self.catalog.count) 体)")
+            .navigationTitle("モンスター選択 (\(MonsterCatalog.all.count) 体)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

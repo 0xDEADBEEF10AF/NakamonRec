@@ -9,6 +9,7 @@ import Foundation
 public enum BroadcastStatus {
     private static let suiteName = "group.com.android.NakamonREC-iOS"
     private static let activeKey = "broadcastActive"
+    private static let lastRecordKey = "lastRecordTimestamp"
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: suiteName)
@@ -21,5 +22,12 @@ public enum BroadcastStatus {
     /// Extension が放送開始/終了時に呼ぶ
     public static func setActive(_ value: Bool) {
         defaults?.set(value, forKey: activeKey)
+    }
+
+    /// Extension が新しい BattleRecord を保存したときの timestamp。
+    /// Host 側 polling ループでこの値の変化を検出して履歴を再読込する。
+    public static var lastRecordTimestamp: String {
+        get { defaults?.string(forKey: lastRecordKey) ?? "" }
+        set { defaults?.set(newValue, forKey: lastRecordKey) }
     }
 }

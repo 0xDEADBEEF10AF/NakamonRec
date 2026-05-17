@@ -14,7 +14,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "NakamonREC-Shared"
+            name: "NakamonREC-Shared",
+            resources: [
+                .process("Resources/monsters.json")
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

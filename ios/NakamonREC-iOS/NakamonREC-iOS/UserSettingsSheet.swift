@@ -2,10 +2,13 @@ import SwiftUI
 import NakamonREC_Shared
 
 /// ユーザー設定シート (Android `ユーザー設定` 相当)
-/// Step A (現在): UI スケルトンのみ。校正各項目と軽負荷モードは disabled プレースホルダ
-/// Step B で軽負荷モード、Step C で校正の各項目が機能する
+/// Step B 時点: 軽負荷モードトグルとモンスターピッカーが機能。校正項目は Step C プレースホルダ
 struct UserSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+
+    @State private var isLightMode: Bool = LightLoadConfig.mode == .light
+    @State private var lightCount: Int = LightLoadConfig.lightMonsterIDs.count
+    @State private var showLightPicker = false
 
     var body: some View {
         NavigationStack {
@@ -28,18 +31,40 @@ struct UserSettingsSheet: View {
                     Section {
                         HStack {
                             Image(systemName: "power")
-                                .foregroundStyle(.gray)
+                                .foregroundStyle(isLightMode ? Color.recCoral : .gray)
                                 .frame(width: 28)
                             Text("軽負荷モード (指定モンスターのみ)")
                                 .foregroundStyle(.white)
                             Spacer()
-                            Toggle("", isOn: .constant(false))
+                            Toggle("", isOn: $isLightMode)
                                 .labelsHidden()
-                                .disabled(true)
+                                .tint(Color.recCoral)
+                                .onChange(of: isLightMode) { _, newValue in
+                                    LightLoadConfig.mode = newValue ? .light : .normal
+                                }
                         }
                         .listRowBackground(Color.cardBackground)
+
+                        Button {
+                            showLightPicker = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "checklist")
+                                    .foregroundStyle(.gray)
+                                    .frame(width: 28)
+                                Text("対象モンスター (\(lightCount) 体)")
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.gray)
+                            }
+                        }
+                        .listRowBackground(Color.cardBackground)
+                    } header: {
+                        Text("解析モード")
+                            .foregroundStyle(.gray)
                     } footer: {
-                        Text("(Step B で機能予定)")
+                        Text("通常モード: monsters.json の全 \(MonsterCatalog.all.count) 体を識別\n軽負荷モード: 対象モンスターのみを識別し、解析時間を短縮")
                             .font(.caption2)
                             .foregroundStyle(.gray)
                     }
@@ -52,6 +77,11 @@ struct UserSettingsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("閉じる") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showLightPicker) {
+                LightLoadMonsterPicker {
+                    lightCount = LightLoadConfig.lightMonsterIDs.count
                 }
             }
         }

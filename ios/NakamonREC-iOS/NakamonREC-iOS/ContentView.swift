@@ -5,12 +5,6 @@ import NakamonREC_Shared
 
 private let logger = Logger(subsystem: "com.android.NakamonREC-iOS", category: "Host")
 
-struct MonsterData: Codable, Identifiable {
-    var id: String { name }
-    let name: String
-    let fileName: String
-}
-
 // MARK: - Main screen
 
 struct ContentView: View {
@@ -22,6 +16,7 @@ struct ContentView: View {
     @State private var showFileManager = false
     @State private var showUserSettings = false
     @State private var activeFileName: String = BattleHistoryStore.shared.activeFileName
+    @State private var lastSeenRecordTimestamp: String = BroadcastStatus.lastRecordTimestamp
 
     private var totalWins: Int { history.totalWins }
     private var totalLosses: Int { history.totalLosses }
@@ -65,7 +60,7 @@ struct ContentView: View {
                 isBroadcasting = BroadcastStatus.isActive
             }
             .task {
-                // Extension からの放送状態を 0.5 秒ごとに polling。
+                // Extension からの放送状態と戦績更新シグナルを 0.5 秒ごとに polling。
                 // SwiftUI の .task は view が消えると自動でキャンセルされる
                 while !Task.isCancelled {
                     let active = BroadcastStatus.isActive
@@ -75,13 +70,19 @@ struct ContentView: View {
                             reloadHistory()
                         }
                     }
+                    // 新しい戦績が保存されたら (放送中でも) サマリを更新
+                    let ts = BroadcastStatus.lastRecordTimestamp
+                    if ts != lastSeenRecordTimestamp {
+                        lastSeenRecordTimestamp = ts
+                        reloadHistory()
+                    }
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             }
         }
         .sheet(isPresented: $showDebugMenu) {
             DebugMenuView()
-                .presentationDetents([.medium])
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $showFileManager) {
             JSONFileManagerView {
@@ -380,6 +381,7 @@ struct BroadcastButton: UIViewRepresentable {
 
 private struct DebugMenuView: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var showUpdateInfo = false
 
     var body: some View {
         NavigationStack {
@@ -391,10 +393,11 @@ private struct DebugMenuView: View {
                         Label("直近の解析ログ (フライトレコーダー)", systemImage: "doc.text.magnifyingglass")
                     }
 
-                    NavigationLink {
-                        MonsterListView()
+                    Button {
+                        showUpdateInfo = true
                     } label: {
-                        Label("なかまモンスター一覧 (テスト)", systemImage: "list.bullet")
+                        Label("アプリのアップデートを確認", systemImage: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(.white)
                     }
                 }
             }
@@ -405,68 +408,11 @@ private struct DebugMenuView: View {
                     Button("閉じる") { dismiss() }
                 }
             }
-        }
-    }
-}
-
-// MARK: - Monster list (debug only)
-
-/// テスト用のなかまモンスター一覧 (元の ContentView の内容)
-struct MonsterListView: View {
-    @State private var monsters: [MonsterData] = []
-
-    var body: some View {
-        List(monsters) { monster in
-            HStack {
-                if let uiImage = loadImage(named: monster.fileName) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 40, height: 40)
-                        .cornerRadius(4)
-                } else {
-                    Image(systemName: "pawprint.circle.fill")
-                        .resizable()
-                        .frame(width: 40, height: 40)
-                        .foregroundColor(.blue)
-                }
-
-                VStack(alignment: .leading) {
-                    Text(monster.name)
-                        .font(.headline)
-                    Text(monster.fileName)
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
+            .alert("お知らせ", isPresented: $showUpdateInfo) {
+                Button("OK") { showUpdateInfo = false }
+            } message: {
+                Text("アップデートチェックは後日実装予定です。")
             }
-        }
-        .navigationTitle("なかまモンスター一覧")
-        .onAppear { loadMonsters() }
-    }
-
-    func loadImage(named fileName: String) -> UIImage? {
-        let name = (fileName as NSString).deletingPathExtension
-        let ext = (fileName as NSString).pathExtension
-
-        if let path = Bundle.main.path(forResource: name, ofType: ext, inDirectory: "templates") {
-            return UIImage(contentsOfFile: path)
-        }
-        if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates") {
-            return UIImage(contentsOfFile: path)
-        }
-        return nil
-    }
-
-    func loadMonsters() {
-        guard let url = Bundle.main.url(forResource: "monsters", withExtension: "json") else {
-            return
-        }
-        do {
-            let data = try Data(contentsOf: url)
-            let decoder = JSONDecoder()
-            self.monsters = try decoder.decode([MonsterData].self, from: data)
-        } catch {
-            // ignore
         }
     }
 }

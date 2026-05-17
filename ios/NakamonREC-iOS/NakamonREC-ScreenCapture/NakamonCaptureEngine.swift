@@ -35,22 +35,23 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         let isEnemy: Bool
     }
     private let slotConfigs: [SlotConfig] = [
-        // myParty: y = 1635/2364 = 0.692
-        SlotConfig(centerXRatio: 196.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
-        SlotConfig(centerXRatio: 391.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
-        SlotConfig(centerXRatio: 585.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
-        SlotConfig(centerXRatio: 780.0/1080.0, centerYRatio: 1635.0/2364.0, isEnemy: false),
-        // enemy: y = 915/2364 = 0.387
-        SlotConfig(centerXRatio: 201.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true),
-        SlotConfig(centerXRatio: 396.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true),
-        SlotConfig(centerXRatio: 590.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true),
-        SlotConfig(centerXRatio: 785.0/1080.0, centerYRatio: 915.0/2364.0, isEnemy: true)
+        // myParty: y = 1560/2364 = 0.660 (Android 1635 から 75px 上にシフト。iOS では立ち絵が上寄り)
+        SlotConfig(centerXRatio: 196.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
+        SlotConfig(centerXRatio: 391.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
+        SlotConfig(centerXRatio: 585.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
+        SlotConfig(centerXRatio: 780.0/1080.0, centerYRatio: 1560.0/2364.0, isEnemy: false),
+        // enemy: y = 840/2364 = 0.355 (Android 915 から 75px 上にシフト)
+        SlotConfig(centerXRatio: 201.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true),
+        SlotConfig(centerXRatio: 396.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true),
+        SlotConfig(centerXRatio: 590.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true),
+        SlotConfig(centerXRatio: 785.0/1080.0, centerYRatio: 840.0/2364.0, isEnemy: true)
     ]
     // 各スロット ROI のサイズ比率
-    // テンプレ 80x130 + 十分な padding。2.5x → 2.0x に縮小して sweet spot 探索中。
-    // 2.5x では識別 OK (Score 0.96+) だが 23 秒。1.0x では未検出。
-    private let slotROIWidthRatio: Double = 280.0 / 1080.0     // ≈ 0.259
-    private let slotROIHeightRatio: Double = 380.0 / 2364.0    // ≈ 0.161
+    // テンプレ 80x130 + 各辺 40px パディング (Android BattleAnalyzer.kt の wide 検索パス相当)。
+    // 旧値 280x380 では横方向にクロストーク (隣スロット中心 ±195px に届く) が発生。
+    // 横 160px → 隣スロット間隔 195px の 82% 内に収まり、適切な探索余地も維持する。
+    private let slotROIWidthRatio: Double = 160.0 / 1080.0     // ≈ 0.148 (was 0.259)
+    private let slotROIHeightRatio: Double = 210.0 / 2364.0    // ≈ 0.089 (was 0.161)
 
     private var didCalibrate = false
 
@@ -120,16 +121,18 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.error("❌ SELECT.png NOT FOUND")
             BattleLogger.append("❌ SELECT.png ロード失敗")
         }
-        for i in 1...30 {
-            let name = String(format: "id%03d", i)
-            if let path = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "templates"),
+        // monsters.json (シェアパッケージ) と LightLoadConfig からマッチング対象 ID 集合を決定
+        let effectiveIDs = LightLoadConfig.effectiveMonsterIDs()
+        let modeLabel = LightLoadConfig.mode == .light ? "軽負荷" : "通常"
+        for entry in MonsterCatalog.all where effectiveIDs.contains(entry.id) {
+            if let path = Bundle.main.path(forResource: entry.id, ofType: "png", inDirectory: "templates"),
                let img = UIImage(contentsOfFile: path) {
                 monsterTemplates.append(img)
-                monsterNames.append(name)
+                monsterNames.append(entry.id)
             }
         }
-        logger.log("Loaded \(self.monsterTemplates.count) monster templates")
-        BattleLogger.append("テンプレート読み込み完了 (モンスター\(monsterTemplates.count)体)")
+        logger.log("Loaded \(self.monsterTemplates.count) monster templates (\(modeLabel))")
+        BattleLogger.append("テンプレート読み込み完了 (\(modeLabel)モード, モンスター\(monsterTemplates.count)体)")
     }
 
     /// 初回フレーム到着時、フレーム幅に合わせて全テンプレートを1回だけリサイズする
@@ -539,6 +542,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             partySelectScores: p.partySelectScores
         )
         BattleHistoryStore.shared.append(record)
+        // Host メイン画面のサマリ即時更新用シグナル
+        BroadcastStatus.lastRecordTimestamp = record.timestamp
         BattleLogger.append(String(format: "📝 戦績記録: %@ P[%d] 味方=%@ vs 敵=%@",
                                    result,
                                    p.partyIndex + 1,
