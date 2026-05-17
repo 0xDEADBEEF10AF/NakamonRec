@@ -13,7 +13,9 @@ public struct BattleRecord: Codable, Identifiable, Hashable {
     public var resultScore: Double?
     public var partySelectScores: [Double]?
 
-    public var id: String { timestamp + "_" + result }
+    /// id は timestamp ベース (秒単位精度。同秒の戦闘は実質ありえない想定)
+    /// result/partyIndex などが変わっても id が安定するので SwiftUI の ForEach 追跡が破綻しない
+    public var id: String { timestamp }
 
     public init(timestamp: String,
                 result: String,

@@ -113,4 +113,36 @@ public final class BattleHistoryStore: @unchecked Sendable {
     public func clearActive() {
         saveActive(BattleHistory())
     }
+
+    // MARK: - Edit helpers
+
+    /// id (timestamp) で 1 件を更新
+    public func updateRecord(_ updated: BattleRecord) {
+        var history = loadActive()
+        if let idx = history.records.firstIndex(where: { $0.id == updated.id }) {
+            history.records[idx] = updated
+            history.recomputeTotals()
+            saveActive(history)
+        }
+    }
+
+    /// id (timestamp) で 1 件を削除
+    public func deleteRecord(id: String) {
+        var history = loadActive()
+        history.records.removeAll { $0.id == id }
+        history.recomputeTotals()
+        saveActive(history)
+    }
+
+    /// 指定 id の次の位置に新規レコードを挿入
+    public func insertRecord(_ new: BattleRecord, afterId: String) {
+        var history = loadActive()
+        if let idx = history.records.firstIndex(where: { $0.id == afterId }) {
+            history.records.insert(new, at: idx + 1)
+        } else {
+            history.records.append(new)
+        }
+        history.recomputeTotals()
+        saveActive(history)
+    }
 }

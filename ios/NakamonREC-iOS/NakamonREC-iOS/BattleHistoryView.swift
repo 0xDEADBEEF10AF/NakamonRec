@@ -47,6 +47,8 @@ struct BattleHistoryView: View {
     @State private var history: BattleHistory = BattleHistory()
     @State private var filter: BattleFilter = BattleFilter()
     @State private var mode: BattleHistoryMode = .edit
+    @State private var editingRecord: BattleRecord? = nil
+    @State private var editingMonstersFor: BattleRecord? = nil
     @Environment(\.dismiss) private var dismiss
 
     /// フィルタ後の records (古い順)
@@ -95,6 +97,53 @@ struct BattleHistoryView: View {
             bottomToolbar
         }
         .onAppear(perform: reload)
+        .sheet(item: $editingRecord) { record in
+            RecordEditMenu(
+                record: record,
+                onApply: { updated in
+                    if let updated {
+                        BattleHistoryStore.shared.updateRecord(updated)
+                    } else {
+                        BattleHistoryStore.shared.deleteRecord(id: record.id)
+                    }
+                    reload()
+                },
+                onAddNext: { partyIdx in
+                    insertNewRecord(after: record, partyIndex: partyIdx)
+                },
+                onChangeMonsters: {
+                    editingMonstersFor = record
+                },
+                onShowMatchingScore: {
+                    // Phase 7 で実装
+                }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $editingMonstersFor) { record in
+            MonsterPartyEditor(record: record) { updated in
+                BattleHistoryStore.shared.updateRecord(updated)
+                reload()
+            }
+        }
+    }
+
+    /// この1戦の次に新規レコードを追加 (timestamp は現在時刻、myParty は選択パーティの最新編成を引き継ぐ)
+    private func insertNewRecord(after record: BattleRecord, partyIndex: Int) {
+        let myParty = latestMyParty(forPartyIndex: partyIndex) ?? ["?", "?", "?", "?"]
+        let newRecord = BattleRecord(
+            timestamp: BattleTimestampFormatter.now(),
+            result: "WIN",
+            partyIndex: partyIndex,
+            myParty: myParty,
+            enemyParty: ["?", "?", "?", "?"]
+        )
+        BattleHistoryStore.shared.insertRecord(newRecord, afterId: record.id)
+        reload()
+    }
+
+    private func latestMyParty(forPartyIndex idx: Int) -> [String]? {
+        history.records.last(where: { $0.partyIndex == idx })?.myParty
     }
 
     private func reload() {
@@ -125,9 +174,9 @@ struct BattleHistoryView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
             HStack(spacing: 4) {
-                Text("\(wins)W").foregroundStyle(.green)
+                Text("\(wins)W").foregroundStyle(Color.sideMy)
                 Text("-").foregroundStyle(.gray)
-                Text("\(losses)L").foregroundStyle(.red)
+                Text("\(losses)L").foregroundStyle(Color.sideEnemy)
             }
             .font(.caption)
         }
@@ -231,9 +280,9 @@ struct BattleHistoryView: View {
                 .font(.caption2)
                 .foregroundStyle(.gray)
             HStack(spacing: 2) {
-                Text("\(wins)W").foregroundStyle(.green)
+                Text("\(wins)W").foregroundStyle(Color.sideMy)
                 Text("-").foregroundStyle(.gray)
-                Text("\(losses)L").foregroundStyle(.red)
+                Text("\(losses)L").foregroundStyle(Color.sideEnemy)
             }
             .font(.caption2)
         }
@@ -260,7 +309,7 @@ struct BattleHistoryView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 3) {
                     if let wl = filter.winLoseFilter {
-                        chipText(wl, color: wl == "WIN" ? Color.recCoral : Color.blue) {
+                        chipText(wl, color: wl == "WIN" ? Color.sideMy : Color.sideEnemy) {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 filter.winLoseFilter = nil
                             }
@@ -339,7 +388,12 @@ struct BattleHistoryView: View {
                         mode: mode,
                         myFilter: filter.requiredMyMonsters,
                         enemyFilter: filter.requiredEnemyMonsters,
-                        onAddFilter: addFilter
+                        onAddFilter: addFilter,
+                        onLongPress: {
+                            if mode == .edit {
+                                editingRecord = record
+                            }
+                        }
                     )
                     .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
@@ -421,13 +475,14 @@ private struct BattleRecordRow: View {
     let myFilter: Set<String>
     let enemyFilter: Set<String>
     let onAddFilter: (FilterEvent) -> Void
+    let onLongPress: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.result)
                     .font(.subheadline.bold())
-                    .foregroundStyle(record.result == "WIN" ? Color.recCoral : Color.blue)
+                    .foregroundStyle(record.result == "WIN" ? Color.sideMy : Color.sideEnemy)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .onTapGesture {
@@ -483,6 +538,9 @@ private struct BattleRecordRow: View {
         .padding(.horizontal, 4)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onLongPressGesture(minimumDuration: 0.4) {
+            onLongPress()
+        }
     }
 
     private func splitTimestamp(_ ts: String) -> (date: String, time: String) {
@@ -530,19 +588,20 @@ struct MonsterThumb: View {
 // MARK: - Colors
 
 extension Color {
-    static let recCoral = Color(red: 240/255, green: 130/255, blue: 130/255)
+    /// Android 版と統一したピンク #F09199 (味方 / WIN / 主要アクセント)
+    static let recCoral = Color(red: 0xF0/255.0, green: 0x91/255.0, blue: 0x99/255.0)
     static let cardBackground = Color(white: 0.18)
-    /// フィルタ「味方」の識別色 (コーラル系)
-    static let sideMy = Color(red: 240/255, green: 130/255, blue: 130/255)
-    /// フィルタ「敵」の識別色 (水色系)
-    static let sideEnemy = Color(red: 110/255, green: 180/255, blue: 230/255)
+    /// 味方の識別色 (= recCoral)
+    static let sideMy = Color(red: 0xF0/255.0, green: 0x91/255.0, blue: 0x99/255.0)
+    /// 敵の識別色 #90D7EC (Android 版と統一)
+    static let sideEnemy = Color(red: 0x90/255.0, green: 0xD7/255.0, blue: 0xEC/255.0)
     /// 簡易フィルタ (TOTAL / P1〜3) の選択枠色 (ライトグレー)
     static let cardSelected = Color(white: 0.7)
 }
 
 // MARK: - Helpers
 
-private extension Array {
+extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
