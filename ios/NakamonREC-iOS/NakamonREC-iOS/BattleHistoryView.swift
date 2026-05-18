@@ -51,6 +51,13 @@ struct BattleHistoryView: View {
     @State private var editingMonstersFor: BattleRecord? = nil
     @State private var matchingScoreFor: BattleRecord? = nil
     @State private var trendPinnedBattleNum: Int? = nil  // タップで設定する選択点。nil = 表示なし (デフォルトは Canvas が最新点を採用)
+    @State private var showStatsMenu = false
+    @State private var statsTarget: StatsTarget? = nil
+
+    enum StatsTarget: String, Identifiable {
+        case party, monster
+        var id: String { rawValue }
+    }
     @Environment(\.dismiss) private var dismiss
 
     /// フィルタ後の records (古い順)
@@ -130,6 +137,22 @@ struct BattleHistoryView: View {
         }
         .sheet(item: $matchingScoreFor) { record in
             MatchingScoreDetailView(record: record)
+        }
+        .sheet(isPresented: $showStatsMenu) {
+            StatsMenuSheet { target in
+                showStatsMenu = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    statsTarget = target
+                }
+            }
+            .presentationDetents([.fraction(0.3)])
+        }
+        .sheet(item: $statsTarget) { target in
+            switch target {
+            case .party:   PartyStatsView(records: history.records)
+            // P1~3 簡易フィルタ・フィルタモードを反映するため filtered を渡す
+            case .monster: MonsterStatsView(records: filtered, partyFilter: filter.partyIndex)
+            }
         }
     }
 
@@ -455,11 +478,11 @@ struct BattleHistoryView: View {
             }
             .frame(maxWidth: .infinity)
             Button {
-                // Phase 3/4 で集計画面遷移
+                showStatsMenu = true
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.title3)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Color.recCoral)
                     .frame(maxWidth: .infinity)
             }
         }
