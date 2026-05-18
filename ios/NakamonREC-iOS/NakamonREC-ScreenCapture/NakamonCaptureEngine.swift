@@ -79,27 +79,29 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 校正設定をロード (ROI 位置)
         calibrationConfig = CalibrationStore.load()
 
-        // VS: カスタムがあれば BASE 2 種 (FM/MG) を上書き
+        // VS: カスタム (もし校正済なら) + BASE FM + BASE MG を全部ロード。
+        // ランタイムは全てを試して max スコアを採用するので、普段用 VS_FM で校正済みでも
+        // 大会用 VS_MG が映ったときに BASE MG にフォールバックして検出できる
+        // (Android `BattleAnalyzer.isVsDetected()` と同じ多段検出パターン)。
+        var vsList: [UIImage] = []
         if let custom = loadCustomTemplate(.vs) {
-            vsLogos = [custom]
-            logger.log("✅ VS custom テンプレを使用")
-            BattleLogger.append("✅ VS custom テンプレを使用")
-        } else {
-            var baseList: [UIImage] = []
-            if let fm = loadBaseTemplate("VS_FM") {
-                baseList.append(fm)
-                logger.log("✅ VS_FM.png loaded")
-            } else {
-                BattleLogger.append("❌ VS_FM.png ロード失敗")
-            }
-            if let mg = loadBaseTemplate("VS_MG") {
-                baseList.append(mg)
-                logger.log("✅ VS_MG.png loaded")
-            } else {
-                BattleLogger.append("⚠️ VS_MG.png 未配置 (大会用)")
-            }
-            vsLogos = baseList
+            vsList.append(custom)
+            logger.log("✅ VS custom テンプレをロード")
+            BattleLogger.append("✅ VS custom テンプレを使用 (FM/MG にもフォールバック)")
         }
+        if let fm = loadBaseTemplate("VS_FM") {
+            vsList.append(fm)
+            logger.log("✅ VS_FM.png loaded")
+        } else {
+            BattleLogger.append("❌ VS_FM.png ロード失敗")
+        }
+        if let mg = loadBaseTemplate("VS_MG") {
+            vsList.append(mg)
+            logger.log("✅ VS_MG.png loaded")
+        } else {
+            BattleLogger.append("⚠️ VS_MG.png 未配置 (大会用)")
+        }
+        vsLogos = vsList
 
         // SELECT (カスタム優先)
         if let custom = loadCustomTemplate(.select) {
