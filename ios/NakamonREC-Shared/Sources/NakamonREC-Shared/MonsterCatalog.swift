@@ -35,4 +35,9 @@ public enum MonsterCatalog {
     public static func name(for id: String) -> String {
         all.first(where: { $0.id == id })?.name ?? id
     }
+
+    /// 日本語名から ID への逆引き (見つからなければ nil)。CSV インポート時に使用。
+    public static func id(for name: String) -> String? {
+        all.first(where: { $0.name == name })?.id
+    }
 }

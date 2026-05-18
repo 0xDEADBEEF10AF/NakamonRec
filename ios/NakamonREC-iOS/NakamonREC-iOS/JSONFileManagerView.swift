@@ -18,10 +18,17 @@ struct JSONFileManagerView: View {
     @State private var pendingDelete: FileTarget? = nil
     @State private var errorMessage: String? = nil
     @State private var infoMessage: String? = nil
+    @State private var csvShareURL: ShareURL? = nil
+    @State private var showCSVImporter = false
+    @State private var showMergeSheet = false
 
     private struct FileTarget: Identifiable {
         let name: String
         var id: String { name }
+    }
+    private struct ShareURL: Identifiable {
+        let url: URL
+        var id: String { url.path }
     }
 
     var body: some View {
@@ -61,8 +68,8 @@ struct JSONFileManagerView: View {
             // 下部アクション行
             HStack(spacing: 0) {
                 bottomAction("新規作成") { showCreatePrompt = true }
-                bottomAction("ファイルマージ") { infoMessage = "ファイルマージは後日実装予定です。" }
-                bottomAction("CSVインポート") { infoMessage = "CSV インポートは後日実装予定です。" }
+                bottomAction("ファイルマージ") { showMergeSheet = true }
+                bottomAction("CSVインポート") { showCSVImporter = true }
                 bottomAction("閉じる") { dismiss() }
             }
             .padding(.vertical, 6)
@@ -87,10 +94,28 @@ struct JSONFileManagerView: View {
                     pendingDelete = target
                 },
                 onExportCSV: {
-                    infoMessage = "CSV エクスポートは後日実装予定です。"
+                    exportCSV(forFile: target.name)
                 }
             )
             .presentationDetents([.fraction(0.45)])
+        }
+        .sheet(item: $csvShareURL) { share in
+            ShareSheet(items: [share.url])
+        }
+        .sheet(isPresented: $showCSVImporter) {
+            DocumentImportPicker { url in
+                importCSV(from: url)
+            }
+        }
+        .sheet(isPresented: $showMergeSheet) {
+            FileMergeView { newFileName in
+                if !newFileName.isEmpty {
+                    BattleHistoryStore.shared.activeFileName = newFileName
+                    activeName = newFileName
+                    reload()
+                    onChange()
+                }
+            }
         }
         .sheet(isPresented: $showCreatePrompt) {
             FileNamePrompt(title: "新しいファイル", initialName: defaultNewFileName()) { name in
@@ -183,6 +208,58 @@ struct JSONFileManagerView: View {
         formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyyMMddHHmmss"
         return "record_\(formatter.string(from: Date()))"
+    }
+
+    // MARK: - CSV export / import
+
+    private func exportCSV(forFile name: String) {
+        let history = BattleHistoryStore.shared.load(fileName: name)
+        let csv = CSVSupport.encode(history)
+        let base = stripExtension(name)
+        if let url = writeCSVToTempFile(content: csv, baseName: base) {
+            csvShareURL = ShareURL(url: url)
+        } else {
+            errorMessage = "CSV ファイルの書き出しに失敗しました。"
+        }
+    }
+
+    private func importCSV(from url: URL) {
+        // Document Picker は asCopy: true なので security scope 不要だが念のため
+        let didAccessSecurity = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccessSecurity { url.stopAccessingSecurityScopedResource() }
+        }
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .shiftJIS) else {
+            errorMessage = "CSV ファイルを読み込めませんでした。"
+            return
+        }
+        let records = CSVSupport.decode(text)
+        guard !records.isEmpty else {
+            errorMessage = "CSV から戦績を 1 件も読み取れませんでした。"
+            return
+        }
+        // 新規ファイル名: 元 CSV 名 (.csv 除く) を使用
+        let origName = url.deletingPathExtension().lastPathComponent
+        let candidate = origName.isEmpty ? "imported_\(Date().timeIntervalSince1970)" : origName
+        // 既存と衝突しないよう接尾辞付与
+        var target = candidate
+        var counter = 1
+        let existing = BattleHistoryStore.shared.availableFiles()
+        while existing.contains("\(target).json") {
+            target = "\(candidate)_\(counter)"
+            counter += 1
+        }
+        var history = BattleHistory()
+        history.records = records
+        history.recomputeTotals()
+        BattleHistoryStore.shared.save(history, fileName: "\(target).json")
+        BattleHistoryStore.shared.activeFileName = "\(target).json"
+        activeName = "\(target).json"
+        reload()
+        onChange()
+        infoMessage = "CSV から \(records.count) 件のレコードを読み込み、新規ファイル「\(target)」を作成しました。"
     }
 }
 
