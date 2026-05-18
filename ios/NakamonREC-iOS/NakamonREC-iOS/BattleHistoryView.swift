@@ -50,6 +50,7 @@ struct BattleHistoryView: View {
     @State private var editingRecord: BattleRecord? = nil
     @State private var editingMonstersFor: BattleRecord? = nil
     @State private var matchingScoreFor: BattleRecord? = nil
+    @State private var trendPinnedBattleNum: Int? = nil  // タップで設定する選択点。nil = 表示なし (デフォルトは Canvas が最新点を採用)
     @Environment(\.dismiss) private var dismiss
 
     /// フィルタ後の records (古い順)
@@ -207,22 +208,11 @@ struct BattleHistoryView: View {
                 .font(.caption2)
                 .foregroundStyle(.gray)
 
-            let trend = movingAverageWinRates(records: filtered, window: 20)
-            if trend.count >= 2 {
-                Chart {
-                    ForEach(Array(trend.enumerated()), id: \.offset) { idx, value in
-                        LineMark(
-                            x: .value("idx", idx),
-                            y: .value("rate", value)
-                        )
-                        .foregroundStyle(Color.recCoral)
-                    }
-                }
-                .chartXAxis(.hidden)
-                .chartYAxis(.hidden)
-                .chartYScale(domain: 0...100)
-                .frame(height: 60)
-                Text(String(format: "%.1f%% : %d Matches", trend.last ?? 0, filtered.count))
+            let allTrend = rollingWinRates(records: filtered, window: 20, lastN: Int.max)
+            if allTrend.count >= 2 {
+                RecentTrendChart(trend: allTrend, selectedBattleNum: $trendPinnedBattleNum)
+                    .frame(height: 80)
+                Text("SLIDE TO SEE")
                     .font(.caption2)
                     .foregroundStyle(.gray)
             } else {
@@ -238,17 +228,30 @@ struct BattleHistoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private func movingAverageWinRates(records: [BattleRecord], window: Int) -> [Double] {
-        guard records.count >= 2 else { return [] }
-        var result: [Double] = []
-        for i in 0..<records.count {
-            let start = max(0, i - window + 1)
-            let slice = records[start...i]
+    /// トレンドの 1 点
+    struct TrendPoint: Identifiable {
+        let id = UUID()
+        let battleNum: Int        // X 軸 (1-indexed、絶対戦闘番号)
+        let winRate: Double       // 直近 N 戦のローリング勝率 %
+        let record: BattleRecord
+    }
+
+    /// ローリング window 戦の勝率を全戦時点で計算し、最新 lastN 戦のみ返す。
+    /// - 1..window 戦目: それまでの戦闘数が分母 (cumulative)
+    /// - window+1 戦目以降: 直近 window 戦が分母 (rolling)
+    fileprivate func rollingWinRates(records: [BattleRecord], window: Int, lastN: Int) -> [TrendPoint] {
+        guard !records.isEmpty else { return [] }
+        let sorted = records.sorted { $0.timestamp < $1.timestamp }
+        var pts: [TrendPoint] = []
+        for (idx, r) in sorted.enumerated() {
+            let start = max(0, idx - window + 1)
+            let slice = sorted[start...idx]
             let wins = slice.filter { $0.result == "WIN" }.count
             let rate = Double(wins) / Double(slice.count) * 100
-            result.append(rate)
+            pts.append(TrendPoint(battleNum: idx + 1, winRate: rate, record: r))
         }
-        return result
+        if pts.count > lastN { pts = Array(pts.suffix(lastN)) }
+        return pts
     }
 
     // MARK: - Middle: P1/P2/P3
