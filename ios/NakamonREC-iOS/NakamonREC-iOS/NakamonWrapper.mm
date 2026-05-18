@@ -29,6 +29,20 @@
 }
 @end
 
+@implementation NakamonSlotMatch
+- (instancetype)initWithCenterX:(CGFloat)cx centerY:(CGFloat)cy
+                          score:(double)score index:(NSInteger)index {
+    self = [super init];
+    if (self) {
+        _centerX = cx;
+        _centerY = cy;
+        _score = score;
+        _index = index;
+    }
+    return self;
+}
+@end
+
 @implementation NakamonWrapper
 
 // プロセス内モンスターテンプレキャッシュ。
@@ -248,6 +262,55 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
         }
     }
     return results;
+}
+
++ (NakamonSlotMatch *)bestMonsterLocationInRegion:(UIImage *)scene
+                                          centerX:(int)centerX
+                                          centerY:(int)centerY
+                                            width:(int)width
+                                           height:(int)height {
+    if (gCachedMonsterTemplates.empty()) {
+        return [[NakamonSlotMatch alloc] initWithCenterX:0 centerY:0 score:0 index:-1];
+    }
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    int imgW = sceneMat.cols;
+    int imgH = sceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    sceneMat(roiRect).copyTo(workRoi);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    double bestScore = -1.0;
+    int bestIdx = -1;
+    cv::Point bestLoc(0, 0);
+    int bestTplW = 0, bestTplH = 0;
+    for (size_t i = 0; i < gCachedMonsterTemplates.size(); ++i) {
+        const auto& tpl = gCachedMonsterTemplates[i];
+        if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+        cv::Mat result;
+        cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+        double maxVal = 0;
+        cv::Point maxLoc;
+        cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+        if (maxVal > bestScore) {
+            bestScore = maxVal;
+            bestIdx = (int)i;
+            bestLoc = maxLoc;
+            bestTplW = tpl.cols;
+            bestTplH = tpl.rows;
+        }
+    }
+    // ROI 内 left-top → scene 内 center に変換
+    CGFloat sceneX = roiRect.x + bestLoc.x + bestTplW * 0.5;
+    CGFloat sceneY = roiRect.y + bestLoc.y + bestTplH * 0.5;
+    return [[NakamonSlotMatch alloc] initWithCenterX:sceneX
+                                              centerY:sceneY
+                                                score:bestScore
+                                                index:bestIdx];
 }
 
 + (NakamonMatchResult *)bestMonsterAndSaveInRegion:(UIImage *)scene

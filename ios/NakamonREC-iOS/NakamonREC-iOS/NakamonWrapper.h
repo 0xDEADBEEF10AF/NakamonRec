@@ -20,6 +20,17 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)init NS_UNAVAILABLE;
 @end
 
+/// per-slot 自動校正用: スロット ROI 内で best match したモンスター index / 位置 / スコア
+@interface NakamonSlotMatch : NSObject
+@property (nonatomic, readonly) CGFloat centerX;   // scene のピクセル座標
+@property (nonatomic, readonly) CGFloat centerY;
+@property (nonatomic, readonly) double score;
+@property (nonatomic, readonly) NSInteger index;   // cacheMonsterTemplates の index、未マッチは -1
+- (instancetype)initWithCenterX:(CGFloat)cx centerY:(CGFloat)cy
+                          score:(double)score index:(NSInteger)index NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
+@end
+
 @interface NakamonWrapper : NSObject
 
 /**
@@ -113,6 +124,17 @@ NS_ASSUME_NONNULL_BEGIN
                                                           k:(int)k
                                        suppressHalfWidth:(int)halfW
                                       suppressHalfHeight:(int)halfH;
+
+/**
+ * per-slot 自動校正用: 指定 ROI 内でキャッシュ済テンプレすべてを試し、最高スコアの
+ * テンプレ index と中心位置 (scene のピクセル座標) を返す。
+ * bestMonsterInRegion と同じデータを返すが、加えて scene 内の位置情報を伴う。
+ */
++ (NakamonSlotMatch *)bestMonsterLocationInRegion:(UIImage *)scene
+                                          centerX:(int)centerX
+                                          centerY:(int)centerY
+                                            width:(int)width
+                                           height:(int)height;
 
 @end
 

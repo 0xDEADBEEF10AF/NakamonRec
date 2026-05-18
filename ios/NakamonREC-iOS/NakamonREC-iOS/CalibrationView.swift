@@ -405,12 +405,11 @@ struct CalibrationView: View {
 
     /// 対戦じゅんび画面用の自動校正。
     /// アルゴリズム:
-    ///   1. BASE VS_FM と VS_MG の両方で findBestMatchLocation
-    ///   2. 高スコア側を採用 (どちらの VS ロゴが映っているかを自動判別)
-    ///   3. VS の新位置のみ更新 + VS マッチ位置から VS_custom.png を生成
-    ///   4. モンスタースロット 8 個はデフォルト位置をそのまま維持
-    ///      → 既に iPhone 13 mini で 0.94+ スコアの実績があるため。
-    ///      機種固有のモンスター位置ズレが必要になったら per-slot 探索を C2.5 で実装する
+    ///   1. BASE VS_FM と VS_MG の両方で findBestMatchLocation → VS 位置決定 + カスタムテンプレ生成
+    ///   2. 全 126 モンスターテンプレを scene スケールにリサイズしてキャッシュ
+    ///   3. 各スロット (8 個) で広めの探索範囲を使い bestMonsterLocationInRegion
+    ///      → 最高スコアのテンプレ位置をそのスロットの新中心とする
+    ///   4. 重い処理 (126 × 8 + テンプレロード/リサイズ) なので砂時計表示
     private func runBattlePrepAutoCal(scene: UIImage) {
         guard let vsFM = loadTemplate("VS_FM") else {
             statusMessage = "BASE VS_FM テンプレが見つかりません。"
@@ -422,52 +421,104 @@ struct CalibrationView: View {
         hasCustomTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
+            // --- 1. VS 検出 ---
             let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFM)
-            var bestLoc = locFM
-            var bestTemplate: UIImage = vsFM
+            var bestVSLoc = locFM
             if let vsMG = vsMG {
                 let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMG)
-                if locMG.score > bestLoc.score {
-                    bestLoc = locMG
-                    bestTemplate = vsMG
+                if locMG.score > bestVSLoc.score {
+                    bestVSLoc = locMG
                 }
             }
+
+            // --- 2. 全モンスターテンプレをロード + scene スケールにリサイズ + キャッシュ ---
+            let scale = scene.size.width / 1080.0
+            var resizedTemplates: [UIImage] = []
+            var loadedIDs: [String] = []
+            for entry in MonsterCatalog.all {
+                guard let path = Bundle.main.path(forResource: entry.id, ofType: "png", inDirectory: "templates"),
+                      let img = UIImage(contentsOfFile: path) else { continue }
+                let target = CGSize(width: img.size.width * scale,
+                                    height: img.size.height * scale)
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1.0
+                let renderer = UIGraphicsImageRenderer(size: target, format: format)
+                let resized = renderer.image { _ in
+                    img.draw(in: CGRect(origin: .zero, size: target))
+                }
+                resizedTemplates.append(resized)
+                loadedIDs.append(entry.id)
+            }
+            NakamonWrapper.cacheMonsterTemplates(resizedTemplates)
+
+            // --- 3. 各スロットで per-slot best-match を取得 ---
+            // 探索範囲: テンプレ 80×130 + 各辺余白 (X: ±60, Y: ±100) で広めに
+            let slotSearchW = 200.0 / 1080.0   // 1080-ref で 200px 幅
+            let slotSearchH = 330.0 / 2364.0   // 1080-ref で 330px 縦 (機種差吸収)
+            let sceneW = scene.size.width
+            let sceneH = scene.size.height
+            var slotResults: [(ratioX: Double, ratioY: Double, score: Double, id: String)] = []
+            for roi in CalibrationDefaults.battlePrepMonsterROIs {
+                let cx = Int32(sceneW * roi.centerXRatio)
+                let cy = Int32(sceneH * roi.centerYRatio)
+                let w = Int32(sceneW * slotSearchW)
+                let h = Int32(sceneH * slotSearchH)
+                let match = NakamonWrapper.bestMonsterLocation(inRegion: scene,
+                                                                centerX: cx,
+                                                                centerY: cy,
+                                                                width: w,
+                                                                height: h)
+                let rx = Double(match.centerX) / Double(sceneW)
+                let ry = Double(match.centerY) / Double(sceneH)
+                let id: String = (match.index >= 0 && match.index < loadedIDs.count)
+                                 ? loadedIDs[match.index] : "?"
+                slotResults.append((rx, ry, match.score, id))
+            }
+
             DispatchQueue.main.async {
-                handleBattlePrepAutoCalResult(matchLocation: bestLoc,
-                                              matchedTemplate: bestTemplate,
+                handleBattlePrepAutoCalResult(vsLocation: bestVSLoc,
+                                              slotResults: slotResults,
                                               scene: scene)
             }
         }
     }
 
-    private func handleBattlePrepAutoCalResult(matchLocation: NakamonMatchLocation,
-                                               matchedTemplate: UIImage,
+    private func handleBattlePrepAutoCalResult(vsLocation: NakamonMatchLocation,
+                                               slotResults: [(ratioX: Double, ratioY: Double, score: Double, id: String)],
                                                scene: UIImage) {
         defer { isAutoCalibrating = false }
-        guard matchLocation.score >= 0.4 else {
-            statusMessage = String(format: "VS ロゴを検出できませんでした (最高スコア %.3f)", matchLocation.score)
+        guard vsLocation.score >= 0.4 else {
+            statusMessage = String(format: "VS ロゴを検出できませんでした (最高スコア %.3f)", vsLocation.score)
             return
         }
         let sceneW = Double(scene.size.width)
         let sceneH = Double(scene.size.height)
-        let matchX = Double(matchLocation.centerX) / sceneW
-        let matchY = Double(matchLocation.centerY) / sceneH
+        let vsX = Double(vsLocation.centerX) / sceneW
+        let vsY = Double(vsLocation.centerY) / sceneH
 
-        // VS のみ位置を更新。モンスタースロット 8 個はデフォルトのまま維持
-        // (デフォルトは iPhone 13 mini 実機で 0.94+ スコア実績あり、シフトすると逆に精度が落ちる)
+        // VS 位置を更新
         var newROIs: [CalibrationROI] = []
         var newVS = CalibrationDefaults.battlePrepVSROI
-        newVS.centerXRatio = clamp(matchX, 0, 1)
-        newVS.centerYRatio = clamp(matchY, 0, 1)
+        newVS.centerXRatio = clamp(vsX, 0, 1)
+        newVS.centerYRatio = clamp(vsY, 0, 1)
         newROIs.append(newVS)
-        newROIs.append(contentsOf: CalibrationDefaults.battlePrepMonsterROIs)
+
+        // 各スロット位置を更新 (スコアが低い場合はデフォルト維持)
+        for (i, defROI) in CalibrationDefaults.battlePrepMonsterROIs.enumerated() {
+            var copy = defROI
+            if i < slotResults.count, slotResults[i].score >= 0.5 {
+                copy.centerXRatio = clamp(slotResults[i].ratioX, 0, 1)
+                copy.centerYRatio = clamp(slotResults[i].ratioY, 0, 1)
+            }
+            newROIs.append(copy)
+        }
         rois = newROIs
 
-        // VS カスタムテンプレを生成 (検出された VS の解像度を 1080-ref に正規化)
+        // VS カスタムテンプレを生成
         let defaultVS = CalibrationDefaults.battlePrepVSROI
         if let custom = generateCustomTemplate(scene: scene,
-                                               matchCenterXRatio: matchX,
-                                               matchCenterYRatio: matchY,
+                                               matchCenterXRatio: vsX,
+                                               matchCenterYRatio: vsY,
                                                templateWidthRatio: defaultVS.widthRatio,
                                                templateHeightRatio: defaultVS.heightRatio) {
             CustomTemplateStore.save(custom, as: .vs)
@@ -475,8 +526,12 @@ struct CalibrationView: View {
         }
 
         recomputeScores()
-        statusMessage = String(format: "自動校正完了 (VS スコア %.3f)\nVS 位置のみ更新しました。\nモンスター 8 スロットはデフォルト位置を維持しています。\nこの位置で決定 を押すと保存されます。",
-                               matchLocation.score)
+        let slotSummary = slotResults.enumerated().map { idx, r in
+            let label = idx < 4 ? "味方\(idx)" : "敵\(idx - 4)"
+            return String(format: "%@:%@ %.2f", label, r.id, r.score)
+        }.joined(separator: " / ")
+        statusMessage = String(format: "自動校正完了\nVS Score %.3f\n%@\nこの位置で決定 を押すと保存されます。",
+                               vsLocation.score, slotSummary)
     }
 
     /// 名前を指定して templates フォルダから BASE テンプレを取得
