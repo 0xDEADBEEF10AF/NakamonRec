@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var isBroadcasting: Bool = BroadcastStatus.isActive
     @State private var showFileManager = false
     @State private var showUserSettings = false
+    @State private var showHelp = false
     @State private var activeFileName: String = BattleHistoryStore.shared.activeFileName
     @State private var lastSeenRecordTimestamp: String = BroadcastStatus.lastRecordTimestamp
 
@@ -93,6 +94,9 @@ struct ContentView: View {
         .sheet(isPresented: $showUserSettings) {
             UserSettingsSheet()
         }
+        .sheet(isPresented: $showHelp) {
+            HelpView()
+        }
     }
 
     private func reloadHistory() {
@@ -125,7 +129,7 @@ struct ContentView: View {
             Spacer()
 
             Button {
-                // Phase 9 で README 表示
+                showHelp = true
             } label: {
                 Image(systemName: "questionmark")
                     .font(.callout.bold())
@@ -381,7 +385,8 @@ struct BroadcastButton: UIViewRepresentable {
 
 private struct DebugMenuView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var showUpdateInfo = false
+
+    private let releasesURL = URL(string: "https://github.com/0xDEADBEEF10AF/NakamonRec/releases")!
 
     var body: some View {
         NavigationStack {
@@ -390,11 +395,11 @@ private struct DebugMenuView: View {
                     NavigationLink {
                         BattleLogViewerView()
                     } label: {
-                        Label("直近の解析ログ (フライトレコーダー)", systemImage: "doc.text.magnifyingglass")
+                        Label("直近の解析ログ", systemImage: "doc.text.magnifyingglass")
                     }
 
                     Button {
-                        showUpdateInfo = true
+                        UIApplication.shared.open(releasesURL)
                     } label: {
                         Label("アプリのアップデートを確認", systemImage: "arrow.triangle.2.circlepath")
                             .foregroundStyle(.white)
@@ -407,11 +412,6 @@ private struct DebugMenuView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("閉じる") { dismiss() }
                 }
-            }
-            .alert("お知らせ", isPresented: $showUpdateInfo) {
-                Button("OK") { showUpdateInfo = false }
-            } message: {
-                Text("アップデートチェックは後日実装予定です。")
             }
         }
     }
