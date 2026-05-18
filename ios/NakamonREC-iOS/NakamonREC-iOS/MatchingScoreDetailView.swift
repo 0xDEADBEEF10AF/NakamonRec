@@ -2,16 +2,17 @@ import SwiftUI
 import NakamonREC_Shared
 
 /// マッチングスコア詳細画面 (Android `マッチングスコア詳細画面` 相当)
-/// - 最新 1 戦ぶんの snapshot を表示する
-/// - 開いた record の timestamp と snapshot の battleTimestamp が一致するときのみデータを表示
+/// - スコアはレコード自身 (BattleRecord) に保存されているので過去戦でも表示できる
+/// - サムネ画像のみ最新 1 戦ぶんを保持。過去戦のサムネは空枠 (placeholder)
 struct MatchingScoreDetailView: View {
     let record: BattleRecord
     @Environment(\.dismiss) private var dismiss
 
     @State private var metadata: MatchingScoreSnapshot.Metadata? = nil
 
-    /// snapshot がこの record のものか
-    private var snapshotMatchesRecord: Bool {
+    /// 開いた record の timestamp と snapshot の battleTimestamp が一致するか
+    /// (= サムネ画像をこの record のものとして表示してよいか)
+    private var isCurrentSnapshot: Bool {
         metadata?.battleTimestamp == record.timestamp
     }
 
@@ -21,19 +22,13 @@ struct MatchingScoreDetailView: View {
                 Color.black.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 16) {
-                        if metadata == nil {
-                            emptyStateCard(message: "まだスナップショットが記録されていません。\n戦闘を録画して計測してください。")
-                        } else if !snapshotMatchesRecord {
-                            // 最新 snapshot は別の戦闘 - 戦闘の timestamp を見せて案内
-                            emptyStateCard(
-                                message: "この戦績のスナップショットは保存されていません。\n最新スナップショットは別の戦闘 (\(metadata?.battleTimestamp ?? "?")) のものです。"
-                            )
-                        } else {
-                            partySection
-                            vsSection
-                            monstersSection
-                            resultSection
+                        if !isCurrentSnapshot {
+                            pastRecordNotice
                         }
+                        partySection
+                        vsSection
+                        monstersSection
+                        resultSection
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 16)
@@ -54,11 +49,25 @@ struct MatchingScoreDetailView: View {
         metadata = MatchingScoreSnapshot.loadMetadata()
     }
 
-    // MARK: - Sections
+    private var pastRecordNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.gray)
+            Text("この戦績のサムネ画像は保持されていません。スコアのみ表示します。")
+                .font(.caption)
+                .foregroundStyle(.gray)
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Sections (data sources are record-first)
 
     private var partySection: some View {
         sectionCard(title: "パーティ選択") {
-            let scores = metadata?.partyScores ?? []
+            let scores = record.partySelectScores ?? []
             HStack(alignment: .top, spacing: 12) {
                 ForEach(0..<3, id: \.self) { i in
                     VStack(spacing: 6) {
@@ -94,7 +103,7 @@ struct MatchingScoreDetailView: View {
                     Text("Score")
                         .font(.caption)
                         .foregroundStyle(.gray)
-                    Text(scoreString(metadata?.vsScore))
+                    Text(scoreString(record.vsScore))
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.white)
                     Text("閾値 0.40")
@@ -109,19 +118,19 @@ struct MatchingScoreDetailView: View {
     private var monstersSection: some View {
         sectionCard(title: "モンスター識別") {
             VStack(spacing: 12) {
-                slotRow(isEnemy: false, label: "味方", color: Color.sideMy,
-                        names: metadata?.myPartyNames ?? [],
-                        scores: metadata?.myPartyScores ?? [],
+                slotRow(label: "味方", color: Color.sideMy,
+                        names: record.myParty,
+                        scores: record.myPartyScores ?? [],
                         slotIdxOffset: 0)
-                slotRow(isEnemy: true, label: "敵", color: Color.sideEnemy,
-                        names: metadata?.enemyPartyNames ?? [],
-                        scores: metadata?.enemyPartyScores ?? [],
+                slotRow(label: "敵", color: Color.sideEnemy,
+                        names: record.enemyParty,
+                        scores: record.enemyPartyScores ?? [],
                         slotIdxOffset: 4)
             }
         }
     }
 
-    private func slotRow(isEnemy: Bool, label: String, color: Color,
+    private func slotRow(label: String, color: Color,
                          names: [String], scores: [Double], slotIdxOffset: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
@@ -135,7 +144,7 @@ struct MatchingScoreDetailView: View {
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(color.opacity(0.6), lineWidth: 1)
                             )
-                        Text(names[safe: i] ?? "?")
+                        Text(names[safe: i].map(MonsterCatalog.name(for:)) ?? "?")
                             .font(.system(size: 9))
                             .foregroundStyle(.white)
                             .lineLimit(1)
@@ -152,7 +161,7 @@ struct MatchingScoreDetailView: View {
 
     private var resultSection: some View {
         sectionCard(title: "勝敗ロゴ検知") {
-            let label = metadata?.resultLabel ?? "?"
+            let label = record.result
             let color: Color = label == "WIN" ? Color.sideMy : (label == "LOSE" ? Color.sideEnemy : .gray)
             HStack(spacing: 12) {
                 snapshotImage(forFile: "result.png", height: 90)
@@ -162,10 +171,10 @@ struct MatchingScoreDetailView: View {
                             .stroke(color.opacity(0.6), lineWidth: 1)
                     )
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(label)
+                    Text(label.isEmpty ? "?" : label)
                         .font(.title3.bold())
                         .foregroundStyle(color)
-                    Text(scoreString(metadata?.resultScore))
+                    Text(scoreString(record.resultScore))
                         .font(.body.monospacedDigit())
                         .foregroundStyle(.white)
                     Text("閾値 0.40")
@@ -192,27 +201,12 @@ struct MatchingScoreDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func emptyStateCard(message: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.title)
-                .foregroundStyle(.gray)
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.gray)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-        .padding(.horizontal, 16)
-        .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    /// App Group からスナップショット画像を読み込んで表示。無ければ "?" プレースホルダ
+    /// App Group からスナップショット画像を読み込んで表示。
+    /// この record が最新 snapshot と一致するときだけ実画像、それ以外は空枠 placeholder
     private func snapshotImage(forFile name: String, height: CGFloat) -> some View {
         Group {
-            if let url = MatchingScoreSnapshot.url(forFile: name),
+            if isCurrentSnapshot,
+               let url = MatchingScoreSnapshot.url(forFile: name),
                let img = UIImage(contentsOfFile: url.path) {
                 Image(uiImage: img)
                     .resizable()
@@ -222,7 +216,7 @@ struct MatchingScoreDetailView: View {
                 ZStack {
                     Color.gray.opacity(0.15)
                     Image(systemName: "questionmark")
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(.gray.opacity(0.5))
                 }
                 .frame(height: height)
             }
