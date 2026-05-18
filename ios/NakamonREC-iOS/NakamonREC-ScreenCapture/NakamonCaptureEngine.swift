@@ -63,6 +63,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // テンプレ作成時のスクリーン基準幅 (Pixel 10 Pro: 1080)
     private let templateReferenceWidth: CGFloat = 1080
 
+    /// pixelBuffer → CGImage 変換用 CIContext。毎フレーム alloc しないよう使い回す
+    /// (Extension の 50MB メモリ制限対策: alloc/dealloc を減らして fragmentation を避ける)
+    private let ciContext = CIContext(options: nil)
+
     override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
         logger.log("NakamonREC Engine: Starting...")
         BattleLogger.rotate()
@@ -376,55 +380,47 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     /// バックグラウンドキューで実行される重い解析処理
     /// 8 スロット (myParty 0..3 + enemy 4..7) × 30 テンプレート × 5 フレームを per-slot 逐次で識別
-    private func performDeepAnalysis(frames: [UIImage]) {
+    /// メモリ対策: フレームを 1 枚ずつ pop して処理し、autoreleasepool で中間バッファを即解放
+    private func performDeepAnalysis(frames inputFrames: [UIImage]) {
         let startedAt = Date()
-        logger.log("👾 Performing Deep Analysis on \(frames.count) frames (8 slots)...")
-        BattleLogger.append("モンスター解析開始 (\(frames.count)枚 × 8スロット)")
+        logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots)...")
+        BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット)")
 
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
-        struct SlotBest { var score: Double = 0; var index: Int = -1; var bestFrame: Int = -1 }
+        struct SlotBest { var score: Double = 0; var index: Int = -1 }
         let slotROIs = calibrationConfig.battlePrepMonsterROIs
         var perSlot = Array(repeating: SlotBest(), count: slotROIs.count)
 
-        for (frameIdx, frame) in frames.enumerated() {
-            let w = frame.size.width
-            let h = frame.size.height
-            for (slotIdx, roi) in slotROIs.enumerated() {
-                let cx = Int32(w * roi.centerXRatio)
-                let cy = Int32(h * roi.centerYRatio)
-                let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
-                let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
-                let result = NakamonWrapper.bestMonster(inRegion: frame,
-                                                        centerX: cx,
-                                                        centerY: cy,
-                                                        width: rw,
-                                                        height: rh)
-                if result.score > perSlot[slotIdx].score {
-                    perSlot[slotIdx].score = result.score
-                    perSlot[slotIdx].index = result.index
-                    perSlot[slotIdx].bestFrame = frameIdx
+        var frames = inputFrames
+        while !frames.isEmpty {
+            autoreleasepool {
+                let frame = frames.removeFirst()
+                let w = frame.size.width
+                let h = frame.size.height
+                for (slotIdx, roi) in slotROIs.enumerated() {
+                    let cx = Int32(w * roi.centerXRatio)
+                    let cy = Int32(h * roi.centerYRatio)
+                    let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
+                    let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
+                    let result = NakamonWrapper.bestMonster(inRegion: frame,
+                                                            centerX: cx,
+                                                            centerY: cy,
+                                                            width: rw,
+                                                            height: rh)
+                    if result.score > perSlot[slotIdx].score {
+                        perSlot[slotIdx].score = result.score
+                        perSlot[slotIdx].index = result.index
+                        // 新ベスト → このフレームの ROI を slot_<i>.png として上書き保存
+                        // (最終的に最高スコアフレームのスナップショットが残る)
+                        if let path = MatchingScoreSnapshot.path(forFile: "slot_\(slotIdx).png") {
+                            saveSlotSnapshot(frame: frame,
+                                             centerX: Int(cx), centerY: Int(cy),
+                                             width: Int(rw), height: Int(rh),
+                                             toPath: path)
+                        }
+                    }
                 }
             }
-        }
-
-        // マッチングスコア詳細用: 各スロットの最良フレームから ROI を切り出して slot_<i>.png を書き出す
-        for (slotIdx, best) in perSlot.enumerated() {
-            guard best.bestFrame >= 0 && best.bestFrame < frames.count else { continue }
-            let frame = frames[best.bestFrame]
-            let w = frame.size.width
-            let h = frame.size.height
-            let roi = slotROIs[slotIdx]
-            let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * roi.centerYRatio)
-            let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
-            let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
-            let path = MatchingScoreSnapshot.path(forFile: "slot_\(slotIdx).png")
-            _ = NakamonWrapper.bestMonsterAndSave(inRegion: frame,
-                                                  centerX: cx,
-                                                  centerY: cy,
-                                                  width: rw,
-                                                  height: rh,
-                                                  savePath: path)
         }
 
         let elapsed = Date().timeIntervalSince(startedAt)
@@ -598,12 +594,39 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     // MARK: - Helpers
 
+    /// frame の指定 ROI を切り出して PNG として書き出す。
+    /// NakamonWrapper.bestMonsterAndSave と同じ crop ロジックを Swift で再現することで
+    /// matchTemplate の二度実行を回避する (新ベスト発見時の保存だけにコストを集中)
+    private func saveSlotSnapshot(frame: UIImage,
+                                  centerX: Int, centerY: Int,
+                                  width: Int, height: Int,
+                                  toPath path: String) {
+        guard let cgImage = frame.cgImage else { return }
+        let imgW = cgImage.width
+        let imgH = cgImage.height
+        let w = min(width, imgW)
+        let h = min(height, imgH)
+        let left = max(0, min(centerX - w / 2, imgW - w))
+        let top  = max(0, min(centerY - h / 2, imgH - h))
+        let rect = CGRect(x: left, y: top, width: w, height: h)
+        autoreleasepool {
+            guard let cropped = cgImage.cropping(to: rect) else { return }
+            if let data = UIImage(cgImage: cropped).pngData() {
+                try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            }
+        }
+    }
+
     private func sampleBufferToUIImage(_ sampleBuffer: CMSampleBuffer) -> UIImage? {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
-        return UIImage(cgImage: cgImage)
+        // autoreleasepool で中間 CIImage/CGImage を即解放し、Extension 50MB 制限への蓄積を防ぐ
+        autoreleasepool {
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
+                return nil
+            }
+            return UIImage(cgImage: cgImage)
+        }
     }
 
     private func resizeImage(_ image: UIImage, scale: CGFloat) -> UIImage {
