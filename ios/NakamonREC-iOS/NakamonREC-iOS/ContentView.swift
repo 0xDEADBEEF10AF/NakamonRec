@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var showFileManager = false
     @State private var showUserSettings = false
     @State private var showHelp = false
+    @State private var showClearConfirm = false
     @State private var activeFileName: String = BattleHistoryStore.shared.activeFileName
     @State private var lastSeenRecordTimestamp: String = BroadcastStatus.lastRecordTimestamp
 
@@ -228,9 +229,9 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
-            // 戦績クリア (Phase 8 でダイアログ追加)
+            // 現在のアクティブファイルの戦績をクリア (誤操作防止のため確認ダイアログ経由)
             Button {
-                // TODO: Phase 8 確認ダイアログ
+                showClearConfirm = true
             } label: {
                 Image(systemName: "trash")
                     .font(.title3)
@@ -239,8 +240,25 @@ struct ContentView: View {
                     .background(Color.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
+            .confirmationDialog(
+                "「\(stripJsonExt(activeFileName))」の戦績を全件削除しますか?",
+                isPresented: $showClearConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("全件削除", role: .destructive) {
+                    BattleHistoryStore.shared.clearActive()
+                    reloadHistory()
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("この操作は取り消せません。ファイル自体は残り、レコードのみが空になります。")
+            }
         }
         .padding(.bottom, 4)
+    }
+
+    private func stripJsonExt(_ name: String) -> String {
+        name.hasSuffix(".json") ? String(name.dropLast(5)) : name
     }
 }
 
