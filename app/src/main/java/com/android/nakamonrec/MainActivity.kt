@@ -134,9 +134,9 @@ class MainActivity : AppCompatActivity() {
             binding.textVersion.text = getString(R.string.ver_unknown)
         }
 
-        binding.textVersion.setOnClickListener {
-            showTopToast(getString(R.string.msg_checking_update))
-            checkForUpdates(currentVersionName, isManual = true)
+        binding.textVersion.setOnLongClickListener {
+            showDeveloperMenu(currentVersionName)
+            true
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -752,6 +752,45 @@ class MainActivity : AppCompatActivity() {
         } else {
             showTopToast("変更に失敗しました")
         }
+    }
+
+    private fun showDeveloperMenu(currentVersion: String) {
+        val options = arrayOf("直近の解析ログ", "アプリのアップデートを確認")
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("開発者メニュー")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showFlightLog()
+                    1 -> {
+                        showTopToast(getString(R.string.msg_checking_update))
+                        checkForUpdates(currentVersion, isManual = true)
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showFlightLog() {
+        val logText = dataManager.readFlightLog()
+        val scrollView = android.widget.ScrollView(this)
+        val textView = android.widget.TextView(this).apply {
+            text = logText
+            textSize = 12f
+            setPadding(40, 40, 40, 40)
+            setBackgroundColor(android.graphics.Color.parseColor("#111111"))
+            setTextColor(android.graphics.Color.LTGRAY)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        scrollView.addView(textView)
+
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("直近の解析ログ (フライトレコーダー)")
+            .setView(scrollView)
+            .setPositiveButton("閉じる", null)
+            .setNeutralButton("クリア") { _, _ ->
+                dataManager.clearFlightLog()
+            }
+            .show()
     }
 
     private fun showTopToast(message: String, isLong: Boolean = false) {

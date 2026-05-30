@@ -10,6 +10,25 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 最新ログ表示ボタン -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnShowLog"
+        style="@style/Widget.MaterialComponents.Button.Icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="16dp"
+        android:insetLeft="0dp"
+        android:insetTop="0dp"
+        android:insetRight="0dp"
+        android:insetBottom="0dp"
+        app:icon="@android:drawable/ic_menu_info_details"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:backgroundTint="#88000000"
+        app:cornerRadius="24dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
     <!-- テンプレート名表示 -->
     <TextView
         android:id="@+id/textTemplateName"

@@ -44,6 +44,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var bestImageIndex = 0 // バースト画像の中で成功したインデックスを保持
     private var nextAnalysisSlot = 0 // ラウンドロビン用のスロット追跡
     private val monsterMatchCounts = mutableMapOf<String, Int>() // 出現頻度統計
+    var dataManager: BattleDataManager? = null // フライトレコーダー書き込み用
 
     companion object {
         private const val VS_THRESHOLD = 0.4
@@ -660,6 +661,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         identifiedNames[slotIndex] = result.name
         identifiedScores[slotIndex] = result.score
         monsterMatchCounts[result.name] = monsterMatchCounts.getOrDefault(result.name, 0) + 1
+        val side = if (slotIndex < 4) "自" else "敵"
+        val pos = (slotIndex % 4) + 1
+        dataManager?.appendFlightLog("モンスター識別OK: Slot[$side$pos] ${result.name} (Score: ${String.format(Locale.US, "%.3f", result.score)})")
         Log.i("BattleAnalyzer", "🎉 Slot[$slotIndex] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
         
         // 確定した瞬間のROIを保存

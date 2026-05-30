@@ -101,6 +101,39 @@ class BattleDataManager(private val context: Context) {
         file.writeText(json)
     }
 
+    /**
+     * フライトレコーダー（直近1戦のログ）をクリアする
+     */
+    fun clearFlightLog() {
+        val file = File(context.filesDir, "latest_battle_log.txt")
+        if (file.exists()) file.delete()
+    }
+
+    /**
+     * フライトレコーダーに1行追記する
+     */
+    fun appendFlightLog(message: String) {
+        val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US)
+        val timestamp = sdf.format(Date())
+        val logLine = "[$timestamp] $message\n"
+        try {
+            context.openFileOutput("latest_battle_log.txt", Context.MODE_APPEND).use {
+                it.write(logLine.toByteArray())
+            }
+        } catch (e: Exception) {
+            // 解析中に落ちないようにサイレントに
+        }
+    }
+
+    /**
+     * フライトレコーダーの内容を読み込む
+     */
+    fun readFlightLog(): String {
+        val file = File(context.filesDir, "latest_battle_log.txt")
+        if (!file.exists()) return "ログがありません。"
+        return file.readText()
+    }
+
     fun resetHistory() {
         history = BattleHistory()
         saveHistory()

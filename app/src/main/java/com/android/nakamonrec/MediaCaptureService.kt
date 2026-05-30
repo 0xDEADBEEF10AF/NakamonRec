@@ -59,6 +59,7 @@ class MediaCaptureService : Service() {
         isRunning = true
         dataManager = BattleDataManager(this)
         analyzer = BattleAnalyzer(dataManager.monsterMaster)
+        analyzer.dataManager = dataManager // ここでセット
         analyzer.loadTemplates(this)
 
         captureThread = HandlerThread("CaptureThread").apply { start() }
@@ -269,7 +270,9 @@ class MediaCaptureService : Service() {
                         repeatScan(sessionId, count - 1, delayMs)
                     }, delayMs)
                 } else if (analyzer.isAllIdentified()) {
-                    Log.i("Battle", "All monsters identified. Ending scan loop early.")
+                    val duration = System.currentTimeMillis() - sessionId
+                    dataManager.appendFlightLog("=== モンスター識別完了 (解析時間: ${duration}ms) ===")
+                    Log.i("Battle", "All monsters identified. Ending scan loop early. (Duration: ${duration}ms)")
                     clearBurstImages()
                 }
             }
@@ -321,13 +324,21 @@ class MediaCaptureService : Service() {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
         
         if (detected != -1) {
+            if (selectedPartyIndex != detected) {
+                dataManager.appendFlightLog("パーティ選択検知: P${detected + 1} (Score: ${String.format(Locale.US, "%.3f", scores[detected])})")
+            }
             selectedPartyIndex = detected
             // 正常に検知された時のスコアを「最新の有効値」として保持
             currentPartyScores = scores
         }
         
         if (analyzer.isVsDetected(bitmap)) {
+            dataManager.clearFlightLog() // 戦闘開始時にログをリセット
+            dataManager.appendFlightLog("=== 戦闘開始検知 ===")
+            
             val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
+            dataManager.appendFlightLog("VSロゴ検知 Score: ${String.format(Locale.US, "%.3f", vsScore)}")
+            
             currentVsScore = vsScore
 
             analysisHandler?.removeCallbacksAndMessages(null)
@@ -359,6 +370,8 @@ class MediaCaptureService : Service() {
         if (result != null) {
             val resultScore = if (result == "WIN") analyzer.detectWinScore(bitmap, analyzer.calibrationData.winBox)
                               else analyzer.detectLoseScore(bitmap, analyzer.calibrationData.loseBox)
+
+            dataManager.appendFlightLog("戦闘終了検知: $result (Score: ${String.format(Locale.US, "%.3f", resultScore)})")
 
             // 戦闘終了時の不完全なデバッグ画像保存は、中途半端なロゴが映るだけで有用でないため削除
 

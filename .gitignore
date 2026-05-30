@@ -1,11 +1,19 @@
+# Key files
+*.keystore
+*.jks
+
 # Android
 .gradle
 /build
-/app/build
-/opencv/build
+**/build
+**/.cxx
+/opencv/.cxx
+/opencv/.externalNativeBuild
 *.iml
 .idea
 local.properties
+.ninja_deps
+.ninja_log
 
 # iOS / macOS
 ios/**/DerivedData/
@@ -13,6 +21,8 @@ ios/**/build/
 ios/**/*.xcworkspace
 ios/**/*.xcuserdatad
 ios/**/.DS_Store
+*.swp
+*.lock
 
 # 巨大なライブラリ (GitHub制限回避)
 *.framework/
