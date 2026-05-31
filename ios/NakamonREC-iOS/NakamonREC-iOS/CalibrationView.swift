@@ -334,7 +334,8 @@ struct CalibrationView: View {
         hasCustomTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let loc = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: base)
+            let baseScaled = self.templateScaledToScene(base, scene: scene)
+            let loc = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: baseScaled)
             DispatchQueue.main.async {
                 handleResultAutoCalResult(matchLocation: loc, kind: kind, scene: scene)
             }
@@ -421,11 +422,13 @@ struct CalibrationView: View {
         hasCustomTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // --- 1. VS 検出 ---
-            let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFM)
+            // --- 1. VS 検出 (テンプレを scene スケールにリサイズしてからマッチング) ---
+            let vsFMScaled = self.templateScaledToScene(vsFM, scene: scene)
+            let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFMScaled)
             var bestVSLoc = locFM
             if let vsMG = vsMG {
-                let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMG)
+                let vsMGScaled = self.templateScaledToScene(vsMG, scene: scene)
+                let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMGScaled)
                 if locMG.score > bestVSLoc.score {
                     bestVSLoc = locMG
                 }
@@ -452,9 +455,11 @@ struct CalibrationView: View {
             NakamonWrapper.cacheMonsterTemplates(resizedTemplates)
 
             // --- 3. 各スロットで per-slot best-match を取得 ---
-            // 探索範囲: テンプレ 80×130 + 各辺余白 (X: ±60, Y: ±100) で広めに
+            // 探索範囲: テンプレ 80×130 + 各辺余白 (X: ±60, Y: ±300+) で広めに
+            // iPhone SE 等の wider aspect 機種では味方行が default Y から大きく下にズレるため
+            // 縦方向の探索範囲を 700/2364 (約 30%) まで拡大して機種差を吸収する
             let slotSearchW = 200.0 / 1080.0   // 1080-ref で 200px 幅
-            let slotSearchH = 330.0 / 2364.0   // 1080-ref で 330px 縦 (機種差吸収)
+            let slotSearchH = 700.0 / 2364.0   // 1080-ref で 700px 縦 (低解像度・wider aspect 端末も吸収)
             let sceneW = scene.size.width
             let sceneH = scene.size.height
             var slotResults: [(ratioX: Double, ratioY: Double, score: Double, id: String)] = []
@@ -540,6 +545,21 @@ struct CalibrationView: View {
             return nil
         }
         return UIImage(contentsOfFile: path)
+    }
+
+    /// BASE テンプレ (1080-ref) を被探索 scene の横幅に合わせてリサイズする。
+    /// matchTemplate は同一ピクセルスケール前提のため、低解像度端末 (例: iPhone SE 750w) では
+    /// テンプレを縮小しないと VS/WIN/LOSE 等の大きめロゴが検出できない。
+    private func templateScaledToScene(_ image: UIImage, scene: UIImage) -> UIImage {
+        let scale = scene.size.width / 1080.0
+        let target = CGSize(width: image.size.width * scale,
+                            height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: target, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
     }
 
     private func handleAutoCalibrationResult(locations: [NakamonMatchLocation],

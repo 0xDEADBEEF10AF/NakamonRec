@@ -106,7 +106,7 @@ struct MatchingScoreDetailView: View {
                     Text(scoreString(record.vsScore))
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.white)
-                    Text("閾値 0.40")
+                    Text("閾値 0.50")
                         .font(.caption2)
                         .foregroundStyle(.gray)
                 }

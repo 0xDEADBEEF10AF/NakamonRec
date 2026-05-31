@@ -313,6 +313,91 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                                 index:bestIdx];
 }
 
++ (NSArray<NakamonMatchResult *> *)topKMonstersInRegion:(UIImage *)scene
+                                                centerX:(int)centerX
+                                                centerY:(int)centerY
+                                                  width:(int)width
+                                                 height:(int)height
+                                                   topK:(int)topK {
+    if (gCachedMonsterTemplates.empty() || topK <= 0) {
+        return @[];
+    }
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    int imgW = sceneMat.cols;
+    int imgH = sceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    sceneMat(roiRect).copyTo(workRoi);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    std::vector<std::pair<double, int>> scored;
+    scored.reserve(gCachedMonsterTemplates.size());
+    for (size_t i = 0; i < gCachedMonsterTemplates.size(); ++i) {
+        const auto& tpl = gCachedMonsterTemplates[i];
+        if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+        cv::Mat result;
+        cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+        double maxVal;
+        cv::minMaxLoc(result, nullptr, &maxVal);
+        scored.emplace_back(maxVal, (int)i);
+    }
+    int k = std::min(topK, (int)scored.size());
+    if (k <= 0) return @[];
+    std::partial_sort(scored.begin(), scored.begin() + k, scored.end(),
+                      [](const std::pair<double,int>& a,
+                         const std::pair<double,int>& b) { return a.first > b.first; });
+    NSMutableArray<NakamonMatchResult *> *results = [NSMutableArray arrayWithCapacity:k];
+    for (int i = 0; i < k; i++) {
+        [results addObject:[[NakamonMatchResult alloc] initWithScore:scored[i].first
+                                                                index:scored[i].second]];
+    }
+    return results;
+}
+
++ (NakamonMatchResult *)bestMonsterInRegion:(UIImage *)scene
+                                    centerX:(int)centerX
+                                    centerY:(int)centerY
+                                      width:(int)width
+                                     height:(int)height
+                            templateIndices:(NSArray<NSNumber *> *)indices {
+    if (gCachedMonsterTemplates.empty() || indices.count == 0) {
+        return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
+    }
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    int imgW = sceneMat.cols;
+    int imgH = sceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    sceneMat(roiRect).copyTo(workRoi);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    double bestScore = -1.0;
+    int bestIdx = -1;
+    for (NSNumber *num in indices) {
+        int i = num.intValue;
+        if (i < 0 || i >= (int)gCachedMonsterTemplates.size()) continue;
+        const auto& tpl = gCachedMonsterTemplates[i];
+        if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+        cv::Mat result;
+        cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+        double maxVal;
+        cv::minMaxLoc(result, nullptr, &maxVal);
+        if (maxVal > bestScore) {
+            bestScore = maxVal;
+            bestIdx = i;
+        }
+    }
+    return [[NakamonMatchResult alloc] initWithScore:bestScore index:bestIdx];
+}
+
 + (NakamonMatchResult *)bestMonsterAndSaveInRegion:(UIImage *)scene
                                             centerX:(int)centerX
                                             centerY:(int)centerY

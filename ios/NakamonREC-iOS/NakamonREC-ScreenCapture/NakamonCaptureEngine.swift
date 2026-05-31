@@ -325,7 +325,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                               horizontalMargin: hMargin)
             if s > score { score = s; bestVS = vs }
         }
-        if score > 0.4 {
+        // VS は画面遷移途中などで誤検知しやすいので WIN/LOSE より厳しめ
+        if score > 0.5 {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             BattleLogger.rotate()
             if lastDetectedPartyIndex >= 0 {
@@ -381,19 +382,30 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // MARK: - Monster Identification (バースト解析)
 
     /// バックグラウンドキューで実行される重い解析処理
-    /// 8 スロット (myParty 0..3 + enemy 4..7) × 30 テンプレート × 5 フレームを per-slot 逐次で識別
+    /// 8 スロット (myParty 0..3 + enemy 4..7) × 127 テンプレート × 5 フレームを per-slot 逐次で識別
     /// メモリ対策: フレームを 1 枚ずつ pop して処理し、autoreleasepool で中間バッファを即解放
+    ///
+    /// 高速化: Top-K テンプレ追跡
+    ///   - Frame 1: 全テンプレ走査して各スロットの上位 10 件をキャッシュ
+    ///   - Frame 2-5: Top-10 サブセットのみ評価 (4 倍以上の高速化を狙う)
+    ///   - フォールバック: Frame 1 で max < 0.5 のスロットは Top-K の信頼性が低いため全テンプレ走査を続ける
     private func performDeepAnalysis(frames inputFrames: [UIImage]) {
         let startedAt = Date()
-        logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots)...")
-        BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット)")
+        logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots, Top-K)...")
+        BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット, Top-K 最適化)")
 
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
         struct SlotBest { var score: Double = 0; var index: Int = -1 }
         let slotROIs = calibrationConfig.battlePrepMonsterROIs
         var perSlot = Array(repeating: SlotBest(), count: slotROIs.count)
 
+        let topK: Int32 = 10
+        let fallbackThreshold: Double = 0.5
+        var slotTopKIndices: [[NSNumber]] = Array(repeating: [], count: slotROIs.count)
+        var slotFallback: [Bool] = Array(repeating: false, count: slotROIs.count)
+
         var frames = inputFrames
+        var isFirstFrame = true
         while !frames.isEmpty {
             autoreleasepool {
                 let frame = frames.removeFirst()
@@ -404,14 +416,51 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                     let cy = Int32(h * roi.centerYRatio)
                     let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
                     let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
-                    let result = NakamonWrapper.bestMonster(inRegion: frame,
-                                                            centerX: cx,
-                                                            centerY: cy,
-                                                            width: rw,
-                                                            height: rh)
-                    if result.score > perSlot[slotIdx].score {
-                        perSlot[slotIdx].score = result.score
-                        perSlot[slotIdx].index = result.index
+
+                    let bestScore: Double
+                    let bestIndex: Int
+                    if isFirstFrame {
+                        // Frame 1: 全テンプレ走査 + Top-K キャッシュ
+                        let topResults = NakamonWrapper.topKMonsters(inRegion: frame,
+                                                                      centerX: cx,
+                                                                      centerY: cy,
+                                                                      width: rw,
+                                                                      height: rh,
+                                                                      topK: topK)
+                        if let first = topResults.first {
+                            bestScore = first.score
+                            bestIndex = first.index
+                            slotTopKIndices[slotIdx] = topResults.map { NSNumber(value: $0.index) }
+                            slotFallback[slotIdx] = first.score < fallbackThreshold
+                        } else {
+                            bestScore = 0
+                            bestIndex = -1
+                            slotFallback[slotIdx] = true
+                        }
+                    } else if slotFallback[slotIdx] {
+                        // フォールバック: Frame 1 で max < 0.5 のスロットは全テンプレ走査を継続
+                        let r = NakamonWrapper.bestMonster(inRegion: frame,
+                                                           centerX: cx,
+                                                           centerY: cy,
+                                                           width: rw,
+                                                           height: rh)
+                        bestScore = r.score
+                        bestIndex = r.index
+                    } else {
+                        // Top-K サブセットのみ評価
+                        let r = NakamonWrapper.bestMonster(inRegion: frame,
+                                                           centerX: cx,
+                                                           centerY: cy,
+                                                           width: rw,
+                                                           height: rh,
+                                                           templateIndices: slotTopKIndices[slotIdx])
+                        bestScore = r.score
+                        bestIndex = r.index
+                    }
+
+                    if bestScore > perSlot[slotIdx].score {
+                        perSlot[slotIdx].score = bestScore
+                        perSlot[slotIdx].index = bestIndex
                         // 新ベスト → このフレームの ROI を slot_<i>.png として上書き保存
                         // (最終的に最高スコアフレームのスナップショットが残る)
                         if let path = MatchingScoreSnapshot.path(forFile: "slot_\(slotIdx).png") {
@@ -422,6 +471,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                         }
                     }
                 }
+                isFirstFrame = false
             }
         }
 

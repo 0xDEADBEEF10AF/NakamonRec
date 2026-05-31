@@ -136,6 +136,28 @@ NS_ASSUME_NONNULL_BEGIN
                                             width:(int)width
                                            height:(int)height;
 
+/**
+ * 指定領域でキャッシュ済テンプレすべてを照合し、スコア降順で上位 topK 件を返す。
+ * バースト解析の Frame 1 で全テンプレ走査 → 以降のフレームで上位だけを再評価するために使う。
+ */
++ (NSArray<NakamonMatchResult *> *)topKMonstersInRegion:(UIImage *)scene
+                                                centerX:(int)centerX
+                                                centerY:(int)centerY
+                                                  width:(int)width
+                                                 height:(int)height
+                                                   topK:(int)topK;
+
+/**
+ * 指定領域で、キャッシュ済テンプレのうち指定 index のものだけを照合して最高スコアを返す。
+ * バースト解析の Frame 2-5 で Top-K サブセットのみ評価するために使う。
+ */
++ (NakamonMatchResult *)bestMonsterInRegion:(UIImage *)scene
+                                    centerX:(int)centerX
+                                    centerY:(int)centerY
+                                      width:(int)width
+                                     height:(int)height
+                            templateIndices:(NSArray<NSNumber *> *)indices;
+
 @end
 
 NS_ASSUME_NONNULL_END
