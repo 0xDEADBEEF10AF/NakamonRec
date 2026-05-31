@@ -69,9 +69,14 @@ class MediaCaptureService : Service() {
         analyzer = BattleAnalyzer(dataManager.monsterMaster)
         analyzer.dataManager = dataManager
         analyzer.loadTemplates(this)
-        
+
         val modeLabel = if (dataManager.analysisMode == "light") "軽負荷" else "通常"
         dataManager.appendFlightLog("テンプレート読み込み完了 (${modeLabel}モード, モンスター${dataManager.monsterMaster.size}体)")
+
+        // cold start 対策: matchTemplate/JIT を warmup する。
+        // ユーザーが REC ボタン押下 → DQW に切替 → 対戦じゅんびまで進む間に完了する。
+        analyzer.warmupMatchPipeline()
+        dataManager.appendFlightLog("matchTemplate warmup 完了 (初戦の cold-start 対策)")
 
         captureThread = HandlerThread("CaptureThread").apply { start() }
         captureHandler = Handler(captureThread!!.looper)

@@ -130,9 +130,41 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         winTemplate = loadColorTemplate(context, "templates/WIN.png")
         loseTemplate = loadColorTemplate(context, "templates/LOSE.png")
         partySelectTemplate = loadColorTemplate(context, "templates/SELECT.png")
-        
+
         loadCustomTemplates(context)
         prepareScaledTemplates()
+    }
+
+    /**
+     * matchTemplate / minMaxLoc / normalize 等の hot path を一度実行して
+     * ART JIT コンパイラ・OpenCV 内部キャッシュを warm にする。
+     * cold-state からの初戦 (アプリ起動直後の 1 戦目) で解析時間が 3-4 倍に
+     * ふくれる現象を防ぐための前処理。
+     *
+     * onCreate / 初期化フェーズで 1 回呼ぶ想定。コストは数百 ms 程度で、
+     * REC ボタン押下から実バトル開始までの間に余裕で完了する。
+     */
+    fun warmupMatchPipeline() {
+        if (scaledMonsterTemplates.isEmpty() || monsterMaster.isEmpty()) return
+        val firstName = scaledMonsterTemplates.keys.first()
+        val firstMonster = monsterMaster.firstOrNull { it.name == firstName } ?: return
+
+        // ダミー ROI を生成して本番と同じ stack を 1 回通す
+        // (submat → copyTo → normalize → matchTemplate × micro-scales → minMaxLoc)
+        val dummyFrame = Mat(400, 400, CvType.CV_8UC3, Scalar.all(128.0))
+        try {
+            // tryIdentify のロジックをミニマル再現 (private なので直接呼ばずインライン化)
+            val workRoi = Mat()
+            dummyFrame.copyTo(workRoi)
+            Core.normalize(workRoi, workRoi, 0.0, 255.0, Core.NORM_MINMAX)
+            findBestMonsterMatchMicroScales(workRoi, listOf(firstMonster), returnAll = true)
+            workRoi.release()
+        } catch (_: Exception) {
+            // warmup 失敗しても production には影響しない
+        } finally {
+            dummyFrame.release()
+        }
+        Log.i("BattleAnalyzer", "🔥 warmupMatchPipeline 完了")
     }
 
     fun loadCustomTemplates(context: Context) {
