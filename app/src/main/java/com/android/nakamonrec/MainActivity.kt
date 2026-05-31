@@ -757,7 +757,7 @@ class MainActivity : AppCompatActivity() {
     private fun showDeveloperMenu(currentVersion: String) {
         val options = arrayOf("直近の解析ログ", "アプリのアップデートを確認")
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("開発者メニュー")
+            .setTitle("デバッグメニュー")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showFlightLog()

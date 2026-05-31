@@ -112,6 +112,15 @@ class BattleHistoryAdapter(
             imageView.layoutParams = params
             imageView.scaleType = ImageView.ScaleType.CENTER_CROP
 
+            // 角丸 (iOS の RoundedRectangle(cornerRadius: 6) と同程度の見た目)
+            val cornerRadiusPx = 6 * context.resources.displayMetrics.density
+            imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)
+                }
+            }
+            imageView.clipToOutline = true
+
             val monster = monsterMaster.find { it.name == name }
             val fileName = monster?.fileName ?: ""
 
