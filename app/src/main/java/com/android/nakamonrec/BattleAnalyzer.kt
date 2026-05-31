@@ -623,35 +623,18 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                     }
                 }
 
-                // narrow で best 更新?
+                // best スコア更新?
+                // 注: 旧コードはここで wide-pad 2 段階探索を実施していたが、
+                //   - Frame 1 で wide が隣スロットに食い込んで誤マッチした候補が Top-K に
+                //     混入し、Frame 2-5 を支配して撃沈する汚染ケースが発生していた
+                //   - wide ROI は narrow より探索面積が大きく per-call が重い
+                //   - iOS は最初から narrow のみ (search margin) 設計で動作している
+                // → batch 解析は narrow のみに統一。校正がズレている端末はユーザー側で
+                //   校正画面から再校正する運用とする。
                 if (resultNarrow.score > bestScores[slotIndex]) {
                     bestScores[slotIndex] = resultNarrow.score
                     bestNames[slotIndex] = resultNarrow.name
                     saveRoi(bitmap, config, "monster_$slotIndex", narrowPad, narrowPad)
-                }
-
-                // 2 段階探索: wide (機種ドリフト吸収)。
-                //   - narrow で閾値超過していれば wide はスキップ。
-                //   - Top-K モード (Frame 2-5) では wide をスキップ。理由:
-                //     wide ROI は narrow より探索面積が ~6 倍大きく per-call が重い。
-                //     Top-K サブセット (10 体) でも 5 フレーム×wide が積み上がると、
-                //     1 スロット失敗で解析全体が 14s → 50s クラスの outlier になる。
-                //     Frame 1 で wide が見つけられなかったら、Frame 2-5 の narrow Top-K でも
-                //     拾える見込みは低いので投資対効果が悪い。
-                if (isFirstFrame && resultNarrow.score <= MONSTER_THRESHOLD) {
-                    val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f
-                    val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
-                    val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt()
-                    val widePad = basePad + extraPad
-                    if (widePad > narrowPad) {
-                        // wide ではキャッシュは作らない (narrow ROI 基準で十分)
-                        val resultWide = tryIdentify(fullMat, config, widePad, imgW, imgH, monstersToTry, false)
-                        if (resultWide.score > bestScores[slotIndex]) {
-                            bestScores[slotIndex] = resultWide.score
-                            bestNames[slotIndex] = resultWide.name
-                            saveRoi(bitmap, config, "monster_$slotIndex", widePad, widePad)
-                        }
-                    }
                 }
             }
 
