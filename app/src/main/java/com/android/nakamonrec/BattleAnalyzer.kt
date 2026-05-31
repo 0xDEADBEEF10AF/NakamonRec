@@ -45,7 +45,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private var nextAnalysisSlot = 0 // ラウンドロビン用のスロット追跡
     private val monsterMatchCounts = mutableMapOf<String, Int>() // 出現頻度統計
     var dataManager: BattleDataManager? = null // フライトレコーダー書き込み用
-    private val slotCandidates = Array<List<String>?>(8) { null } // Top-K 追跡用
+    private val slotCandidates = arrayOfNulls<Set<String>>(8) // Top-K 追跡用 (O(1) lookup のため Set)
 
     companion object {
         private const val VS_THRESHOLD = 0.4
@@ -555,91 +555,114 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     /**
      * バースト解析を一括実行する (iOS版 performDeepAnalysis 同期ロジック)
+     *
+     * 設計:
+     *   - 5 フレーム × 8 スロットを一括処理。フレーム単位で bitmap → Mat 変換を 1 回だけ実施。
+     *   - per-slot に narrow + wide の 2 段階探索を継承 (機種ドリフト吸収)。
+     *   - per-ROI normalize は tryIdentify 内部で実施 (テンプレと同条件)。
+     *   - Top-K + フォールバック: Frame 1 で全テンプレ走査して上位 K 件を記憶、
+     *     Frame 2-5 ではその K 件だけ評価。max < 0.5 のスロットは fallback として
+     *     全テンプレ走査を継続。
+     *   - 早期 finalize しない: 5 フレーム全体で最高スコアを追跡し、最後にまとめて確定。
+     *
+     * @param bitmaps バースト 5 フレーム (RGBA)
+     * @param allowedMonsters 軽負荷モードのフィルタ、null なら全モンスター
      */
-    fun performDeepAnalysisBatch(frames: List<Mat>, allowedMonsters: Set<String>?) {
+    fun performDeepAnalysisBatch(bitmaps: List<Bitmap>, allowedMonsters: Set<String>?) {
+        if (bitmaps.isEmpty()) return
+
         val sortedMonsters = monsterMaster.filter { allowedMonsters == null || allowedMonsters.contains(it.name) }
             .sortedByDescending { monsterMatchCounts.getOrDefault(it.name, 0) }
 
-        val slotROIs = calibrationData.myPartyBoxes + calibrationData.enemyPartyBoxes
         val slotFallback = BooleanArray(8) { false }
 
-        // フレームごとに全スロットを処理 (iOS版と同一構造)
-        for (fIdx in frames.indices) {
-            val frameMat = frames[fIdx]
+        // 5 フレーム全体での最高スコアを追跡 (早期 finalize しない)
+        val bestScores = DoubleArray(8) { -1.0 }
+        val bestNames = arrayOfNulls<String>(8)
+
+        for (fIdx in bitmaps.indices) {
+            val bitmap = bitmaps[fIdx]
+            val fullMat = Mat()
+            Utils.bitmapToMat(bitmap, fullMat)
+            val imgW = fullMat.cols().toFloat()
+            val imgH = fullMat.rows().toFloat()
+            Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+
             val isFirstFrame = (fIdx == 0)
 
             for (slotIndex in 0..7) {
-                if (identifiedNames[slotIndex] != null) continue
-
-                val config = slotROIs[slotIndex]
+                val config = if (slotIndex < 4) calibrationData.myPartyBoxes[slotIndex] else calibrationData.enemyPartyBoxes[slotIndex - 4]
                 val candidates = slotCandidates[slotIndex]
-                val isFirstTryForSlot = candidates == null
 
                 // 解析対象モンスターの決定
-                val monstersToTry = if (!isFirstTryForSlot && !slotFallback[slotIndex]) {
-                    sortedMonsters.filter { candidates!!.contains(it.name) }
+                //   Frame 1 (isFirstFrame) → 全テンプレ走査 + 結果をキャッシュ
+                //   Frame 2-5 で fallback フラグ立ち → 全テンプレ走査
+                //   Frame 2-5 で候補あり → Top-K のみ走査
+                val monstersToTry = if (!isFirstFrame && !slotFallback[slotIndex] && candidates != null) {
+                    sortedMonsters.filter { candidates.contains(it.name) }
                 } else {
                     sortedMonsters
                 }
+                // Frame 1 のときだけ allScores を返してもらう (キャッシュ生成のため)
+                val needAllScores = isFirstFrame
 
-                // 1段階探索 (ROIの切り出しは内部で行う)
-                val imgW = frameMat.cols().toFloat()
-                val imgH = frameMat.rows().toFloat()
+                // 2 段階探索: narrow (狭い range)
                 val narrowPad = (20 * calibrationData.uiScale).toInt()
-                val result = tryIdentifyNoNormalize(frameMat, config, narrowPad, imgW, imgH, monstersToTry, isFirstTryForSlot)
+                val resultNarrow = tryIdentify(fullMat, config, narrowPad, imgW, imgH, monstersToTry, needAllScores)
 
-                // 初回フルスキャン時の候補設定
-                if (isFirstTryForSlot && result.allScores != null) {
-                    if (result.score >= FALLBACK_THRESHOLD) {
-                        slotCandidates[slotIndex] = result.allScores
+                // Frame 1 で Top-K キャッシュ生成
+                if (isFirstFrame && resultNarrow.allScores != null) {
+                    if (resultNarrow.score >= FALLBACK_THRESHOLD) {
+                        slotCandidates[slotIndex] = resultNarrow.allScores
                             .sortedByDescending { it.second }
                             .take(CANDIDATE_COUNT)
                             .map { it.first }
+                            .toSet()
                     } else {
-                        slotFallback[slotIndex] = true // スコア低迷時は次フレームもフルスキャン
+                        slotFallback[slotIndex] = true
                     }
                 }
 
-                if (result.score > MONSTER_THRESHOLD) {
-                    // ベストスコア更新チェック (5フレーム横断)
-                    if (result.score > (identifiedScores[slotIndex] ?: -1.0)) {
-                        identifiedNames[slotIndex] = result.name
-                        identifiedScores[slotIndex] = result.score
-                        // 最終的に 0.7 を超えたら確定。そうでなければ 5 フレーム最後まで最高値を追う
-                        finalizeSlotNoBitmap(slotIndex, result)
+                // narrow で best 更新?
+                if (resultNarrow.score > bestScores[slotIndex]) {
+                    bestScores[slotIndex] = resultNarrow.score
+                    bestNames[slotIndex] = resultNarrow.name
+                    saveRoi(bitmap, config, "monster_$slotIndex", narrowPad, narrowPad)
+                }
+
+                // 2 段階探索: wide (機種ドリフト吸収)。narrow で閾値超過していれば wide はスキップ。
+                if (resultNarrow.score <= MONSTER_THRESHOLD) {
+                    val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f
+                    val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
+                    val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt()
+                    val widePad = basePad + extraPad
+                    if (widePad > narrowPad) {
+                        // wide ではキャッシュは作らない (narrow ROI 基準で十分)
+                        val resultWide = tryIdentify(fullMat, config, widePad, imgW, imgH, monstersToTry, false)
+                        if (resultWide.score > bestScores[slotIndex]) {
+                            bestScores[slotIndex] = resultWide.score
+                            bestNames[slotIndex] = resultWide.name
+                            saveRoi(bitmap, config, "monster_$slotIndex", widePad, widePad)
+                        }
                     }
-                } else if (result.score > (identifiedScores[slotIndex] ?: -1.0)) {
-                    // 暫定ベスト更新
-                    identifiedNames[slotIndex] = result.name
-                    identifiedScores[slotIndex] = result.score
                 }
             }
+
+            fullMat.release()
         }
-    }
 
-    /**
-     * 正規化をスキップする軽量版識別 (既にフレーム全体が正規化されている前提)
-     */
-    private fun tryIdentifyNoNormalize(fullMat: Mat, config: BoxConfig, pad: Int, imgW: Float, imgH: Float, monsters: List<MonsterData>, returnAll: Boolean): MatchResult {
-        val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
-        if (expandedConfig.width > imgW || expandedConfig.height > imgH) return MatchResult("", -1.0)
-
-        val left = ((imgW * expandedConfig.centerX) - (expandedConfig.width / 2)).toInt().coerceIn(0, (imgW.toInt() - expandedConfig.width).coerceAtLeast(0))
-        val top = ((imgH * expandedConfig.centerY) - (expandedConfig.height / 2)).toInt().coerceIn(0, (imgH.toInt() - expandedConfig.height).coerceAtLeast(0))
-        
-        return try {
-            val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
-            val result = findBestMonsterMatchMicroScales(roi, monsters, returnAll)
-            roi.release()
-            result
-        } catch (_: Exception) { MatchResult("", -1.0) }
-    }
-
-    private fun finalizeSlotNoBitmap(slotIndex: Int, result: MatchResult) {
-        identifiedNames[slotIndex] = result.name
-        identifiedScores[slotIndex] = result.score
-        monsterMatchCounts[result.name] = monsterMatchCounts.getOrDefault(result.name, 0) + 1
-        Log.i("BattleAnalyzer", "🎉 Slot[$slotIndex] ${result.name} 確定！ (Score: ${String.format(Locale.US, "%.3f", result.score)})")
+        // 5 フレーム終了後にまとめて確定 (iOS の finalize 相当)
+        for (slotIndex in 0..7) {
+            val score = bestScores[slotIndex]
+            val name = bestNames[slotIndex]
+            identifiedScores[slotIndex] = score
+            if (name != null && score >= MONSTER_THRESHOLD) {
+                identifiedNames[slotIndex] = name
+                monsterMatchCounts[name] = monsterMatchCounts.getOrDefault(name, 0) + 1
+            } else {
+                identifiedNames[slotIndex] = null  // 識別失敗 → getCurrentResults() が "?" を返す
+            }
+        }
     }
 
     fun identifyStepByStep(bitmap: Bitmap, allowedMonsters: Set<String>? = null) {
@@ -649,6 +672,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     }
 
     private fun identifySlot(bitmap: Bitmap, slotIndex: Int, sortedMonsters: List<MonsterData>): Boolean {
+        // 注: Top-K 追跡は本番バースト解析 (performDeepAnalysisBatch) のみで使用。
+        // この identifySlot は校正画面の単発テスト用なので、毎回フルスキャンする。
         val mat = Mat()
         Utils.bitmapToMat(bitmap, mat)
         val imgW = mat.cols().toFloat()
@@ -656,51 +681,29 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2RGB)
 
         val config = if (slotIndex < 4) calibrationData.myPartyBoxes[slotIndex] else calibrationData.enemyPartyBoxes[slotIndex - 4]
-        
-        // --- 案①: Top-K 追跡ロジック (iOS同期版) ---
-        val candidates = slotCandidates[slotIndex]
-        val isFirstFrameForSlot = candidates == null
-        
-        val monstersToTry = if (!isFirstFrameForSlot) {
-            // スコアが十分高かったスロットは Top-K のみを試す
-            sortedMonsters.filter { candidates!!.contains(it.name) }
-        } else {
-            // 初回、またはフォールバック中はフルスキャン
-            sortedMonsters
-        }
 
-        // 2段階探索： 1. 狭い範囲
+        // 2段階探索： 1. 狭い範囲 (パディング最小)
         val narrowPad = (20 * calibrationData.uiScale).toInt()
-        val resultNarrow = tryIdentify(mat, config, narrowPad, imgW, imgH, monstersToTry, isFirstFrameForSlot)
-        
-        // 初回フルスキャン完了後の処理
-        if (isFirstFrameForSlot && resultNarrow.allScores != null) {
-            if (resultNarrow.score >= FALLBACK_THRESHOLD) {
-                // スコアが 0.5 以上なら追跡対象に設定
-                slotCandidates[slotIndex] = resultNarrow.allScores
-                    .sortedByDescending { it.second }
-                    .take(CANDIDATE_COUNT)
-                    .map { it.first }
-            }
-        }
+        val resultNarrow = tryIdentify(mat, config, narrowPad, imgW, imgH, sortedMonsters)
 
         if (resultNarrow.score > MONSTER_THRESHOLD) {
             finalizeSlot(slotIndex, resultNarrow, bitmap, config, narrowPad)
             mat.release()
             return true
         }
-        
+
         // 2段階探索： 2. 広い範囲 (driftFactor適用)
         val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f
         val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
-        val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt() 
+        val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt()
         val widePad = basePad + extraPad
-        
-        val resultWide = tryIdentify(mat, config, widePad, imgW, imgH, monstersToTry, false)
-        
-        // スコア更新
+
+        val resultWide = tryIdentify(mat, config, widePad, imgW, imgH, sortedMonsters)
+
+        // スコア更新（原因調査用：はみ出しの -1.0 も含めて記録する）
         if (resultWide.score > (identifiedScores[slotIndex] ?: -2.0)) {
             identifiedScores[slotIndex] = resultWide.score
+            // スコアが更新されたら、その時点のROIを「最もマシな画像」として暫定保存
             saveRoi(bitmap, config, "monster_$slotIndex", widePad, widePad)
         }
 

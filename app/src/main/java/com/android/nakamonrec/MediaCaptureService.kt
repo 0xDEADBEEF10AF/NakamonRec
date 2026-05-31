@@ -15,7 +15,6 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
-import org.opencv.core.Mat
 import java.util.Locale
 import androidx.core.graphics.createBitmap
 
@@ -238,27 +237,21 @@ class MediaCaptureService : Service() {
         analysisHandler?.post {
             try {
                 if (sessionId != currentSessionId) return@post
-                
+
                 val snapshots = synchronized(this) { burstImages.toList() }
                 if (snapshots.isEmpty()) return@post
-                
-                dataManager.appendFlightLog("モンスター解析開始 (5枚 × 8スロット, 一括バッチ処理)")
 
-                val frameMats = snapshots.map { bmp ->
-                    val mat = Mat()
-                    org.opencv.android.Utils.bitmapToMat(bmp, mat)
-                    org.opencv.imgproc.Imgproc.cvtColor(mat, mat, org.opencv.imgproc.Imgproc.COLOR_RGBA2RGB)
-                    // --- 改善: 解析前にフレーム全体を一度だけ正規化 ---
-                    org.opencv.core.Core.normalize(mat, mat, 0.0, 255.0, org.opencv.core.Core.NORM_MINMAX)
-                    mat
-                }
+                val startTime = System.currentTimeMillis()
+                dataManager.appendFlightLog("モンスター解析開始 (${snapshots.size}枚 × 8スロット, Top-K 最適化)")
 
+                // Bitmap をそのまま analyzer に渡す。Mat 変換と per-ROI normalize は analyzer 内部で実施
+                // (フレーム全体 normalize はテンプレと条件が合わなくなるため行わない)
                 val allowed = if (dataManager.analysisMode == "light") dataManager.lightModeMonsters else null
-                analyzer.performDeepAnalysisBatch(frameMats, allowed)
+                analyzer.performDeepAnalysisBatch(snapshots, allowed)
 
-                val duration = System.currentTimeMillis() - sessionId
+                val duration = System.currentTimeMillis() - startTime
                 dataManager.appendFlightLog(String.format(Locale.US, "モンスター解析完了 (%.2fs)", duration / 1000.0))
-                
+
                 analyzer.getIdentificationSummary().forEach { line ->
                     dataManager.appendFlightLog(line)
                 }
@@ -276,12 +269,11 @@ class MediaCaptureService : Service() {
                     }
                 }
 
-                frameMats.forEach { it.release() }
                 clearBurstImages()
                 Log.i("Battle", "Deep analysis completed in ${duration}ms")
 
             } catch (e: Exception) {
-                Log.e("Battle", "Batch analysis error: ${e.message}")
+                Log.e("Battle", "Batch analysis error: ${e.message}", e)
             }
         }
     }
