@@ -630,8 +630,15 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                     saveRoi(bitmap, config, "monster_$slotIndex", narrowPad, narrowPad)
                 }
 
-                // 2 段階探索: wide (機種ドリフト吸収)。narrow で閾値超過していれば wide はスキップ。
-                if (resultNarrow.score <= MONSTER_THRESHOLD) {
+                // 2 段階探索: wide (機種ドリフト吸収)。
+                //   - narrow で閾値超過していれば wide はスキップ。
+                //   - Top-K モード (Frame 2-5) では wide をスキップ。理由:
+                //     wide ROI は narrow より探索面積が ~6 倍大きく per-call が重い。
+                //     Top-K サブセット (10 体) でも 5 フレーム×wide が積み上がると、
+                //     1 スロット失敗で解析全体が 14s → 50s クラスの outlier になる。
+                //     Frame 1 で wide が見つけられなかったら、Frame 2-5 の narrow Top-K でも
+                //     拾える見込みは低いので投資対効果が悪い。
+                if (isFirstFrame && resultNarrow.score <= MONSTER_THRESHOLD) {
                     val driftFactor = Math.abs(config.centerX - 0.5f) * 2.5f
                     val basePad = (ROI_PAD_MONSTER * calibrationData.uiScale).toInt()
                     val extraPad = (40 * driftFactor * calibrationData.uiScale).toInt()
