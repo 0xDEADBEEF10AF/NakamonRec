@@ -163,12 +163,13 @@ class BattleHistoryAdapter(
                 container.setOnClickListener { onMonsterClick(name, isEnemy) }
             }
 
-            // サムネ間に隙間 (iOS の HStack spacing と同様の見た目に揃える)
+            // サムネ間に最小限の隙間 (低解像度端末で 8 体目がタイムスタンプに被らないよう
+            // 1dp に抑える。視覚的にもアイコンが分離して見える最小値)
             val containerParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                marginEnd = (3 * context.resources.displayMetrics.density).toInt()
+                marginEnd = (1 * context.resources.displayMetrics.density).toInt()
             }
             layout.addView(container, containerParams)
         }
