@@ -55,6 +55,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         private const val PARTY_THRESHOLD = 0.7
         private const val CANDIDATE_COUNT = 10 // Top-10 追跡
         private const val FALLBACK_THRESHOLD = 0.5 // Frame 1 がこれ未満なら次フレームもフルスキャン
+
+        // performDeepAnalysisBatch のハードキャップ。v1.5.0 の最悪 ~26s を超えないための上限。
+        // 超過したら残りフレームを切り捨てて識別をコミットし、次バトル開始の検知漏れを防ぐ。
+        private const val ANALYSIS_BUDGET_MS: Long = 24_000L
+        // フレーム間 yield。サーマルスロットリング下でも SoC に短い idle 期間を与える。
+        private const val INTER_FRAME_YIELD_MS: Long = 50L
         
         /**
          * ROI（探索範囲）を広げるためのパディング値（ピクセル）。
@@ -590,12 +596,18 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
      *
      * 設計:
      *   - 5 フレーム × 8 スロットを一括処理。フレーム単位で bitmap → Mat 変換を 1 回だけ実施。
-     *   - per-slot に narrow + wide の 2 段階探索を継承 (機種ドリフト吸収)。
+     *   - per-slot は narrow のみ。wide pad は廃止 (Top-K キャッシュ汚染対策)。
      *   - per-ROI normalize は tryIdentify 内部で実施 (テンプレと同条件)。
      *   - Top-K + フォールバック: Frame 1 で全テンプレ走査して上位 K 件を記憶、
      *     Frame 2-5 ではその K 件だけ評価。max < 0.5 のスロットは fallback として
      *     全テンプレ走査を継続。
      *   - 早期 finalize しない: 5 フレーム全体で最高スコアを追跡し、最後にまとめて確定。
+     *
+     * 安全機構 (連続バトル下でのサーマルスロットリング対策):
+     *   - 解析時間ハードキャップ ANALYSIS_BUDGET_MS。超過時は残りフレームをスキップして
+     *     その時点までの best 結果でコミット。次バトル開始の検知を絶対に取り逃さないため。
+     *   - フレーム間に短い yield を挿入。v1.5.0 の repeatScan 100ms delay と同様、
+     *     CPU governor / JIT / GC に recovery 時間を与える狙い。
      *
      * @param bitmaps バースト 5 フレーム (RGBA)
      * @param allowedMonsters 軽負荷モードのフィルタ、null なら全モンスター
@@ -612,7 +624,30 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val bestScores = DoubleArray(8) { -1.0 }
         val bestNames = arrayOfNulls<String>(8)
 
+        val analysisStartTime = System.currentTimeMillis()
+        var processedFrames = 0
+        var budgetExceeded = false
+
         for (fIdx in bitmaps.indices) {
+            // ハードキャップ: v1.5.0 の最悪 ~26s を超えないための安全弁。
+            // 超過した時点で残りフレームを切り捨て、その時点までの結果でコミット。
+            val elapsed = System.currentTimeMillis() - analysisStartTime
+            if (elapsed > ANALYSIS_BUDGET_MS) {
+                budgetExceeded = true
+                Log.w("BattleAnalyzer", "解析予算超過 (${elapsed}ms) — Frame ${fIdx + 1} 以降をスキップ")
+                dataManager?.appendFlightLog(String.format(
+                    Locale.US,
+                    "⏱ 解析予算 %dms 超過、Frame %d 以降スキップ (%d/%d 完了)",
+                    ANALYSIS_BUDGET_MS, fIdx + 1, processedFrames, bitmaps.size))
+                break
+            }
+
+            // フレーム間 yield: v1.5.0 の repeatScan delay 模倣。
+            // SoC に短い idle 期間を与え、サーマルスロットリングを抑制する狙い。
+            if (fIdx > 0) {
+                try { Thread.sleep(INTER_FRAME_YIELD_MS) } catch (_: InterruptedException) {}
+            }
+
             val bitmap = bitmaps[fIdx]
             val fullMat = Mat()
             Utils.bitmapToMat(bitmap, fullMat)
@@ -671,9 +706,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             }
 
             fullMat.release()
+            processedFrames++
         }
 
-        // 5 フレーム終了後にまとめて確定 (iOS の finalize 相当)
+        // 全フレーム (もしくは予算内ぶん) 終了後にまとめて確定 (iOS の finalize 相当)
         for (slotIndex in 0..7) {
             val score = bestScores[slotIndex]
             val name = bestNames[slotIndex]
@@ -684,6 +720,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             } else {
                 identifiedNames[slotIndex] = null  // 識別失敗 → getCurrentResults() が "?" を返す
             }
+        }
+
+        if (budgetExceeded) {
+            val identified = identifiedNames.count { it != null }
+            dataManager?.appendFlightLog(
+                "⚠ 予算切れ確定: $identified/8 識別 ($processedFrames/${bitmaps.size} フレーム処理)")
         }
     }
 
