@@ -11,6 +11,7 @@ struct UserSettingsSheet: View {
     @State private var lightCount: Int = LightLoadConfig.lightMonsterIDs.count
     @State private var showLightPicker = false
     @State private var calibrationTarget: CalibrationScreen? = nil
+    @State private var recIsActive: Bool = BroadcastStatus.isActive
 
     var body: some View {
         NavigationStack {
@@ -42,6 +43,8 @@ struct UserSettingsSheet: View {
                                 }
                         }
                         .listRowBackground(Color.cardBackground)
+                        .disabled(recIsActive)
+                        .opacity(recIsActive ? 0.4 : 1.0)
 
                         Button {
                             showLightPicker = true
@@ -58,13 +61,21 @@ struct UserSettingsSheet: View {
                             }
                         }
                         .listRowBackground(Color.cardBackground)
+                        .disabled(recIsActive)
+                        .opacity(recIsActive ? 0.4 : 1.0)
                     } header: {
                         Text("解析モード")
                             .foregroundStyle(.gray)
                     } footer: {
-                        Text("通常モード: monsters.json の全 \(MonsterCatalog.all.count) 体を識別\n軽負荷モード: 対象モンスターのみを識別し、解析時間を短縮")
-                            .font(.caption2)
-                            .foregroundStyle(.gray)
+                        if recIsActive {
+                            Text("REC 中は解析モードを変更できません。\nREC を停止してから変更してください。")
+                                .font(.caption2)
+                                .foregroundStyle(Color.recCoral)
+                        } else {
+                            Text("通常モード: monsters.json の全 \(MonsterCatalog.all.count) 体を識別\n軽負荷モード: 対象モンスターのみを識別し、解析時間を短縮")
+                                .font(.caption2)
+                                .foregroundStyle(.gray)
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)

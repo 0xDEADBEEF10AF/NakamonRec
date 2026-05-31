@@ -508,19 +508,40 @@ class MainActivity : AppCompatActivity() {
         modeRow.addView(modeIcon)
         modeRow.addView(modeTextContainer)
         
-        modeRow.setOnClickListener {
-            AlertDialog.Builder(this).setTitle("解析モードの選択")
-                .setSingleChoiceItems(arrayOf("通常モード (全127体スキャン)", "軽負荷モード (指定モンスターのみ)"), if (dataManager.analysisMode == "light") 1 else 0) { d, which ->
-                    dataManager.analysisMode = if (which == 1) "light" else "normal"
-                    dataManager.saveAnalysisSettings()
-                    modeStatusText.text = if (dataManager.analysisMode == "light") "軽負荷モード (指定モンスターのみ)" else "通常モード (全モンスター対象)"
-                    modeIcon.setImageResource(if (dataManager.analysisMode == "light") android.R.drawable.ic_lock_power_off else android.R.drawable.ic_menu_manage)
-                    d.dismiss()
-                    
-                    if (dataManager.analysisMode == "light") {
-                        showMonsterFilterDialog()
-                    }
-                }.show()
+        // REC 中はモード切替できない (service 起動時にキャッシュした mode を使うため、
+        // 途中で切り替えても反映されない仕様)。グレーアウト + Toast で明示する。
+        val recIsActive = MediaCaptureService.isRunning
+        if (recIsActive) {
+            modeRow.alpha = 0.4f
+            modeRow.isClickable = true
+            modeRow.setOnClickListener {
+                android.widget.Toast.makeText(
+                    this,
+                    "REC 中は解析モードを切り替えられません。\nREC を停止してから変更してください。",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            val hintText = TextView(this).apply {
+                text = "(REC 中は変更不可)"
+                textSize = 12f
+                setTextColor(Color.parseColor("#FF9090"))
+            }
+            modeTextContainer.addView(hintText)
+        } else {
+            modeRow.setOnClickListener {
+                AlertDialog.Builder(this).setTitle("解析モードの選択")
+                    .setSingleChoiceItems(arrayOf("通常モード (全127体スキャン)", "軽負荷モード (指定モンスターのみ)"), if (dataManager.analysisMode == "light") 1 else 0) { d, which ->
+                        dataManager.analysisMode = if (which == 1) "light" else "normal"
+                        dataManager.saveAnalysisSettings()
+                        modeStatusText.text = if (dataManager.analysisMode == "light") "軽負荷モード (指定モンスターのみ)" else "通常モード (全モンスター対象)"
+                        modeIcon.setImageResource(if (dataManager.analysisMode == "light") android.R.drawable.ic_lock_power_off else android.R.drawable.ic_menu_manage)
+                        d.dismiss()
+
+                        if (dataManager.analysisMode == "light") {
+                            showMonsterFilterDialog()
+                        }
+                    }.show()
+            }
         }
         container.addView(modeRow)
 
