@@ -105,32 +105,48 @@ class BattleDataManager(private val context: Context) {
      * フライトレコーダー（直近1戦のログ）をクリアする
      */
     fun clearFlightLog() {
-        val file = File(context.filesDir, "latest_battle_log.txt")
-        if (file.exists()) file.delete()
+        File(context.filesDir, "latest_battle.log").delete()
+        File(context.filesDir, "previous_battle.log").delete()
     }
 
     /**
-     * フライトレコーダーに1行追記する
+     * 戦闘開始時に呼ぶ: 直前ログを previous へ退避し、最新ログを空にする (iOS同期)
+     */
+    fun rotateFlightLog() {
+        val latest = File(context.filesDir, "latest_battle.log")
+        val previous = File(context.filesDir, "previous_battle.log")
+        if (previous.exists()) previous.delete()
+        if (latest.exists()) {
+            latest.renameTo(previous)
+        }
+    }
+
+    /**
+     * フライトレコーダーに1行追記する (iOS同期フォーマット)
      */
     fun appendFlightLog(message: String) {
-        val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US)
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val timestamp = sdf.format(Date())
-        val logLine = "[$timestamp] $message\n"
+        val logLine = "$timestamp  $message\n" // iOSに合わせ2スペース
         try {
-            context.openFileOutput("latest_battle_log.txt", Context.MODE_APPEND).use {
+            context.openFileOutput("latest_battle.log", Context.MODE_APPEND).use {
                 it.write(logLine.toByteArray())
             }
-        } catch (e: Exception) {
-            // 解析中に落ちないようにサイレントに
-        }
+        } catch (_: Exception) {}
     }
 
     /**
      * フライトレコーダーの内容を読み込む
      */
     fun readFlightLog(): String {
-        val file = File(context.filesDir, "latest_battle_log.txt")
-        if (!file.exists()) return "ログがありません。"
+        val file = File(context.filesDir, "latest_battle.log")
+        if (!file.exists()) return "(まだログがありません)"
+        return file.readText()
+    }
+
+    fun readPreviousFlightLog(): String? {
+        val file = File(context.filesDir, "previous_battle.log")
+        if (!file.exists()) return null
         return file.readText()
     }
 

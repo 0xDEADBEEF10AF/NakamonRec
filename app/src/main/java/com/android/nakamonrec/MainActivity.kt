@@ -771,20 +771,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFlightLog() {
-        val logText = dataManager.readFlightLog()
-        val scrollView = android.widget.ScrollView(this)
-        val textView = android.widget.TextView(this).apply {
-            text = logText
-            textSize = 12f
+        val latestLog = dataManager.readFlightLog()
+        val previousLog = dataManager.readPreviousFlightLog()
+        
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
             setBackgroundColor(android.graphics.Color.parseColor("#111111"))
-            setTextColor(android.graphics.Color.LTGRAY)
-            typeface = android.graphics.Typeface.MONOSPACE
         }
-        scrollView.addView(textView)
+
+        fun addSection(title: String, body: String) {
+            val titleView = android.widget.TextView(this).apply {
+                text = title
+                textSize = 14f
+                setTextColor(android.graphics.Color.WHITE)
+                setPadding(0, 20, 0, 10)
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            val bodyView = android.widget.TextView(this).apply {
+                text = body
+                textSize = 11f
+                setPadding(20, 20, 20, 20)
+                setBackgroundColor(android.graphics.Color.parseColor("#222222"))
+                setTextColor(android.graphics.Color.LTGRAY)
+                typeface = android.graphics.Typeface.MONOSPACE
+            }
+            container.addView(titleView)
+            container.addView(bodyView)
+        }
+
+        addSection("📋 最新のログ", latestLog)
+        if (previousLog != null) {
+            addSection("🗂 前回のログ", previousLog)
+        }
+
+        val scrollView = android.widget.ScrollView(this).apply {
+            addView(container)
+        }
 
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("直近の解析ログ (フライトレコーダー)")
+            .setTitle("解析ログ")
             .setView(scrollView)
             .setPositiveButton("閉じる", null)
             .setNeutralButton("クリア") { _, _ ->

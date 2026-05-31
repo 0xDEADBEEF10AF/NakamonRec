@@ -15,6 +15,7 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
+import org.opencv.core.Mat
 import java.util.Locale
 import androidx.core.graphics.createBitmap
 
@@ -36,11 +37,17 @@ class MediaCaptureService : Service() {
     private var lastAnalysisTime = 0L
     private var lastBitmapUpdateTime = 0L
     private var latestBitmap: Bitmap? = null
-    private var selectedPartyIndex = -1
-    private var currentPartyScores: List<Double> = emptyList()
-    private var currentVsScore: Double = 0.0
+
+    // 戦闘開始時にキャプチャされた情報を一時保持し、
+    // モンスター解析と勝敗検知のどちらが先に来ても良いように管理する
+    private var sessionPartyIndex = -1
+    private var sessionPartyScores: List<Double> = emptyList()
+    private var sessionVsScore: Double = 0.0
+    
+    private var lastDetectedPartyIndex = -1
+    private var lastDetectedPartyScores: List<Double> = emptyList()
+    
     private var currentSessionId = 0L
-    private var debugImageSavedInSession = false
     private var lastActiveRecord: BattleRecord? = null
     private val burstImages = mutableListOf<Bitmap>()
     private var isCapturingBurst = false
@@ -58,9 +65,14 @@ class MediaCaptureService : Service() {
         super.onCreate()
         isRunning = true
         dataManager = BattleDataManager(this)
+        dataManager.appendFlightLog("Service起動")
+        
         analyzer = BattleAnalyzer(dataManager.monsterMaster)
-        analyzer.dataManager = dataManager // ここでセット
+        analyzer.dataManager = dataManager
         analyzer.loadTemplates(this)
+        
+        val modeLabel = if (dataManager.analysisMode == "light") "軽負荷" else "通常"
+        dataManager.appendFlightLog("テンプレート読み込み完了 (${modeLabel}モード, モンスター${dataManager.monsterMaster.size}体)")
 
         captureThread = HandlerThread("CaptureThread").apply { start() }
         captureHandler = Handler(captureThread!!.looper)
@@ -139,6 +151,9 @@ class MediaCaptureService : Service() {
         val width = metrics.widthPixels
         val height = metrics.heightPixels
         val density = metrics.densityDpi
+        
+        val scale = width.toFloat() / 1080f
+        dataManager.appendFlightLog(String.format(Locale.US, "校正完了 frame幅=%d scale=%.3f", width, scale))
 
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { stopSelf() }
@@ -219,62 +234,54 @@ class MediaCaptureService : Service() {
         }
     }
 
-    private fun repeatScan(sessionId: Long, count: Int, delayMs: Long) {
-        // セッション切れ、全確定済み、または回数終了なら即終了
-        if (sessionId != currentSessionId || analyzer.isAllIdentified() || count <= 0) {
-            // 最終的に未確定で終わった場合のみバースト画像5枚を保存
-            if (count <= 0 && sessionId == currentSessionId && !analyzer.isAllIdentified() && !debugImageSavedInSession) {
-                synchronized(this) {
-                    val timestamp = System.currentTimeMillis()
-                    burstImages.forEachIndexed { index, bmp ->
-                        if (!bmp.isRecycled) {
-                            analyzer.saveDebugBitmap(bmp, "incomplete_burst_${index}_$timestamp")
-                        }
-                    }
-                }
-                debugImageSavedInSession = true
-            }
-            // バースト画像の解放はここで行わない
-            return
-        }
-
+    private fun performFullAnalysis(sessionId: Long) {
         analysisHandler?.post {
             try {
-                if (sessionId == currentSessionId) {
-                    val snapshots = synchronized(this) { burstImages.toList() }
-                    val allowed = if (dataManager.analysisMode == "light") dataManager.lightModeMonsters else null
-                    
-                    val foundNew = if (snapshots.isNotEmpty()) {
-                        analyzer.identifyNextSlot(snapshots, allowed)
-                    } else false
+                if (sessionId != currentSessionId) return@post
+                
+                val snapshots = synchronized(this) { burstImages.toList() }
+                if (snapshots.isEmpty()) return@post
+                
+                dataManager.appendFlightLog("モンスター解析開始 (5枚 × 8スロット, 一括バッチ処理)")
 
-                    // 識別が進んだ場合、もし既にバトルが終了してレコードが作成済みなら更新する
-                    if (foundNew && currentState == State.IDLE) {
-                        val recordToUpdate = lastActiveRecord
-                        if (recordToUpdate != null) {
-                            val (my, enemy, scores) = analyzer.getCurrentResults()
-                            recordToUpdate.myParty = my
-                            recordToUpdate.enemyParty = enemy
-                            recordToUpdate.myPartyScores = scores.first
-                            recordToUpdate.enemyPartyScores = scores.second
-                            dataManager.updateRecord(recordToUpdate)
-                        }
+                val frameMats = snapshots.map { bmp ->
+                    val mat = Mat()
+                    org.opencv.android.Utils.bitmapToMat(bmp, mat)
+                    org.opencv.imgproc.Imgproc.cvtColor(mat, mat, org.opencv.imgproc.Imgproc.COLOR_RGBA2RGB)
+                    // --- 改善: 解析前にフレーム全体を一度だけ正規化 ---
+                    org.opencv.core.Core.normalize(mat, mat, 0.0, 255.0, org.opencv.core.Core.NORM_MINMAX)
+                    mat
+                }
+
+                val allowed = if (dataManager.analysisMode == "light") dataManager.lightModeMonsters else null
+                analyzer.performDeepAnalysisBatch(frameMats, allowed)
+
+                val duration = System.currentTimeMillis() - sessionId
+                dataManager.appendFlightLog(String.format(Locale.US, "モンスター解析完了 (%.2fs)", duration / 1000.0))
+                
+                analyzer.getIdentificationSummary().forEach { line ->
+                    dataManager.appendFlightLog(line)
+                }
+
+                // 解析結果をレコードに反映
+                synchronized(this) {
+                    lastActiveRecord?.let { record ->
+                        val (my, enemy, scores) = analyzer.getCurrentResults()
+                        record.myParty = my
+                        record.enemyParty = enemy
+                        record.myPartyScores = scores.first
+                        record.enemyPartyScores = scores.second
+                        dataManager.updateRecord(record)
+                        dataManager.appendFlightLog("📝 戦績レコードをモンスター解析結果で更新しました")
                     }
                 }
+
+                frameMats.forEach { it.release() }
+                clearBurstImages()
+                Log.i("Battle", "Deep analysis completed in ${duration}ms")
+
             } catch (e: Exception) {
-                Log.e("Battle", "Analysis error: ${e.message}")
-            } finally {
-                // 解析後に再度条件チェックして次を予約（シーケンシャル）
-                if (sessionId == currentSessionId && !analyzer.isAllIdentified() && count > 1) {
-                    analysisHandler?.postDelayed({
-                        repeatScan(sessionId, count - 1, delayMs)
-                    }, delayMs)
-                } else if (analyzer.isAllIdentified()) {
-                    val duration = System.currentTimeMillis() - sessionId
-                    dataManager.appendFlightLog("=== モンスター識別完了 (解析時間: ${duration}ms) ===")
-                    Log.i("Battle", "All monsters identified. Ending scan loop early. (Duration: ${duration}ms)")
-                    clearBurstImages()
-                }
+                Log.e("Battle", "Batch analysis error: ${e.message}")
             }
         }
     }
@@ -305,8 +312,6 @@ class MediaCaptureService : Service() {
                         }
                     }
                 }
-                
-                // 150ms間隔で次の撮影を予約
                 captureHandler?.postDelayed(this, 150L)
             }
         }
@@ -324,43 +329,50 @@ class MediaCaptureService : Service() {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
         
         if (detected != -1) {
-            if (selectedPartyIndex != detected) {
-                dataManager.appendFlightLog("パーティ選択検知: P${detected + 1} (Score: ${String.format(Locale.US, "%.3f", scores[detected])})")
+            if (lastDetectedPartyIndex != detected) {
+                dataManager.appendFlightLog("パーティ選択検知 P[${detected + 1}] Score ${String.format(Locale.US, "%.3f", scores[detected])}")
+                // マッチングスコア詳細用に画像を保存
+                analyzer.saveRoi(bitmap, analyzer.calibrationData.partySelectBoxes[detected], "party_p$detected", 
+                    (BattleAnalyzer.ROI_PAD_PARTY_V * analyzer.calibrationData.uiScale).toInt(),
+                    (BattleAnalyzer.ROI_PAD_PARTY_H * analyzer.calibrationData.uiScale).toInt())
             }
-            selectedPartyIndex = detected
-            // 正常に検知された時のスコアを「最新の有効値」として保持
-            currentPartyScores = scores
+            lastDetectedPartyIndex = detected
+            lastDetectedPartyScores = scores
         }
         
         if (analyzer.isVsDetected(bitmap)) {
-            dataManager.clearFlightLog() // 戦闘開始時にログをリセット
-            dataManager.appendFlightLog("=== 戦闘開始検知 ===")
+            dataManager.rotateFlightLog()
+            
+            // 現在の検知情報をセッションに固定する
+            sessionPartyIndex = lastDetectedPartyIndex
+            sessionPartyScores = lastDetectedPartyScores
+            
+            if (sessionPartyIndex >= 0) {
+                dataManager.appendFlightLog("パーティ P[${sessionPartyIndex + 1}] で戦闘開始")
+            } else {
+                dataManager.appendFlightLog("パーティ未検知で戦闘開始")
+            }
             
             val vsScore = analyzer.detectVsScore(bitmap, analyzer.calibrationData.vsBox)
-            dataManager.appendFlightLog("VSロゴ検知 Score: ${String.format(Locale.US, "%.3f", vsScore)}")
+            dataManager.appendFlightLog("VS検知 Score ${String.format(Locale.US, "%.3f", vsScore)} → バースト開始")
             
-            currentVsScore = vsScore
-
+            sessionVsScore = vsScore
             analysisHandler?.removeCallbacksAndMessages(null)
-
             currentSessionId = System.currentTimeMillis()
-            debugImageSavedInSession = false
             currentState = State.IN_BATTLE
             analyzer.resetIdentification()
+            lastActiveRecord = null // レコードの器をクリア
             
             clearBurstImages()
-            // VSを検知した瞬間の最高鮮度なフレーム（0ms目）を最初の1枚として保存
             synchronized(this) {
                 burstImages.add(Bitmap.createBitmap(bitmap))
             }
 
-            // 残り4枚をバースト撮影する
             startBurstCapture(currentSessionId) {
-                // 撮影が完了してから解析ループを開始
-                repeatScan(currentSessionId, 20, 100L)
+                performFullAnalysis(currentSessionId)
             }
 
-            val partyName = if (selectedPartyIndex != -1) "P${selectedPartyIndex + 1}" else "?"
+            val partyName = if (sessionPartyIndex != -1) "P${sessionPartyIndex + 1}" else "?"
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘開始 ($partyName)")
         }
     }
@@ -371,27 +383,37 @@ class MediaCaptureService : Service() {
             val resultScore = if (result == "WIN") analyzer.detectWinScore(bitmap, analyzer.calibrationData.winBox)
                               else analyzer.detectLoseScore(bitmap, analyzer.calibrationData.loseBox)
 
-            dataManager.appendFlightLog("戦闘終了検知: $result (Score: ${String.format(Locale.US, "%.3f", resultScore)})")
+            val emoji = if (result == "WIN") "🏆" else "💀"
+            val label = if (result == "WIN") "勝利" else "敗北"
+            dataManager.appendFlightLog("$emoji ${label}検知 Score ${String.format(Locale.US, "%.3f", resultScore)}")
 
-            // 戦闘終了時の不完全なデバッグ画像保存は、中途半端なロゴが映るだけで有用でないため削除
-
-            // currentSessionId = 0 はここでは行わない（バックグラウンド識別を継続させるため）
-            finalizeBattle(result, currentVsScore, resultScore)
+            finalizeBattle(result, sessionVsScore, resultScore)
         }
     }
 
     private fun finalizeBattle(result: String, vsScore: Double, resultScore: Double) {
-        val (myParty, enemyParty, scores) = analyzer.getCurrentResults()
-        lastActiveRecord = dataManager.addRecord(
-            result, myParty, enemyParty, selectedPartyIndex,
-            vsScore, scores.first, scores.second, resultScore,
-            currentPartyScores
-        )
-        currentState = State.IDLE
-        selectedPartyIndex = -1 // 次回識別のためにリセット
-        currentPartyScores = emptyList() // リセット
-        currentVsScore = 0.0
-        updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
+        synchronized(this) {
+            // すでにレコードが作成済みの場合は重複させない
+            if (lastActiveRecord != null) return
+            
+            val (myParty, enemyParty, scores) = analyzer.getCurrentResults()
+            lastActiveRecord = dataManager.addRecord(
+                result, myParty, enemyParty, sessionPartyIndex,
+                vsScore, scores.first, scores.second, resultScore,
+                sessionPartyScores
+            )
+            
+            dataManager.appendFlightLog(String.format(Locale.US, "📝 戦績記録: %s P[%d] 味方=%s vs 敵=%s",
+                result, sessionPartyIndex + 1, myParty.joinToString(","), enemyParty.joinToString(",")))
+                
+            currentState = State.IDLE
+            // 次回識別のためにセッション情報をクリア
+            sessionPartyIndex = -1
+            sessionPartyScores = emptyList()
+            sessionVsScore = 0.0
+            
+            updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
+        }
     }
 
     private fun createNotificationChannel() {
