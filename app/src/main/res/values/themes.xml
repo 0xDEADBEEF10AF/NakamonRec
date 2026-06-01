@@ -6,4 +6,41 @@
     </style>
 
     <style name="Theme.NakamonRec" parent="Base.Theme.NakamonRec" />
+
+    <!--
+        iOS の dark sheet と揃えた共通ダイアログテーマ。
+        全 AlertDialog.Builder に第 2 引数で渡して使用する。
+    -->
+    <style name="Theme.NakamonRec.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">#333333</item>
+        <item name="android:colorBackground">#333333</item>
+        <item name="colorOnSurface">#FFFFFF</item>
+        <item name="colorPrimary">#BB86FC</item>
+        <item name="alertDialogStyle">@style/NakamonRec.Dialog.Layout</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/NakamonRec.Dialog.Title</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/NakamonRec.Dialog.Body</item>
+        <item name="buttonBarPositiveButtonStyle">@style/NakamonRec.Dialog.Button</item>
+        <item name="buttonBarNegativeButtonStyle">@style/NakamonRec.Dialog.Button</item>
+        <item name="buttonBarNeutralButtonStyle">@style/NakamonRec.Dialog.Button</item>
+    </style>
+
+    <style name="NakamonRec.Dialog.Layout" parent="MaterialAlertDialog.Material3">
+        <item name="shapeAppearance">@style/NakamonRec.Dialog.Shape</item>
+    </style>
+
+    <style name="NakamonRec.Dialog.Shape" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerSize">12dp</item>
+    </style>
+
+    <style name="NakamonRec.Dialog.Title" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textColor">#FFFFFF</item>
+    </style>
+
+    <style name="NakamonRec.Dialog.Body" parent="MaterialAlertDialog.Material3.Body.Text">
+        <item name="android:textColor">#FFFFFF</item>
+    </style>
+
+    <style name="NakamonRec.Dialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">#BB86FC</item>
+    </style>
 </resources>
