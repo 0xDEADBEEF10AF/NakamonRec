@@ -37,14 +37,13 @@
                 android:textColor="#FFFFFF" />
         </LinearLayout>
 
-        <!-- 中央: モンスター画像 (味方 vs 相手)。
-             iOS と同じく start (左寄せ) で並べ、右側に timestamp との余白を確保 -->
+        <!-- 中央: モンスター画像 (味方 vs 相手) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="horizontal"
-            android:gravity="start|center_vertical">
+            android:gravity="center">
 
             <LinearLayout
                 android:id="@+id/layoutMyMonsters"

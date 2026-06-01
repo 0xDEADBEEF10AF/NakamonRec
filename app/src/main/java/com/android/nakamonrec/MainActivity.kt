@@ -566,9 +566,8 @@ class MainActivity : AppCompatActivity() {
             dataManager.analysisMode = if (isChecked) "light" else "normal"
             dataManager.saveAnalysisSettings()
             modeIcon.setColorFilter(if (isChecked) Color.parseColor("#F09199") else Color.GRAY)
-            if (isChecked) {
-                showMonsterFilterDialog()
-            }
+            // 軽負荷 ON 時は対象モンスター行 (下の Picker) からユーザーが手動で開く
+            // iOS と挙動を揃えるため、自動でフィルタダイアログは開かない
         }
 
         // REC 中表示: 両行をグレーアウト + 注意文

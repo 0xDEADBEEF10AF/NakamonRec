@@ -186,7 +186,7 @@ struct ContentView: View {
                 radius: 112,
                 spread: .degrees(120),
                 font: .system(size: 34, weight: .bold, design: .default),
-                color: Color.white.opacity(0.85)
+                color: Color.white   // #FFFFFF (フル不透明)
             )
             .rotationEffect(.degrees(nakamonRotation))
 
@@ -297,8 +297,8 @@ struct BroadcastButton: UIViewRepresentable {
 
     // REC (放送開始前) のカラー
     private static let recFill = UIColor(red: 0xF0/255.0, green: 0x91/255.0, blue: 0x99/255.0, alpha: 1.0) // #F09199
-    private static let recText = UIColor(red: 1.0, green: 0.90, blue: 0.92, alpha: 1.0)                  // 薄ピンク
-    private static let recBorder = UIColor(red: 1.0, green: 0.90, blue: 0.92, alpha: 0.6).cgColor
+    private static let recText = UIColor(red: 0xFF/255.0, green: 0xE6/255.0, blue: 0xEB/255.0, alpha: 1.0) // #FFE6EB
+    private static let recBorder = UIColor(red: 0xFF/255.0, green: 0xE6/255.0, blue: 0xEB/255.0, alpha: 1.0).cgColor // #FFE6EB (フル不透明)
 
     // STOP (放送中) のカラー
     private static let stopFill = UIColor(red: 0x90/255.0, green: 0xD7/255.0, blue: 0xEC/255.0, alpha: 1.0) // #90D7EC
