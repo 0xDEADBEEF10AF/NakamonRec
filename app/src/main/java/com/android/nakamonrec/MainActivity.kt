@@ -482,68 +482,112 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD) 
         })
         
-        val modeRow = LinearLayout(this).apply { 
+        // iOS の UserSettingsSheet と同じ Toggle (Switch) パターン:
+        //   1 行目: 軽負荷モード切替 Switch
+        //   2 行目: 対象モンスター (N 体) 一覧編集 (チェブロン付き行)
+        val recIsActive = MediaCaptureService.isRunning
+
+        // === Row 1: 軽負荷モード Switch ===
+        val modeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 20, 0, 20)
+        }
+        val modeIcon = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(120, 120)
+            setImageResource(android.R.drawable.ic_lock_power_off)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setColorFilter(if (dataManager.analysisMode == "light") Color.parseColor("#F09199") else Color.GRAY)
+        }
+        val modeTextContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val modeStatusText = TextView(this).apply {
+            text = "軽負荷モード (指定モンスターのみ)"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+        }
+        modeTextContainer.addView(modeStatusText)
+        val modeSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            isChecked = dataManager.analysisMode == "light"
+            isEnabled = !recIsActive
+        }
+        modeRow.addView(modeIcon)
+        modeRow.addView(modeTextContainer)
+        modeRow.addView(modeSwitch)
+
+        // === Row 2: 対象モンスター一覧 (Picker) ===
+        val pickerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 20, 0, 20)
             isClickable = true
             setBackgroundResource(android.R.drawable.list_selector_background)
         }
-        val modeIcon = ImageView(this).apply { 
+        val pickerIcon = ImageView(this).apply {
             layoutParams = LinearLayout.LayoutParams(120, 120)
-            setImageResource(if (dataManager.analysisMode == "light") android.R.drawable.ic_lock_power_off else android.R.drawable.ic_menu_manage)
+            setImageResource(android.R.drawable.ic_menu_manage)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setColorFilter(Color.WHITE)
+            setColorFilter(Color.GRAY)
         }
-        val modeTextContainer = LinearLayout(this).apply { 
-            orientation = LinearLayout.VERTICAL
-            setPadding(20, 0, 0, 0)
-        }
-        val modeStatusText = TextView(this).apply { 
-            text = if (dataManager.analysisMode == "light") "軽負荷モード (指定モンスターのみ)" else "通常モード (全モンスター対象)"
+        val pickerLabel = TextView(this).apply {
+            text = "対象モンスター (${dataManager.lightModeMonsters.size} 体)"
             textSize = 16f
             setTextColor(Color.WHITE)
+            setPadding(20, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        modeTextContainer.addView(modeStatusText)
-        modeRow.addView(modeIcon)
-        modeRow.addView(modeTextContainer)
-        
-        // REC 中はモード切替できない (service 起動時にキャッシュした mode を使うため、
-        // 途中で切り替えても反映されない仕様)。グレーアウト + Toast で明示する。
-        val recIsActive = MediaCaptureService.isRunning
-        if (recIsActive) {
-            modeRow.alpha = 0.4f
-            modeRow.isClickable = true
-            modeRow.setOnClickListener {
+        val pickerChevron = TextView(this).apply {
+            text = "›"
+            textSize = 24f
+            setTextColor(Color.GRAY)
+            setPadding(0, 0, 10, 0)
+        }
+        pickerRow.addView(pickerIcon)
+        pickerRow.addView(pickerLabel)
+        pickerRow.addView(pickerChevron)
+        pickerRow.setOnClickListener {
+            if (recIsActive) {
                 android.widget.Toast.makeText(
                     this,
-                    "REC 中は解析モードを切り替えられません。\nREC を停止してから変更してください。",
+                    "REC 中は解析モードを変更できません。\nREC を停止してから変更してください。",
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
-            }
-            val hintText = TextView(this).apply {
-                text = "(REC 中は変更不可)"
-                textSize = 12f
-                setTextColor(Color.parseColor("#FF9090"))
-            }
-            modeTextContainer.addView(hintText)
-        } else {
-            modeRow.setOnClickListener {
-                AlertDialog.Builder(this).setTitle("解析モードの選択")
-                    .setSingleChoiceItems(arrayOf("通常モード (全127体スキャン)", "軽負荷モード (指定モンスターのみ)"), if (dataManager.analysisMode == "light") 1 else 0) { d, which ->
-                        dataManager.analysisMode = if (which == 1) "light" else "normal"
-                        dataManager.saveAnalysisSettings()
-                        modeStatusText.text = if (dataManager.analysisMode == "light") "軽負荷モード (指定モンスターのみ)" else "通常モード (全モンスター対象)"
-                        modeIcon.setImageResource(if (dataManager.analysisMode == "light") android.R.drawable.ic_lock_power_off else android.R.drawable.ic_menu_manage)
-                        d.dismiss()
-
-                        if (dataManager.analysisMode == "light") {
-                            showMonsterFilterDialog()
-                        }
-                    }.show()
+            } else {
+                showMonsterFilterDialog()
             }
         }
-        container.addView(modeRow)
+
+        // Switch change handler (REC active ガード)
+        modeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (recIsActive) return@setOnCheckedChangeListener
+            dataManager.analysisMode = if (isChecked) "light" else "normal"
+            dataManager.saveAnalysisSettings()
+            modeIcon.setColorFilter(if (isChecked) Color.parseColor("#F09199") else Color.GRAY)
+            if (isChecked) {
+                showMonsterFilterDialog()
+            }
+        }
+
+        // REC 中表示: 両行をグレーアウト + 注意文
+        if (recIsActive) {
+            modeRow.alpha = 0.4f
+            pickerRow.alpha = 0.4f
+            val hintText = TextView(this).apply {
+                text = "REC 中は解析モードを変更できません。REC を停止してから変更してください。"
+                textSize = 12f
+                setTextColor(Color.parseColor("#FF9090"))
+                setPadding(0, 10, 0, 0)
+            }
+            container.addView(modeRow)
+            container.addView(pickerRow)
+            container.addView(hintText)
+        } else {
+            container.addView(modeRow)
+            container.addView(pickerRow)
+        }
 
         calibrationSelectorDialog = AlertDialog.Builder(this).setTitle("ユーザー設定").setView(container).setNegativeButton("閉じる", null).show()
     }
@@ -675,7 +719,20 @@ class MainActivity : AppCompatActivity() {
         else { binding.btnToggleService.apply { text = getString(R.string.btn_rec); backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt()); strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) }; binding.cardCurrentFile.apply { strokeWidth = (1f * resources.displayMetrics.density).toInt(); strokeColor = "#444444".toColorInt() }; stopPulseAnimation() }
         val currentName = getCurrentFileName(); binding.textCurrentFile.text = getString(R.string.file_name_ext_format, currentName)
         val stats = dataManager.apply { loadHistory(currentName) }.getStatistics()
-        binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate); binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses); binding.valTotalWinLoseMain.text = getString(R.string.label_win_lose_format, stats.totalWins, stats.totalLosses)
+        binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate); binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
+        // W は recCoral 系 (REC ボタン色)、L は sideEnemy 系 (STOP ボタン色) で色分けして
+        // 数字を見なくても勝敗バランスが分かるようにする (iOS 版と挙動を揃える)
+        val winText = "${stats.totalWins}W"
+        val loseText = "${stats.totalLosses}L"
+        val combined = "$winText - $loseText"
+        val span = android.text.SpannableString(combined)
+        span.setSpan(android.text.style.ForegroundColorSpan("#F09199".toColorInt()),
+                     0, winText.length,
+                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        span.setSpan(android.text.style.ForegroundColorSpan("#90D7EC".toColorInt()),
+                     combined.length - loseText.length, combined.length,
+                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        binding.valTotalWinLoseMain.text = span
     }
 
     private fun startPulseAnimation() { if (pulseAnimation != null) return; pulseAnimation = ObjectAnimator.ofPropertyValuesHolder(binding.btnToggleService, PropertyValuesHolder.ofFloat("scaleX", 1.0f, 1.05f), PropertyValuesHolder.ofFloat("scaleY", 1.0f, 1.05f)).apply { duration = 800; repeatCount = ObjectAnimator.INFINITE; repeatMode = ObjectAnimator.REVERSE; start() } }

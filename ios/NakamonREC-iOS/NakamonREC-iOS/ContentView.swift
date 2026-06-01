@@ -321,7 +321,7 @@ struct BroadcastButton: UIViewRepresentable {
         let button = UIButton(type: .custom)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.titleLabel?.font = .systemFont(ofSize: 28, weight: .bold)
-        button.layer.borderWidth = 4
+        button.layer.borderWidth = 6   // Android の MaterialButton stroke と近い太さに合わせる
         container.addSubview(button)
 
         NSLayoutConstraint.activate([
