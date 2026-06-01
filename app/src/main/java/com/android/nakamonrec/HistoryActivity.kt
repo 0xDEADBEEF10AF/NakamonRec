@@ -1252,8 +1252,8 @@ class HistoryActivity : AppCompatActivity() {
         allMonsters.forEachIndexed { index, name ->
             val imageView = ImageView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(4, 0, 4, 0) }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundResource(if (index < 4) android.R.drawable.editbox_dropdown_light_frame else android.R.drawable.editbox_dropdown_dark_frame)
+                // 他のサムネと統一: 正方形 ROI を CENTER_CROP で埋める + 角丸
+                scaleType = ImageView.ScaleType.CENTER_CROP
                 val monsterData = dataManager.monsterMaster.find { it.name == name }
                 if (monsterData != null) {
                     try {
@@ -1264,6 +1264,9 @@ class HistoryActivity : AppCompatActivity() {
                         setImageResource(android.R.drawable.ic_menu_help)
                     }
                 }
+            }
+            applyRoundedCorners(imageView)
+            imageView.apply {
                 setOnClickListener {
                     val isMyParty = index < 4
                     val monsterIndex = if (isMyParty) index else index - 4
