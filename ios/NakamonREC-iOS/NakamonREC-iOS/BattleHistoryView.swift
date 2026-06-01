@@ -191,7 +191,7 @@ struct BattleHistoryView: View {
         let winRate = total > 0 ? Double(wins) / Double(total) * 100 : 0
         let isSelected = (filter.partyIndex == nil)  // 簡易フィルタで「全パーティ」相当
 
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .center, spacing: 4) {
             Text(useFiltered ? "FILTER WIN RATE" : "TOTAL WIN RATE")
                 .font(.caption2)
                 .foregroundStyle(.gray)
@@ -209,7 +209,7 @@ struct BattleHistoryView: View {
             .font(.caption)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
@@ -294,7 +294,7 @@ struct BattleHistoryView: View {
         let latest = partyRecords.last
         let isSelected = filter.partyIndex == index
 
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .center, spacing: 4) {
             Text("P\(index + 1)")
                 .font(.subheadline.bold())
                 .foregroundStyle(.white)
@@ -317,7 +317,7 @@ struct BattleHistoryView: View {
             .font(.caption2)
         }
         .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
