@@ -264,6 +264,23 @@ class HistoryActivity : AppCompatActivity() {
     }
 
 
+    /**
+     * iOS と同じ W-L 表示: W はピンク (#F09199)、L は水色 (#90D7EC) に色分け。
+     */
+    private fun buildWinLoseSpan(wins: Int, losses: Int): android.text.SpannableString {
+        val winText = "${wins}W"
+        val loseText = "${losses}L"
+        val combined = "$winText - $loseText"
+        val span = android.text.SpannableString(combined)
+        span.setSpan(android.text.style.ForegroundColorSpan("#F09199".toColorInt()),
+                     0, winText.length,
+                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        span.setSpan(android.text.style.ForegroundColorSpan("#90D7EC".toColorInt()),
+                     combined.length - loseText.length, combined.length,
+                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return span
+    }
+
     private fun setFilter(index: Int) {
         if (filterPartyIndex == index && filterMyPartyComposition == null) {
             filterPartyIndex = -1
@@ -321,7 +338,7 @@ class HistoryActivity : AppCompatActivity() {
         
         binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", rate)
         binding.valTotalCount.text = getString(R.string.label_matches_format, totalCount)
-        binding.valTotalWinLose.text = getString(R.string.label_win_lose_format, wins, losses)
+        binding.valTotalWinLose.text = buildWinLoseSpan(wins, losses)
 
         val globalStats = dataManager.getStatistics()
         for (i in 0..2) {
@@ -358,7 +375,7 @@ class HistoryActivity : AppCompatActivity() {
             }
 
             val rateStr = String.format(Locale.US, "%.1f%%", rate)
-            val winLoseStr = getString(R.string.label_win_lose_format, wins, losses)
+            val winLoseStr: CharSequence = buildWinLoseSpan(wins, losses)
             
             // 使用率の計算 (組成フィルタ時はその組成の使用率)
             val usageRate = if (filterPartyIndex == i && filterMyPartyComposition != null) {
@@ -579,6 +596,8 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun updatePartyIcons(partyNames: List<String>, imageViews: List<ImageView>) {
         imageViews.forEachIndexed { i, imageView ->
+            // 角丸クリップ (一度設定すれば再利用される)
+            applyRoundedCorners(imageView)
             val monsterName = partyNames.getOrNull(i) ?: ""
             val monsterData = dataManager.monsterMaster.find { it.name == monsterName }
             if (monsterData != null) {
@@ -596,6 +615,20 @@ class HistoryActivity : AppCompatActivity() {
                 imageView.visibility = View.INVISIBLE
             }
         }
+    }
+
+    /**
+     * ImageView に 6dp 角丸クリップを適用 (iOS の RoundedRectangle(cornerRadius: 6) と同じ見た目)。
+     * outlineProvider + clipToOutline は冪等なので何度呼んでも安全。
+     */
+    private fun applyRoundedCorners(imageView: ImageView) {
+        val cornerRadiusPx = 6 * resources.displayMetrics.density
+        imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)
+            }
+        }
+        imageView.clipToOutline = true
     }
 
     private fun showAnalysisDialog() {
@@ -811,6 +844,7 @@ class HistoryActivity : AppCompatActivity() {
                                     catch(_:Exception) { setImageResource(android.R.drawable.ic_menu_help) }
                                 } ?: setImageResource(android.R.drawable.ic_menu_help)
                             }
+                            applyRoundedCorners(iv)
                             iconsLayout.addView(iv)
                         }
                         leftContent.addView(iconsLayout)
@@ -943,6 +977,7 @@ class HistoryActivity : AppCompatActivity() {
                             catch(_: Exception) { setImageResource(android.R.drawable.ic_menu_help) }
                         } ?: setImageResource(android.R.drawable.ic_menu_help)
                     }
+                    applyRoundedCorners(imageView)
                     root.addView(imageView)
 
                     // 3. 情報 (名前・出現数・勝率)
@@ -1276,11 +1311,21 @@ class HistoryActivity : AppCompatActivity() {
                 override fun getItem(position: Int): Any = dataManager.monsterMaster[position]
                 override fun getItemId(position: Int): Long = position.toLong()
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                    val imageView = (convertView as? ImageView) ?: ImageView(this@HistoryActivity).apply {
-                        layoutParams = android.widget.AbsListView.LayoutParams(150, 150)
+                    // GridView の自動カラム幅で width が拡張されるため、onMeasure で width = height を
+                    // 強制し、正方形セルにする (旧版はテンプレ縦長 (78x130) がそのまま見えていた)
+                    val imageView = (convertView as? ImageView) ?: object : ImageView(this@HistoryActivity) {
+                        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                            super.onMeasure(widthMeasureSpec, widthMeasureSpec)
+                        }
+                    }.apply {
+                        layoutParams = android.widget.AbsListView.LayoutParams(
+                            android.widget.AbsListView.LayoutParams.MATCH_PARENT,
+                            android.widget.AbsListView.LayoutParams.WRAP_CONTENT
+                        )
                         scaleType = ImageView.ScaleType.CENTER_CROP
                         setPadding(4, 4, 4, 4)
                     }
+                    applyRoundedCorners(imageView)
                     val monster = dataManager.monsterMaster[position]
                     try {
                         assets.open("templates/${monster.fileName}").use {

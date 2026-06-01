@@ -70,16 +70,14 @@
                     android:id="@+id/valTotalCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#FFFFFF"
+                    android:textColor="#AAAAAA"
                     android:textSize="12sp"
-                    android:text="@string/status_none"
-                    android:alpha="0.8"/>
+                    android:text="@string/status_none"/>
 
                 <TextView
                     android:id="@+id/valTotalWinLose"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="#CCCCCC"
                     android:textSize="12sp"
                     android:text="@string/status_none"/>
             </LinearLayout>
@@ -169,8 +167,8 @@
                     <ImageView android:id="@+id/imgP1M4" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p1" />
                 </LinearLayout>
                 <TextView android:id="@+id/valP1Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="@dimen/party_summary_text_rate" android:textStyle="bold" android:text="@string/status_none"/>
-                <TextView android:id="@+id/valP1Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
-                <TextView android:id="@+id/valP1WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
+                <TextView android:id="@+id/valP1Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none"/>
+                <TextView android:id="@+id/valP1WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -207,8 +205,8 @@
                     <ImageView android:id="@+id/imgP2M4" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p2" />
                 </LinearLayout>
                 <TextView android:id="@+id/valP2Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="@dimen/party_summary_text_rate" android:textStyle="bold" android:text="@string/status_none"/>
-                <TextView android:id="@+id/valP2Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
-                <TextView android:id="@+id/valP2WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
+                <TextView android:id="@+id/valP2Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none"/>
+                <TextView android:id="@+id/valP2WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -245,8 +243,8 @@
                     <ImageView android:id="@+id/imgP3M4" android:layout_width="@dimen/party_summary_icon_size" android:layout_height="@dimen/party_summary_icon_size" android:layout_margin="1dp" android:scaleType="centerCrop" android:contentDescription="@string/label_p3" />
                 </LinearLayout>
                 <TextView android:id="@+id/valP3Rate" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#F09199" android:textSize="@dimen/party_summary_text_rate" android:textStyle="bold" android:text="@string/status_none"/>
-                <TextView android:id="@+id/valP3Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#90D7EC" android:textSize="11sp" android:text="@string/status_none"/>
-                <TextView android:id="@+id/valP3WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
+                <TextView android:id="@+id/valP3Usage" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="11sp" android:text="@string/status_none"/>
+                <TextView android:id="@+id/valP3WinLoseShort" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="11sp" android:text="@string/status_none" android:layout_marginBottom="8dp"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
