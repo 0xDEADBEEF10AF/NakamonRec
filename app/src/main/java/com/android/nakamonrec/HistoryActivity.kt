@@ -92,11 +92,14 @@ class HistoryActivity : AppCompatActivity() {
                 showEditRecordDialog(realIndex)
             },
             onResultClick = { tappedResult ->
-                // iOS と同じ動作: タップした WIN/LOSE をそのままフィルタに即適用。
-                // 同じ結果を再タップしたら解除 (toggle)。
-                filterResult = if (filterResult == tappedResult) null else tappedResult
-                updateFilterStatusUI()
-                setupUI()
+                // iOS と同じ動作: タップした WIN/LOSE をフィルタに「追加」のみ。
+                // 同じ結果を再タップしても解除しない (上書きはする = WIN→LOSE は切替可)。
+                // 解除はフィルタ条件欄の WIN/LOSE タップ or CLEAR ボタンで行う。
+                if (filterResult != tappedResult) {
+                    filterResult = tappedResult
+                    updateFilterStatusUI()
+                    setupUI()
+                }
             },
             onMonsterClick = { name, isEnemy ->
                 addMonsterFilter(name, isEnemy)
