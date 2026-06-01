@@ -1,6 +1,6 @@
 package com.android.nakamonrec
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
