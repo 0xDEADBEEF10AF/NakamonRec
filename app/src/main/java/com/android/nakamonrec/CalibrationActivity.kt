@@ -117,34 +117,7 @@ class CalibrationActivity : AppCompatActivity() {
             runAutoCalibration()
         }
 
-        binding.btnShowLog.setOnClickListener {
-            showFlightLog()
-        }
-
         updateTemplateNameDisplay()
-    }
-
-    private fun showFlightLog() {
-        val logText = dataManager.readFlightLog()
-        val scrollView = android.widget.ScrollView(this)
-        val textView = android.widget.TextView(this).apply {
-            text = logText
-            textSize = 12f
-            setPadding(40, 40, 40, 40)
-            setBackgroundColor(android.graphics.Color.parseColor("#111111"))
-            setTextColor(android.graphics.Color.LTGRAY)
-            typeface = android.graphics.Typeface.MONOSPACE
-        }
-        scrollView.addView(textView)
-
-        androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
-            .setTitle("直近の解析ログ (フライトレコーダー)")
-            .setView(scrollView)
-            .setPositiveButton("閉じる", null)
-            .setNeutralButton("クリア") { _, _ ->
-                dataManager.clearFlightLog()
-            }
-            .show()
     }
 
     private fun updateTemplateNameDisplay() {
