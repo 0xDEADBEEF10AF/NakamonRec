@@ -621,11 +621,27 @@ class MainActivity : AppCompatActivity() {
             override fun getItemId(p0: Int) = p0.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
                 val monster = getItem(position)
-                val frame = FrameLayout(this@MainActivity)
+                // GridView の列幅で正方形になる FrameLayout (戦績画面のサムネと統一)
+                val frame = object : FrameLayout(this@MainActivity) {
+                    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+                        super.onMeasure(widthSpec, widthSpec)
+                    }
+                }
                 val img = ImageView(this@MainActivity).apply {
-                    layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 200)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    // 他のサムネと統一: 正方形 + CENTER_CROP + 6dp 角丸
+                    scaleType = ImageView.ScaleType.CENTER_CROP
                     alpha = if (dataManager.lightModeMonsters.contains(monster.name)) 1.0f else 0.3f
+                    val cornerRadiusPx = 6 * resources.displayMetrics.density
+                    outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                            outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)
+                        }
+                    }
+                    clipToOutline = true
                     try {
                         assets.open("templates/${monster.fileName}").use { setImageBitmap(BitmapFactory.decodeStream(it)) }
                     } catch (_: Exception) {}
