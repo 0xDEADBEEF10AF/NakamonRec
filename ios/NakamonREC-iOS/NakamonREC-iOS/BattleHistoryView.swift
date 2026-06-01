@@ -509,7 +509,7 @@ private struct BattleRecordRow: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .center, spacing: 2) {
                 Text(record.result)
                     .font(.subheadline.bold())
                     .foregroundStyle(record.result == "WIN" ? Color.sideMy : Color.sideEnemy)
@@ -522,7 +522,7 @@ private struct BattleRecordRow: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
             }
-            .frame(width: 42, alignment: .leading)
+            .frame(width: 42, alignment: .center)
 
             HStack(spacing: 1) {
                 ForEach(0..<4, id: \.self) { i in

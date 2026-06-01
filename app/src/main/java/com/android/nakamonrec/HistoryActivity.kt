@@ -91,7 +91,13 @@ class HistoryActivity : AppCompatActivity() {
                 val realIndex = allRecords.indexOf(filtered[position])
                 showEditRecordDialog(realIndex)
             },
-            onResultClick = { showResultFilterDialog() },
+            onResultClick = { tappedResult ->
+                // iOS と同じ動作: タップした WIN/LOSE をそのままフィルタに即適用。
+                // 同じ結果を再タップしたら解除 (toggle)。
+                filterResult = if (filterResult == tappedResult) null else tappedResult
+                updateFilterStatusUI()
+                setupUI()
+            },
             onMonsterClick = { name, isEnemy ->
                 addMonsterFilter(name, isEnemy)
             }
@@ -254,22 +260,6 @@ class HistoryActivity : AppCompatActivity() {
         binding.chipGroupFilters.addView(container)
     }
 
-
-    private fun showResultFilterDialog() {
-        val items = arrayOf(getString(R.string.filter_win_only), getString(R.string.filter_lose_only))
-        AlertDialog.Builder(this)
-            .setTitle(R.string.dialog_title_result_filter)
-            .setItems(items) { _, which ->
-                filterResult = when (which) {
-                    0 -> "WIN"
-                    1 -> "LOSE"
-                    else -> null
-                }
-                updateFilterStatusUI()
-                setupUI()
-            }
-            .show()
-    }
 
     private fun setFilter(index: Int) {
         if (filterPartyIndex == index && filterMyPartyComposition == null) {

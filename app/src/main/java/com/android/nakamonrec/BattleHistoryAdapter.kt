@@ -17,7 +17,7 @@ class BattleHistoryAdapter(
     private var records: MutableList<BattleRecord>,
     private val monsterMaster: List<MonsterData>,
     private val onLongClick: (Int) -> Unit,
-    val onResultClick: () -> Unit,
+    val onResultClick: (String) -> Unit,   // 引数: タップされた行の result ("WIN" or "LOSE")
     private val onMonsterClick: (String, Boolean) -> Unit
 ) : RecyclerView.Adapter<BattleHistoryAdapter.ViewHolder>() {
 
@@ -76,7 +76,7 @@ class BattleHistoryAdapter(
 
         // モードに応じたクリック設定
         if (isFilterMode) {
-            holder.result.setOnClickListener { onResultClick() }
+            holder.result.setOnClickListener { onResultClick(record.result) }
             holder.itemView.setOnLongClickListener(null)
         } else {
             holder.result.setOnClickListener(null)
