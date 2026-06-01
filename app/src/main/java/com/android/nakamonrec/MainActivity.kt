@@ -234,7 +234,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showUpdateDialog(title: String, updateUrl: String) {
-        AlertDialog.Builder(this).setTitle(getString(R.string.msg_update_available)).setMessage(getString(R.string.msg_update_desc, title))
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle(getString(R.string.msg_update_available)).setMessage(getString(R.string.msg_update_desc, title))
             .setPositiveButton(getString(R.string.btn_update)) { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, updateUrl.toUri())) }
             .setNegativeButton(getString(R.string.btn_later), null).show()
     }
@@ -247,7 +247,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("ファイルを選択")
             .setView(root)
             .create()
@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
         val checkedItems = BooleanArray(fileNames.size) { false }
         val selectedFiles = mutableListOf<String>()
 
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.title_merge_files)
             .setMultiChoiceItems(fileNames, checkedItems) { _, which, isChecked ->
                 if (isChecked) selectedFiles.add(fileNames[which])
@@ -329,7 +329,7 @@ class MainActivity : AppCompatActivity() {
             setText("merged_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}")
             selectAll()
         }
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.label_merge_new_name)
             .setView(editText)
             .setPositiveButton("実行") { _, _ ->
@@ -413,7 +413,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFileActionDialog(fileName: String) {
-        AlertDialog.Builder(this).setTitle("ファイル操作: $fileName")
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("ファイル操作: $fileName")
             .setItems(arrayOf("このファイルを使用する", "名前を変更する", "削除する", "CSVにエクスポート")) { _, idx ->
                 when (idx) {
                     0 -> { saveCurrentFileName(fileName); showTopToast(getString(R.string.file_switched_toast, fileName)); refreshServiceAndUI() }
@@ -462,7 +462,7 @@ class MainActivity : AppCompatActivity() {
             }
             row.addView(thumb); row.addView(TextView(this).apply { text = titles[i]; setPadding(20, 0, 0, 0); textSize = 16f; setTextColor(0xFFFFFFFF.toInt()) })
             row.setOnClickListener {
-                AlertDialog.Builder(this@MainActivity).setTitle(titles[i]).setItems(arrayOf("画像をインポート", "画像を削除", "校正を開始")) { _, idx ->
+                AlertDialog.Builder(this@MainActivity, R.style.Theme_NakamonRec_Dialog).setTitle(titles[i]).setItems(arrayOf("画像をインポート", "画像を削除", "校正を開始")) { _, idx ->
                     when (idx) {
                         0 -> { pendingCalibrationFileName = fileNames[i]; pickImageLauncher.launch("image/*") }
                         1 -> { if (File(filesDir, fileNames[i]).exists()) showDeleteImageConfirmDialog(fileNames[i]) }
@@ -588,7 +588,7 @@ class MainActivity : AppCompatActivity() {
             container.addView(pickerRow)
         }
 
-        calibrationSelectorDialog = AlertDialog.Builder(this).setTitle("ユーザー設定").setView(container).setNegativeButton("閉じる", null).show()
+        calibrationSelectorDialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("ユーザー設定").setView(container).setNegativeButton("閉じる", null).show()
     }
 
     private fun showMonsterFilterDialog() {
@@ -675,7 +675,7 @@ class MainActivity : AppCompatActivity() {
         }
         grid.adapter = adapter
         
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("軽負荷モード: 解析対象の選択")
             .setView(rootLayout)
             .setNeutralButton("デフォルト") { _, _ ->
@@ -695,12 +695,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeleteConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this).setTitle("ファイルの削除").setMessage("「$fileName」を削除しますか？")
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("ファイルの削除").setMessage("「$fileName」を削除しますか？")
             .setPositiveButton("削除") { _, _ -> if (File(filesDir, "$fileName.json").delete()) { showTopToast("削除しました"); if (getCurrentFileName() == fileName) saveCurrentFileName("default_record"); refreshServiceAndUI() } }.setNegativeButton("キャンセル", null).show()
     }
 
     private fun showResetHistoryConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this).setTitle("データのクリア").setMessage("「$fileName」の戦績データをすべて削除しますか？")
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("データのクリア").setMessage("「$fileName」の戦績データをすべて削除しますか？")
             .setPositiveButton("クリア") { _, _ -> val dm = dataManager; dm.loadHistory(fileName); dm.resetHistory(); if (MediaCaptureService.isRunning) startService(Intent(this, MediaCaptureService::class.java).apply { action = MediaCaptureService.ACTION_RELOAD_HISTORY }); showTopToast("データをクリアしました"); updateUI(MediaCaptureService.isRunning) }.setNegativeButton("キャンセル", null).show()
     }
 
@@ -709,7 +709,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeleteImageConfirmDialog(fileName: String) {
-        AlertDialog.Builder(this).setTitle("画像を削除").setMessage("この画像を削除しますか？").setPositiveButton("削除") { _, _ -> if (File(filesDir, fileName).delete()) { showTopToast("削除しました"); calibrationSelectorDialog?.dismiss(); showCalibrationSelectorDialog() } }.setNegativeButton("キャンセル", null).show()
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("画像を削除").setMessage("この画像を削除しますか？").setPositiveButton("削除") { _, _ -> if (File(filesDir, fileName).delete()) { showTopToast("削除しました"); calibrationSelectorDialog?.dismiss(); showCalibrationSelectorDialog() } }.setNegativeButton("キャンセル", null).show()
     }
 
     private fun importImageForCalibration(uri: Uri, destFileName: String): Boolean {
@@ -718,7 +718,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showReadmeDialog() {
         val scrollView = ScrollView(this); val textView = TextView(this).apply { text = getString(R.string.readme_content); textSize = 13f; setPadding(60, 40, 60, 40); setLineSpacing(0f, 1.2f); setTextColor("#CCCCCC".toColorInt()) }
-        scrollView.addView(textView); AlertDialog.Builder(this).setTitle(R.string.readme_title).setView(scrollView).setPositiveButton("閉じる", null).show()
+        scrollView.addView(textView); AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle(R.string.readme_title).setView(scrollView).setPositiveButton("閉じる", null).show()
     }
 
     override fun onStart() { super.onStart(); ContextCompat.registerReceiver(this, serviceStopReceiver, IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED), ContextCompat.RECEIVER_NOT_EXPORTED); updateUI(MediaCaptureService.isRunning) }
@@ -761,7 +761,7 @@ class MainActivity : AppCompatActivity() {
             setText(generateDefaultFileName())
             selectAll()
         }
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("新規ファイル名を入力")
             .setView(editText)
             .setPositiveButton("作成") { _, _ ->
@@ -769,7 +769,7 @@ class MainActivity : AppCompatActivity() {
                 if (isValidFileName(newName)) {
                     val file = File(filesDir, "$newName.json")
                     if (file.exists()) {
-                        AlertDialog.Builder(this)
+                        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
                             .setTitle("ファイルが既に存在します")
                             .setMessage("「$newName」は既に存在します。上書きして戦績をリセットしますか？")
                             .setPositiveButton("上書き") { _, _ ->
@@ -800,7 +800,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showRenameDialog(oldName: String) {
         val editText = EditText(this).apply { setText(oldName); selectAll() }
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("新しい名前を入力")
             .setView(editText)
             .setPositiveButton("変更") { _, _ ->
@@ -808,7 +808,7 @@ class MainActivity : AppCompatActivity() {
                 if (isValidFileName(newName) && newName != oldName) {
                     val newFile = File(filesDir, "$newName.json")
                     if (newFile.exists()) {
-                        AlertDialog.Builder(this)
+                        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
                             .setTitle("ファイルが既に存在します")
                             .setMessage("「$newName」は既に存在します。上書き（既存のデータを消去して置換）しますか？")
                             .setPositiveButton("上書き") { _, _ ->
@@ -902,7 +902,7 @@ class MainActivity : AppCompatActivity() {
             addView(container)
         }
 
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("解析ログ")
             .setView(scrollView)
             .setPositiveButton("閉じる", null)

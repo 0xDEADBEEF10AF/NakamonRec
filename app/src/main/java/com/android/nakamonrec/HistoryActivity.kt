@@ -537,7 +537,7 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         listView.adapter = adapter
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("P${partyIndex + 1} 過去の編成")
             .setView(listView)
             .create()
@@ -633,7 +633,7 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun showAnalysisDialog() {
         val items = arrayOf("パーティ集計", "モンスター集計")
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("集計メニュー")
             .setItems(items) { _, which ->
                 when (which) {
@@ -870,7 +870,7 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("パーティ集計")
             .setView(listView)
             .setPositiveButton("閉じる", null)
@@ -1035,7 +1035,7 @@ class HistoryActivity : AppCompatActivity() {
         listView.adapter = adapter
         val titlePrefix = if (filterPartyIndex == -1) getString(R.string.analysis_label_all) else getString(R.string.analysis_label_party_format, filterPartyIndex + 1)
         
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(getString(R.string.analysis_title_appearance_format, titlePrefix))
             .setView(listView)
             .setPositiveButton(R.string.btn_close, null)
@@ -1088,7 +1088,7 @@ class HistoryActivity : AppCompatActivity() {
             getString(R.string.edit_option_insert_after),
             "マッチングスコアを確認"
         )
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.edit_record_title)
             .setItems(options) { _, which ->
                 when (which) {
@@ -1213,7 +1213,7 @@ class HistoryActivity : AppCompatActivity() {
 
         val scrollView = ScrollView(this).apply { addView(root) }
 
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("マッチングスコア詳細")
             .setView(scrollView)
             .setPositiveButton("閉じる", null)
@@ -1226,7 +1226,7 @@ class HistoryActivity : AppCompatActivity() {
             getString(R.string.label_party_name_format, 2),
             getString(R.string.label_party_name_format, 3)
         )
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.edit_party_title)
             .setItems(parties) { _, which ->
                 val record = dataManager.history.records[recordPos]
@@ -1244,7 +1244,7 @@ class HistoryActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         }
         scroll.addView(container)
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.edit_monster_title)
             .setView(scroll)
             .create()
@@ -1341,7 +1341,7 @@ class HistoryActivity : AppCompatActivity() {
                 }
             }
         }
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.picker_monster_title)
             .setView(gridView)
             .create()
@@ -1395,7 +1395,7 @@ class HistoryActivity : AppCompatActivity() {
             getString(R.string.label_party_name_format, 2),
             getString(R.string.label_party_name_format, 3)
         )
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.edit_party_title)
             .setItems(parties) { _, partyIndex ->
                 val latestPartyForIndex = dataManager.history.records

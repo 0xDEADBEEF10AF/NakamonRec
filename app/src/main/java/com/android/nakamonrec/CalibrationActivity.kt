@@ -137,7 +137,7 @@ class CalibrationActivity : AppCompatActivity() {
         }
         scrollView.addView(textView)
 
-        android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        android.app.AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("直近の解析ログ (フライトレコーダー)")
             .setView(scrollView)
             .setPositiveButton("閉じる", null)
