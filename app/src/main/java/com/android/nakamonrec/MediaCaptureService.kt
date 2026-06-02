@@ -328,10 +328,13 @@ class MediaCaptureService : Service() {
         if (detected != -1) {
             if (lastDetectedPartyIndex != detected) {
                 dataManager.appendFlightLog("パーティ選択検知 P[${detected + 1}] Score ${String.format(Locale.US, "%.3f", scores[detected])}")
-                // マッチングスコア詳細用に画像を保存
-                analyzer.saveRoi(bitmap, analyzer.calibrationData.partySelectBoxes[detected], "party_p$detected", 
-                    (BattleAnalyzer.ROI_PAD_PARTY_V * analyzer.calibrationData.uiScale).toInt(),
-                    (BattleAnalyzer.ROI_PAD_PARTY_H * analyzer.calibrationData.uiScale).toInt())
+                // マッチングスコア詳細用に 3 枚セットで保存。パーティ変化時のみ実行することで
+                // 画面遷移中のフェードフレームでの誤上書きを防ぐ（初回検知 or 心変わり時のみ）。
+                val vMargin = (BattleAnalyzer.ROI_PAD_PARTY_V * analyzer.calibrationData.uiScale).toInt()
+                val hMargin = (BattleAnalyzer.ROI_PAD_PARTY_H * analyzer.calibrationData.uiScale).toInt()
+                analyzer.calibrationData.partySelectBoxes.forEachIndexed { i, config ->
+                    analyzer.saveRoi(bitmap, config, "party_p$i", vMargin, hMargin)
+                }
             }
             lastDetectedPartyIndex = detected
             lastDetectedPartyScores = scores

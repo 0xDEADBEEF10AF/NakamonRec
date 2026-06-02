@@ -54,7 +54,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         private const val MONSTER_THRESHOLD = 0.7
         private const val PARTY_THRESHOLD = 0.7
         private const val CANDIDATE_COUNT = 10 // Top-10 追跡
-        private const val FALLBACK_THRESHOLD = 0.5 // Frame 1 がこれ未満なら次フレームもフルスキャン
+        private const val FALLBACK_THRESHOLD = 0.7 // Frame 1 がこれ未満なら次フレームもフルスキャン
+        // 識別閾値 (MONSTER_THRESHOLD=0.7) に合わせる。
+        // 0.5〜0.7 のグレーゾーンで「磁石テンプレ」(id037 / id055 / id109 等、軽負荷対象外の
+        // 弱マッチしやすいテンプレ群) が Top-K を占有し、正解テンプレがランク外に押し出される
+        // ケースが iOS の診断ログで実機確認されたため、Android も揃えて穴を塞ぐ。
 
         // performDeepAnalysisBatch のハードキャップ。v1.5.0 の最悪 ~26s を超えないための上限。
         // 超過したら残りフレームを切り捨てて識別をコミットし、次バトル開始の検知漏れを防ぐ。
@@ -624,6 +628,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val bestScores = DoubleArray(8) { -1.0 }
         val bestNames = arrayOfNulls<String>(8)
 
+        // 診断ログ用: Frame 1 の Top-K 候補と各スコアを保持 (グレーゾーン解析用)
+        val slotTopKDiag = arrayOfNulls<List<Pair<String, Double>>>(8)
+
         val analysisStartTime = System.currentTimeMillis()
         var processedFrames = 0
         var budgetExceeded = false
@@ -679,12 +686,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
                 // Frame 1 で Top-K キャッシュ生成
                 if (isFirstFrame && resultNarrow.allScores != null) {
+                    val sortedTopK = resultNarrow.allScores
+                        .sortedByDescending { it.second }
+                        .take(CANDIDATE_COUNT)
+                    slotTopKDiag[slotIndex] = sortedTopK
                     if (resultNarrow.score >= FALLBACK_THRESHOLD) {
-                        slotCandidates[slotIndex] = resultNarrow.allScores
-                            .sortedByDescending { it.second }
-                            .take(CANDIDATE_COUNT)
-                            .map { it.first }
-                            .toSet()
+                        slotCandidates[slotIndex] = sortedTopK.map { it.first }.toSet()
                     } else {
                         slotFallback[slotIndex] = true
                     }
@@ -719,6 +726,21 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 monsterMatchCounts[name] = monsterMatchCounts.getOrDefault(name, 0) + 1
             } else {
                 identifiedNames[slotIndex] = null  // 識別失敗 → getCurrentResults() が "?" を返す
+            }
+
+            // 診断ログ: グレーゾーン (0.5 <= best < 0.7) のスロットのみ Frame 1 Top-K を吐く
+            if (score >= 0.5 && score < 0.7) {
+                val isEnemy = slotIndex >= 4
+                val side = if (isEnemy) "敵" else "味方"
+                val withinSide = if (isEnemy) slotIndex - 4 else slotIndex
+                val topK = slotTopKDiag[slotIndex]
+                if (topK != null) {
+                    val detail = topK.mapIndexed { rank, (n, s) ->
+                        String.format(Locale.US, "#%d:%s(%.2f)", rank + 1, n, s)
+                    }.joinToString(" ")
+                    val fb = if (slotFallback[slotIndex]) " [fallback使用]" else ""
+                    dataManager?.appendFlightLog("🔍 $side[$withinSide] Frame1 Top-K$fb: $detail")
+                }
             }
         }
 
@@ -897,17 +919,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         }
 
         val finalIdx = if (maxScore >= PARTY_THRESHOLD) bestIndex else -1
-        
-        val vMargin = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
-        val hMargin = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
 
-        if (finalIdx != -1) {
-            // 【成功時】3枚セットで保存。0.7を超えている間は常に最新状態で上書き（心変わり対応）
-            calibrationData.partySelectBoxes.forEachIndexed { i, config ->
-                saveRoi(bitmap, config, "party_p$i", vMargin, hMargin)
-            }
-        }
-
+        // 注: 旧コードはここで 3 枚 ROI を毎フレーム保存していたが、画面遷移中の
+        // フェードフレームで最後の score>=0.7 フレームを上書きしてしまい、結果として
+        // "うっすらした切り出し" が残るバグがあった。
+        // 保存責務は MediaCaptureService.handleIdleState に移し、パーティ index が
+        // 変化したタイミング (= 初回検知 or 心変わり) のみ 3 枚セットで保存する。
         return finalIdx to allScores
     }
 

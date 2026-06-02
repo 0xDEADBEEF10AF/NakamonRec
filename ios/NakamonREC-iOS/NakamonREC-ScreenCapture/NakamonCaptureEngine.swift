@@ -264,7 +264,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 bestIndex = i
             }
         }
-        lastPartySelectScores = allScores
+        // 確信検知時のみキャプチャ。遷移フレーム (全 box が低スコア) の値で
+        // 上書きしないことで、後続の VS 検知時に正しいパーティ識別スコアが残る。
+        if bestScore >= 0.7 {
+            lastPartySelectScores = allScores
+        }
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
             lastDetectedPartyIndex = bestIndex
@@ -388,7 +392,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     /// 高速化: Top-K テンプレ追跡
     ///   - Frame 1: 全テンプレ走査して各スロットの上位 10 件をキャッシュ
     ///   - Frame 2-5: Top-10 サブセットのみ評価 (4 倍以上の高速化を狙う)
-    ///   - フォールバック: Frame 1 で max < 0.5 のスロットは Top-K の信頼性が低いため全テンプレ走査を続ける
+    ///   - フォールバック: Frame 1 で max < 0.7 のスロットは Top-K の信頼性が低いため全テンプレ走査を続ける
+    ///     (識別閾値 0.7 未満は "?" 扱いになるため、ここを fallback 閾値に合わせる。
+    ///      0.5〜0.7 のグレーゾーンでは「磁石テンプレ」が Top-K を埋め、正解テンプレが
+    ///      ランク外に押し出されるケースが実機で確認されたため。)
     private func performDeepAnalysis(frames inputFrames: [UIImage]) {
         let startedAt = Date()
         logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots, Top-K)...")
@@ -400,9 +407,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         var perSlot = Array(repeating: SlotBest(), count: slotROIs.count)
 
         let topK: Int32 = 10
-        let fallbackThreshold: Double = 0.5
+        let fallbackThreshold: Double = 0.7
         var slotTopKIndices: [[NSNumber]] = Array(repeating: [], count: slotROIs.count)
         var slotFallback: [Bool] = Array(repeating: false, count: slotROIs.count)
+        // 診断ログ用: Frame 1 の Top-K 候補と各スコアを保持 (グレーゾーン解析用)
+        var slotTopKDiag: [[(index: Int, score: Double)]] = Array(repeating: [], count: slotROIs.count)
 
         var frames = inputFrames
         var isFirstFrame = true
@@ -431,6 +440,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                             bestScore = first.score
                             bestIndex = first.index
                             slotTopKIndices[slotIdx] = topResults.map { NSNumber(value: $0.index) }
+                            slotTopKDiag[slotIdx] = topResults.map { (index: $0.index, score: $0.score) }
                             slotFallback[slotIdx] = first.score < fallbackThreshold
                         } else {
                             bestScore = 0
@@ -505,6 +515,15 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             let marker = best.score >= 0.7 ? "✅" : "❓"
             BattleLogger.append(String(format: "%@ %@[%d] %@ Score %.3f",
                                        marker, side, withinSide, name, best.score))
+            // 診断ログ: グレーゾーン (0.5 <= best < 0.7) のスロットのみ Frame 1 Top-K を吐く
+            if best.score >= 0.5 && best.score < 0.7 {
+                let detail = slotTopKDiag[slotIdx].enumerated().map { (rank, t) -> String in
+                    let nm = (t.index >= 0 && t.index < monsterNames.count) ? monsterNames[t.index] : "?"
+                    return String(format: "#%d:%@(%.2f)", rank + 1, nm, t.score)
+                }.joined(separator: " ")
+                let fb = slotFallback[slotIdx] ? " [fallback使用]" : ""
+                BattleLogger.append("🔍 \(side)[\(withinSide)] Frame1 Top-K\(fb): \(detail)")
+            }
         }
 
         // pending に格納し、戦闘終了が既に来ていれば finalize
