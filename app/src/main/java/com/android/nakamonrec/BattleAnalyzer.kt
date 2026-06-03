@@ -353,29 +353,47 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private fun findBestMonsterStrict(scene: Mat, estCX: Float, estCY: Float, baseScale: Double): BoxConfig? {
         val searchW = (scene.cols() * 0.15).toInt()
         val searchH = (scene.rows() * 0.15).toInt()
-        
+
         // 探索範囲が画像サイズを超えないように制限
         if (searchW <= 0 || searchH <= 0 || searchW > scene.cols() || searchH > scene.rows()) return null
 
         val startX = ((scene.cols() * estCX) - (searchW / 2)).toInt().coerceIn(0, (scene.cols() - searchW).coerceAtLeast(0))
         val startY = ((scene.rows() * estCY) - (searchH / 2)).toInt().coerceIn(0, (scene.rows() - searchH).coerceAtLeast(0))
-        
-        val roi = scene.submat(startY, startY + searchH, startX, startX + searchW)
-        
+
+        val rawRoi = scene.submat(startY, startY + searchH, startX, startX + searchW)
+
+        // Case D (tryIdentify と同じ戦略): 高 DPI 端末は ROI を 1/baseScale で
+        // INTER_AREA ダウンサンプリングして、テンプレはネイティブ解像度で比較。
+        // これにより auto-cal でもネイティブシャープな実画面とテンプレのエッジ
+        // 特性が揃い、127 テンプレ走査中の false positive (磁石テンプレ→ラベル
+        // 上ロックオン) を抑制する。
+        val useDownscale = baseScale > 1.0
+        val matchRoi: Mat
+        val templateLocalScales: List<Double>
+        if (useDownscale) {
+            val inv = 1.0 / baseScale
+            matchRoi = Mat()
+            Imgproc.resize(rawRoi, matchRoi, Size(), inv, inv, Imgproc.INTER_AREA)
+            templateLocalScales = listOf(0.9, 1.0, 1.1)  // ネイティブ基準
+        } else {
+            matchRoi = rawRoi  // submat なのでメモリ共有、release は rawRoi のみで OK
+            templateLocalScales = listOf(baseScale * 0.9, baseScale * 1.0, baseScale * 1.1)
+        }
+
         var bestScore = -1.0
         var bestPos = Point()
-        var bestSize = Size(80.0 * baseScale, 130.0 * baseScale)
-        val localScales = listOf(baseScale * 0.9, baseScale * 1.0, baseScale * 1.1)
+        // 初期値: useDownscale=true ならネイティブ 80×130、false なら baseScale 適用
+        var bestSize = if (useDownscale) Size(80.0, 130.0) else Size(80.0 * baseScale, 130.0 * baseScale)
 
         val monsters = monsterMaster // 校正時は全モンスターを対象
         for (m in monsters) {
             val tpl = m.templateMat ?: continue
-            for (ls in localScales) {
+            for (ls in templateLocalScales) {
                 val scaledTpl = Mat()
                 Imgproc.resize(tpl, scaledTpl, Size(), ls, ls, Imgproc.INTER_CUBIC)
-                if (scaledTpl.cols() < roi.cols() && scaledTpl.rows() < roi.rows()) {
+                if (scaledTpl.cols() < matchRoi.cols() && scaledTpl.rows() < matchRoi.rows()) {
                     val result = Mat()
-                    Imgproc.matchTemplate(roi, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
+                    Imgproc.matchTemplate(matchRoi, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
                     val mm = Core.minMaxLoc(result)
                     if (mm.maxVal > bestScore) {
                         bestScore = mm.maxVal
@@ -388,11 +406,20 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             }
         }
 
+        // 座標とサイズを scene 座標系に戻す
+        // useDownscale=true の場合、bestPos / bestSize はダウンサンプル空間の値なので
+        // baseScale を掛けて元解像度に戻す。useDownscale=false は変換不要 (×1.0)。
+        val scaleBack = if (useDownscale) baseScale else 1.0
         val config = if (bestScore > 0.55) {
-            BoxConfig((startX + bestPos.x + bestSize.width / 2).toFloat() / scene.cols(), (startY + bestPos.y + bestSize.height / 2).toFloat() / scene.rows(), bestSize.width.toInt(), bestSize.height.toInt())
+            val centerX = (startX + bestPos.x * scaleBack + bestSize.width * scaleBack / 2.0).toFloat() / scene.cols()
+            val centerY = (startY + bestPos.y * scaleBack + bestSize.height * scaleBack / 2.0).toFloat() / scene.rows()
+            val w = (bestSize.width * scaleBack).toInt()
+            val h = (bestSize.height * scaleBack).toInt()
+            BoxConfig(centerX, centerY, w, h)
         } else null
 
-        roi.release()
+        if (useDownscale) matchRoi.release()
+        rawRoi.release()
         return config
     }
 
