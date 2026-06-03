@@ -83,13 +83,22 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     private fun prepareScaledTemplates() {
         val s = calibrationData.uiScale.toDouble()
         if (s == cachedScale) return
-        
+
         scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
         scaledMonsterTemplates.clear()
-        
+
+        // モンスターテンプレ scale 戦略:
+        //   uiScale > 1.0 (高 DPI 端末: POCO F7 1280×2772 等):
+        //     テンプレを INTER_CUBIC で upscale するとエッジが鈍り、ネイティブ
+        //     高解像度描画された実画面とのシャープネス不一致で NCC が落ちる。
+        //     → テンプレはネイティブのまま保持し、tryIdentify 側で ROI を
+        //       1/uiScale で INTER_AREA ダウンサンプリングして比較する。
+        //   uiScale ≤ 1.0 (Pixel-base / 小型機):
+        //     従来通りテンプレを uiScale × micro で pre-scale して使う。
+        val templateBaseScale = if (s > 1.0) 1.0 else s
         // GALAXY等の特殊なレンダリング（場所による縮小）に対応するため、探索範囲を +/- 10% に拡大
-        val microScales = listOf(s * 0.90, s * 0.95, s * 1.0, s * 1.05, s * 1.10)
-        
+        val microScales = listOf(templateBaseScale * 0.90, templateBaseScale * 0.95, templateBaseScale * 1.0, templateBaseScale * 1.05, templateBaseScale * 1.10)
+
         monsterMaster.forEach { data ->
             data.templateMat?.let { tpl ->
                 val variants = microScales.map { ms ->
@@ -814,14 +823,24 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         
         return try {
             val roi = fullMat.submat(top, top + expandedConfig.height, left, left + expandedConfig.width)
-            
+
             // 【重要】ループに入る前に一度だけコントラスト補正を行う
             val workRoi = Mat()
-            roi.copyTo(workRoi)
+            val uiScale = calibrationData.uiScale.toDouble()
+            if (uiScale > 1.0) {
+                // 高 DPI 端末: ROI をテンプレネイティブ解像度にダウンサンプリング
+                //   INTER_AREA は高品質な平均化ダウンサンプリングで、ネイティブ高解像度の
+                //   情報を圧縮しつつテンプレの作成元 (1080-base 解像度) と同等のエッジ
+                //   特性に揃える。これによりシャープネス起因の NCC 低下を回避する。
+                val inv = 1.0 / uiScale
+                Imgproc.resize(roi, workRoi, Size(), inv, inv, Imgproc.INTER_AREA)
+            } else {
+                roi.copyTo(workRoi)
+            }
             Core.normalize(workRoi, workRoi, 0.0, 255.0, Core.NORM_MINMAX)
-            
+
             val result = findBestMonsterMatchMicroScales(workRoi, monsters, returnAll)
-            
+
             workRoi.release()
             roi.release()
             result
@@ -1015,8 +1034,17 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         
         return try {
             val roi = mat.submat(top, top + config.height, left, left + config.width)
-            val res = findBestMonsterMatchMicroScales(roi, monsterMaster)
-            roi.release(); mat.release()
+            // tryIdentify と同じ Case D ダウンサンプリング戦略を適用
+            val workRoi = Mat()
+            val uiScale = calibrationData.uiScale.toDouble()
+            if (uiScale > 1.0) {
+                val inv = 1.0 / uiScale
+                Imgproc.resize(roi, workRoi, Size(), inv, inv, Imgproc.INTER_AREA)
+            } else {
+                roi.copyTo(workRoi)
+            }
+            val res = findBestMonsterMatchMicroScales(workRoi, monsterMaster)
+            workRoi.release(); roi.release(); mat.release()
             res.score
         } catch (_: Exception) {
             mat.release()
