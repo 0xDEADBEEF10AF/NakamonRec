@@ -415,7 +415,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         // useDownscale=true の場合、bestPos / bestSize はダウンサンプル空間の値なので
         // baseScale を掛けて元解像度に戻す。useDownscale=false は変換不要 (×1.0)。
         val scaleBack = if (useDownscale) baseScale else 1.0
-        val config = if (bestScore > 0.55) {
+        // 位置確定の閾値は本番識別 (MONSTER_THRESHOLD=0.7) と揃える。
+        //   旧 0.55 だと真モンスター 0.55、近傍ラベル 0.57 のような僅差で false
+        //   positive (HP/MP テキスト等) にロックオンする事象 (POCO F7 等) があった。
+        //   0.7 未満なら null 返却 → 呼び出し側で「VS 推定位置 (vsScaleForAssets 適用済み)」
+        //   にフォールバックする安全側挙動になる。
+        val config = if (bestScore > MONSTER_THRESHOLD) {
             val centerX = (startX + bestPos.x * scaleBack + bestSize.width * scaleBack / 2.0).toFloat() / scene.cols()
             val centerY = (startY + bestPos.y * scaleBack + bestSize.height * scaleBack / 2.0).toFloat() / scene.rows()
             val w = (bestSize.width * scaleBack).toInt()
