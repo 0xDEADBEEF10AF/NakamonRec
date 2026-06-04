@@ -437,6 +437,154 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return config
     }
 
+    /**
+     * 「詳細校正」用: 指定された 1 体のテンプレだけで matchTemplate を実行し、探索窓内の
+     * 最良位置を返す。findBestMonsterStrict の 127 体走査と違い、磁石テンプレが false
+     * positive を引き起こす余地がない (競合相手がいないため、指定モンスター本人の peak が
+     * 必ず勝つ)。閾値判定もしない (1-vs-1 なので最良位置が必ず正解と仮定)。
+     */
+    private fun findSpecificMonster(
+        scene: Mat,
+        estCX: Float,
+        estCY: Float,
+        baseScale: Double,
+        monsterId: String
+    ): BoxConfig? {
+        val monster = monsterMaster.firstOrNull { it.name == monsterId } ?: return null
+        val tpl = monster.templateMat ?: return null
+
+        val searchW = (scene.cols() * 0.15).toInt()
+        val searchH = (scene.rows() * 0.15).toInt()
+        if (searchW <= 0 || searchH <= 0 || searchW > scene.cols() || searchH > scene.rows()) return null
+
+        val startX = ((scene.cols() * estCX) - (searchW / 2)).toInt().coerceIn(0, (scene.cols() - searchW).coerceAtLeast(0))
+        val startY = ((scene.rows() * estCY) - (searchH / 2)).toInt().coerceIn(0, (scene.rows() - searchH).coerceAtLeast(0))
+
+        val rawRoi = scene.submat(startY, startY + searchH, startX, startX + searchW)
+
+        // findBestMonsterStrict と同じ Case D 戦略
+        val useDownscale = baseScale > 1.0
+        val matchRoi: Mat
+        val templateLocalScales: List<Double>
+        if (useDownscale) {
+            val inv = 1.0 / baseScale
+            matchRoi = Mat()
+            Imgproc.resize(rawRoi, matchRoi, Size(), inv, inv, Imgproc.INTER_AREA)
+            templateLocalScales = listOf(0.9, 1.0, 1.1)
+        } else {
+            matchRoi = rawRoi
+            templateLocalScales = listOf(baseScale * 0.9, baseScale * 1.0, baseScale * 1.1)
+        }
+
+        var bestScore = -1.0
+        var bestPos = Point()
+        var bestSize = if (useDownscale) Size(80.0, 130.0) else Size(80.0 * baseScale, 130.0 * baseScale)
+
+        for (ls in templateLocalScales) {
+            val scaledTpl = Mat()
+            Imgproc.resize(tpl, scaledTpl, Size(), ls, ls, Imgproc.INTER_CUBIC)
+            if (scaledTpl.cols() < matchRoi.cols() && scaledTpl.rows() < matchRoi.rows()) {
+                val result = Mat()
+                Imgproc.matchTemplate(matchRoi, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
+                val mm = Core.minMaxLoc(result)
+                if (mm.maxVal > bestScore) {
+                    bestScore = mm.maxVal
+                    bestPos = mm.maxLoc
+                    bestSize = Size(scaledTpl.cols().toDouble(), scaledTpl.rows().toDouble())
+                }
+                result.release()
+            }
+            scaledTpl.release()
+        }
+
+        val config = if (bestScore >= 0.0) {
+            val scaleBack = if (useDownscale) baseScale else 1.0
+            val centerX = (startX + bestPos.x * scaleBack + bestSize.width * scaleBack / 2.0).toFloat() / scene.cols()
+            val centerY = (startY + bestPos.y * scaleBack + bestSize.height * scaleBack / 2.0).toFloat() / scene.rows()
+            val w = (bestSize.width * scaleBack).toInt()
+            val h = (bestSize.height * scaleBack).toInt()
+            BoxConfig(centerX, centerY, w, h)
+        } else null
+
+        if (useDownscale) matchRoi.release()
+        rawRoi.release()
+        return config
+    }
+
+    /**
+     * 「詳細校正」: ユーザーが事前に 8 スロット分のモンスターを指定した上で実行する。
+     * 各スロットで findSpecificMonster を使うため、127 体走査の磁石テンプレ false
+     * positive 問題を原理的に回避できる。POCO F7 等の高 DPI 端末で auto-cal の
+     * 緑枠がラベル等に乗ってしまう症状の救済策。
+     *
+     * @param specifiedMonsters サイズ 8 のリスト。
+     *                          index 0..3 = 味方 [0..3]、index 4..7 = 敵 [0..3]
+     */
+    fun autoCalibrateBattleSceneWithSpec(
+        sceneBitmap: Bitmap,
+        specifiedMonsters: List<String>
+    ): CalibrationData? {
+        require(specifiedMonsters.size == 8) { "specifiedMonsters must have exactly 8 entries" }
+
+        val fullMat = Mat()
+        Utils.bitmapToMat(sceneBitmap, fullMat)
+        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+
+        // VS マッチング (autoCalibrateBattleScene と同じ)
+        val customRes = findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)
+        val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)
+        val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)
+        val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
+
+        if (bestRes == null || bestRes.score < 0.4) {
+            fullMat.release()
+            return null
+        }
+
+        val standardVsWidth = (vsFmTemplate ?: vsMgTemplate)?.cols()?.toDouble() ?: return null
+        val assetRes = listOfNotNull(fmRes, mgRes).maxByOrNull { it.score }
+        val vsScaleForAssets = if (assetRes != null) {
+            assetRes.scale
+        } else if (customRes != null) {
+            customRes.config.width.toDouble() / standardVsWidth
+        } else {
+            bestRes.scale
+        }
+
+        val vsBox = bestRes.config
+        val newData = CalibrationData()
+        newData.vsBox = vsBox
+        newData.uiScale = vsScaleForAssets.toFloat()
+
+        val vsCx = vsBox.centerX * fullMat.cols()
+        val vsCy = vsBox.centerY * fullMat.rows()
+
+        fun getMonsterConfigWithSpec(refX: Float, refY: Float, monsterId: String): BoxConfig {
+            val dx = (refX - 540f) * vsScaleForAssets
+            val dy = (refY - 1260f) * vsScaleForAssets
+            val estCx = (vsCx + dx).toFloat()
+            val estCy = (vsCy + dy).toFloat()
+            return findSpecificMonster(fullMat, estCx / fullMat.cols(), estCy / fullMat.rows(), vsScaleForAssets, monsterId)
+                ?: BoxConfig(estCx / fullMat.cols(), estCy / fullMat.rows(), (80 * vsScaleForAssets).toInt(), (130 * vsScaleForAssets).toInt())
+        }
+
+        newData.myPartyBoxes = listOf(
+            getMonsterConfigWithSpec(196f, 1635f, specifiedMonsters[0]),
+            getMonsterConfigWithSpec(391f, 1635f, specifiedMonsters[1]),
+            getMonsterConfigWithSpec(585f, 1635f, specifiedMonsters[2]),
+            getMonsterConfigWithSpec(780f, 1635f, specifiedMonsters[3])
+        )
+        newData.enemyPartyBoxes = listOf(
+            getMonsterConfigWithSpec(201f, 915f, specifiedMonsters[4]),
+            getMonsterConfigWithSpec(396f, 915f, specifiedMonsters[5]),
+            getMonsterConfigWithSpec(590f, 915f, specifiedMonsters[6]),
+            getMonsterConfigWithSpec(785f, 915f, specifiedMonsters[7])
+        )
+
+        fullMat.release()
+        return newData
+    }
+
     fun autoCalibrateParty(sceneBitmap: Bitmap): Pair<List<BoxConfig>, Float>? {
         val standardTpl = partySelectTemplate ?: return null
         val customTpl = partyCustomTemplate

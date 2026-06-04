@@ -117,6 +117,17 @@ class CalibrationActivity : AppCompatActivity() {
             runAutoCalibration()
         }
 
+        // 詳細校正は VS モードでのみ意味を持つ (モンスタースロット位置決め用)。
+        // 他モードでは非表示にしてユーザーを混乱させないようにする。
+        if (mode == "vs") {
+            binding.btnAutoDetail.visibility = View.VISIBLE
+            binding.btnAutoDetail.setOnClickListener {
+                showDetailCalibrationSpec()
+            }
+        } else {
+            binding.btnAutoDetail.visibility = View.GONE
+        }
+
         updateTemplateNameDisplay()
     }
 
@@ -361,5 +372,253 @@ class CalibrationActivity : AppCompatActivity() {
     override fun onDestroy() {
         executor.shutdown()
         super.onDestroy()
+    }
+
+    // ============================================================
+    // 詳細校正 (テンプレ指定モード)
+    // ============================================================
+    //
+    // 通常の自動校正は 8 スロット各々で 127 体走査するため、磁石テンプレが
+    // 近傍ラベル等に false positive ロックする問題が発生しうる (POCO F7 等
+    // 高 DPI 端末で顕著)。詳細校正では事前にユーザーがスロットごとに「いる
+    // モンスター」を指定し、1-vs-1 探索に切り替えることで競合相手をゼロに
+    // して問題を回避する。
+
+    private fun showDetailCalibrationSpec() {
+        val bitmap = sourceBitmap ?: return
+
+        // 8 スロット分の指定状態 (null = 未指定)
+        val specs = arrayOfNulls<String>(8)
+        val slotLabels = (0..7).map { i ->
+            if (i < 4) getString(R.string.detail_calib_slot_my, i + 1)
+            else getString(R.string.detail_calib_slot_enemy, i - 3)
+        }
+
+        val rootLayout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 20)
+            setBackgroundColor(0xFF222222.toInt())
+        }
+
+        val description = android.widget.TextView(this).apply {
+            text = getString(R.string.detail_calib_description)
+            textSize = 12f
+            setTextColor(android.graphics.Color.LTGRAY)
+            setPadding(8, 0, 8, 16)
+        }
+        rootLayout.addView(description)
+
+        // 8 行の slot picker 行を構築
+        val slotRows = mutableListOf<android.widget.LinearLayout>()
+        val slotThumbs = mutableListOf<android.widget.ImageView>()
+        val slotNames = mutableListOf<android.widget.TextView>()
+
+        for (i in 0..7) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(12, 12, 12, 12)
+                isClickable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+            }
+            val label = android.widget.TextView(this).apply {
+                text = slotLabels[i]
+                textSize = 14f
+                setTextColor(android.graphics.Color.WHITE)
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.4f)
+            }
+            val thumb = android.widget.ImageView(this).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(120, 120)
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                val cornerPx = 6 * resources.displayMetrics.density
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, cornerPx)
+                    }
+                }
+                clipToOutline = true
+                setBackgroundColor(0xFF333333.toInt())
+            }
+            val pickedName = android.widget.TextView(this).apply {
+                text = getString(R.string.detail_calib_not_selected)
+                textSize = 12f
+                setTextColor(android.graphics.Color.LTGRAY)
+                setPadding(16, 0, 8, 0)
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.6f)
+            }
+            val chevron = android.widget.TextView(this).apply {
+                text = "›"
+                textSize = 24f
+                setTextColor(android.graphics.Color.GRAY)
+            }
+            row.addView(label)
+            row.addView(thumb)
+            row.addView(pickedName)
+            row.addView(chevron)
+
+            slotRows.add(row)
+            slotThumbs.add(thumb)
+            slotNames.add(pickedName)
+            rootLayout.addView(row)
+        }
+
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(rootLayout)
+        }
+
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle(R.string.detail_calib_title)
+            .setView(scroll)
+            .setPositiveButton(R.string.detail_calib_start, null)  // override 後段
+            .setNegativeButton(R.string.btn_back, null)
+            .create()
+
+        dialog.setOnShowListener {
+            val okBtn = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
+            okBtn.isEnabled = false
+            // 各スロット行のクリックで monster picker を開く
+            for (i in 0..7) {
+                slotRows[i].setOnClickListener {
+                    showMonsterPickerForSlot(i, specs[i]) { pickedId ->
+                        specs[i] = pickedId
+                        val monster = dataManager.monsterMaster.firstOrNull { it.name == pickedId }
+                        slotNames[i].text = monster?.name ?: pickedId
+                        if (monster != null) {
+                            try {
+                                assets.open("templates/${monster.fileName}").use {
+                                    slotThumbs[i].setImageBitmap(BitmapFactory.decodeStream(it))
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        okBtn.isEnabled = specs.all { it != null }
+                    }
+                }
+            }
+            okBtn.setOnClickListener {
+                if (specs.any { it == null }) {
+                    showTopToast(getString(R.string.detail_calib_select_all))
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                runDetailedAutoCalibration(bitmap, specs.filterNotNull())
+            }
+        }
+
+        dialog.show()
+    }
+
+    /**
+     * 1 スロット分のモンスター選択 dialog。grid から 1 体タップで onPicked コールバック。
+     */
+    private fun showMonsterPickerForSlot(
+        slotIndex: Int,
+        currentlySelected: String?,
+        onPicked: (String) -> Unit
+    ) {
+        val rootLayout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 20)
+            setBackgroundColor(0xFF222222.toInt())
+        }
+
+        val grid = android.widget.GridView(this).apply {
+            numColumns = 4
+            horizontalSpacing = 10
+            verticalSpacing = 10
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        rootLayout.addView(grid)
+
+        val monsters = dataManager.monsterMaster
+        val pickerDialog = androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle(R.string.detail_calib_pick_monster)
+            .setView(rootLayout)
+            .setNegativeButton(R.string.btn_back, null)
+            .create()
+
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = monsters.size
+            override fun getItem(p0: Int) = monsters[p0]
+            override fun getItemId(p0: Int) = p0.toLong()
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup?): View {
+                val monster = getItem(position)
+                val frame = object : android.widget.FrameLayout(this@CalibrationActivity) {
+                    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+                        super.onMeasure(widthSpec, widthSpec)
+                    }
+                }
+                val img = android.widget.ImageView(this@CalibrationActivity).apply {
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    val cornerPx = 6 * resources.displayMetrics.density
+                    outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(view: View, outline: android.graphics.Outline) {
+                            outline.setRoundRect(0, 0, view.width, view.height, cornerPx)
+                        }
+                    }
+                    clipToOutline = true
+                    alpha = if (monster.name == currentlySelected) 1.0f else 0.85f
+                    try {
+                        assets.open("templates/${monster.fileName}").use {
+                            setImageBitmap(BitmapFactory.decodeStream(it))
+                        }
+                    } catch (_: Exception) {}
+                }
+                frame.addView(img)
+                frame.setOnClickListener {
+                    onPicked(monster.name)
+                    pickerDialog.dismiss()
+                }
+                return frame
+            }
+        }
+        grid.adapter = adapter
+        pickerDialog.show()
+    }
+
+    private fun runDetailedAutoCalibration(bitmap: Bitmap, specs: List<String>) {
+        // 既存のカスタムテンプレ (VS) があれば削除して fresh state に
+        analyzer.deleteCustomTemplate("vs_custom.png")
+
+        binding.layoutProgress.visibility = View.VISIBLE
+        executor.execute {
+            val autoData = analyzer.autoCalibrateBattleSceneWithSpec(bitmap, specs)
+            val results: List<CalibrationView.CalibrationBox>? = if (autoData != null) {
+                analyzer.saveCustomTemplate(bitmap, autoData.vsBox, "vs_custom.png")
+                val list = mutableListOf<CalibrationView.CalibrationBox>()
+                val vsScore = analyzer.detectVsScore(bitmap, autoData.vsBox)
+                list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS", vsScore, lastMeasuredRecord?.vsScore ?: -1.0))
+                autoData.enemyPartyBoxes.forEachIndexed { i, b ->
+                    val s = analyzer.detectMonsterScore(bitmap, b)
+                    val actual = lastMeasuredRecord?.enemyPartyScores?.getOrNull(i) ?: -1.0
+                    list.add(CalibrationView.CalibrationBox(10 + i, b.centerX, b.centerY, b.width, b.height, "敵${i + 1}", s, actual))
+                }
+                autoData.myPartyBoxes.forEachIndexed { i, b ->
+                    val s = analyzer.detectMonsterScore(bitmap, b)
+                    val actual = lastMeasuredRecord?.myPartyScores?.getOrNull(i) ?: -1.0
+                    list.add(CalibrationView.CalibrationBox(20 + i, b.centerX, b.centerY, b.width, b.height, "自${i + 1}", s, actual))
+                }
+                detectedScale = autoData.uiScale
+                list
+            } else null
+
+            Handler(Looper.getMainLooper()).post {
+                binding.layoutProgress.visibility = View.GONE
+                if (results != null) {
+                    binding.calibrationView.setUiScale(detectedScale)
+                    binding.calibrationView.setBoxes(results)
+                    updateTemplateNameDisplay()
+                    showTopToast(getString(R.string.toast_auto_calibrated))
+                } else {
+                    showTopToast(getString(R.string.toast_auto_calibrate_failed))
+                }
+            }
+        }
     }
 }

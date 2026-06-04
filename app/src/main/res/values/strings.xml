@@ -36,7 +36,16 @@
     <string name="label_vs">vs</string>
     <string name="btn_default">デフォルト</string>
     <string name="btn_auto">自動校正</string>
+    <string name="btn_auto_detail">詳細校正</string>
     <string name="btn_save_calibration">この位置で決定</string>
+    <string name="detail_calib_title">詳細校正：8 体のモンスターを指定</string>
+    <string name="detail_calib_description">VS スクショに映っているモンスターを各スロットで選択してください。指定したモンスターのテンプレートだけを使って位置を確定します。</string>
+    <string name="detail_calib_start">この内容で校正</string>
+    <string name="detail_calib_slot_my">味方 [%1$d]</string>
+    <string name="detail_calib_slot_enemy">敵 [%1$d]</string>
+    <string name="detail_calib_pick_monster">モンスターを選択</string>
+    <string name="detail_calib_not_selected">未選択</string>
+    <string name="detail_calib_select_all">全 8 体を指定してください</string>
     <string name="title_calibrate_dialog">キャプチャー画面の校正</string>
     <string name="status_done">✅</string>
     <string name="status_none">□</string>
