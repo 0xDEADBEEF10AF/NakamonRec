@@ -397,7 +397,7 @@ class CalibrationActivity : AppCompatActivity() {
         val rootLayout = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(20, 20, 20, 20)
-            setBackgroundColor(0xFF222222.toInt())
+            // 背景は親 dialog window 側で半透明 surface を持たせるためここは透明
         }
 
         val description = android.widget.TextView(this).apply {
@@ -474,6 +474,21 @@ class CalibrationActivity : AppCompatActivity() {
             .setPositiveButton(R.string.detail_calib_start, null)  // override 後段
             .setNegativeButton(R.string.btn_back, null)
             .create()
+
+        // VS スクショが透けて見えるように:
+        //   1. window 全体の dim を下げる (背景アクティビティが暗くならない)
+        //   2. dialog のカード surface を半透明 + 角丸に差し替え (テーマの不透明 #333333 を上書き)
+        dialog.window?.let { window ->
+            val params = window.attributes
+            params.dimAmount = 0.2f
+            window.attributes = params
+            window.setBackgroundDrawable(
+                android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 24f
+                    setColor(0xC0222222.toInt())  // ~75% 不透明、25% 透過
+                }
+            )
+        }
 
         dialog.setOnShowListener {
             val okBtn = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
