@@ -408,29 +408,38 @@ class CalibrationActivity : AppCompatActivity() {
         }
         rootLayout.addView(description)
 
-        // 8 行の slot picker 行を構築
-        val slotRows = mutableListOf<android.widget.LinearLayout>()
-        val slotThumbs = mutableListOf<android.widget.ImageView>()
-        val slotNames = mutableListOf<android.widget.TextView>()
+        // 4 列 × 2 行のグリッドで実際の VS 画面と同じ並びを表現:
+        //   上段: 敵[0] 敵[1] 敵[2] 敵[3]   (slot index 4-7)
+        //   下段: 自[0] 自[1] 自[2] 自[3]   (slot index 0-3)
+        val slotCells = arrayOfNulls<android.widget.LinearLayout>(8)
+        val slotThumbs = arrayOfNulls<android.widget.ImageView>(8)
+        val slotNames = arrayOfNulls<android.widget.TextView>(8)
 
-        for (i in 0..7) {
-            val row = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(12, 12, 12, 12)
+        // セル 1 個分のビルダ
+        fun buildSlotCell(slotIndex: Int): android.widget.LinearLayout {
+            val cell = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(6, 6, 6, 6)
                 isClickable = true
                 setBackgroundResource(android.R.drawable.list_selector_background)
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             val label = android.widget.TextView(this).apply {
-                text = slotLabels[i]
-                textSize = 14f
+                text = slotLabels[slotIndex]
+                textSize = 12f
                 setTextColor(android.graphics.Color.WHITE)
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.4f)
+                gravity = Gravity.CENTER
             }
             val thumb = android.widget.ImageView(this).apply {
-                layoutParams = android.widget.LinearLayout.LayoutParams(120, 120)
+                // 列幅基準で正方形にする
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 4 }
                 scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                adjustViewBounds = true
                 val cornerPx = 6 * resources.displayMetrics.density
                 outlineProvider = object : android.view.ViewOutlineProvider() {
                     override fun getOutline(view: View, outline: android.graphics.Outline) {
@@ -439,30 +448,61 @@ class CalibrationActivity : AppCompatActivity() {
                 }
                 clipToOutline = true
                 setBackgroundColor(0xFF333333.toInt())
+                // 高さを width と同じにするため onMeasure を上書き
+                val that = this
+                viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                    override fun onGlobalLayout() {
+                        val w = that.width
+                        if (w > 0 && that.layoutParams.height != w) {
+                            that.layoutParams.height = w
+                            that.requestLayout()
+                            that.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                        }
+                    }
+                })
             }
             val pickedName = android.widget.TextView(this).apply {
                 text = getString(R.string.detail_calib_not_selected)
-                textSize = 12f
+                textSize = 10f
                 setTextColor(android.graphics.Color.LTGRAY)
-                setPadding(16, 0, 8, 0)
+                gravity = Gravity.CENTER
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
                 layoutParams = android.widget.LinearLayout.LayoutParams(
-                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.6f)
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 4 }
             }
-            val chevron = android.widget.TextView(this).apply {
-                text = "›"
-                textSize = 24f
-                setTextColor(android.graphics.Color.GRAY)
-            }
-            row.addView(label)
-            row.addView(thumb)
-            row.addView(pickedName)
-            row.addView(chevron)
-
-            slotRows.add(row)
-            slotThumbs.add(thumb)
-            slotNames.add(pickedName)
-            rootLayout.addView(row)
+            cell.addView(label)
+            cell.addView(thumb)
+            cell.addView(pickedName)
+            slotThumbs[slotIndex] = thumb
+            slotNames[slotIndex] = pickedName
+            slotCells[slotIndex] = cell
+            return cell
         }
+
+        // 上段: 敵[0..3] (slot index 4..7)
+        val enemyRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 8 }
+        }
+        for (slotIndex in 4..7) enemyRow.addView(buildSlotCell(slotIndex))
+        rootLayout.addView(enemyRow)
+
+        // 下段: 自[0..3] (slot index 0..3)
+        val myRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 8 }
+        }
+        for (slotIndex in 0..3) myRow.addView(buildSlotCell(slotIndex))
+        rootLayout.addView(myRow)
 
         val scroll = android.widget.ScrollView(this).apply {
             addView(rootLayout)
@@ -493,17 +533,17 @@ class CalibrationActivity : AppCompatActivity() {
         dialog.setOnShowListener {
             val okBtn = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
             okBtn.isEnabled = false
-            // 各スロット行のクリックで monster picker を開く
+            // 各スロットセルのクリックで monster picker を開く
             for (i in 0..7) {
-                slotRows[i].setOnClickListener {
+                slotCells[i]?.setOnClickListener {
                     showMonsterPickerForSlot(i, specs[i]) { pickedId ->
                         specs[i] = pickedId
                         val monster = dataManager.monsterMaster.firstOrNull { it.name == pickedId }
-                        slotNames[i].text = monster?.name ?: pickedId
+                        slotNames[i]?.text = monster?.name ?: pickedId
                         if (monster != null) {
                             try {
                                 assets.open("templates/${monster.fileName}").use {
-                                    slotThumbs[i].setImageBitmap(BitmapFactory.decodeStream(it))
+                                    slotThumbs[i]?.setImageBitmap(BitmapFactory.decodeStream(it))
                                 }
                             } catch (_: Exception) {}
                         }
