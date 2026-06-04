@@ -73,6 +73,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         const val ROI_PAD_PARTY_H = 30  // GALAXY等の縦横比ズレを考慮
         const val ROI_PAD_PARTY_V = 100 // GALAXY等の縦方向ズレを考慮
         const val ROI_PAD_GENERAL_H = 10 // 一般的な水平マージン
+
+        // Case D で参照するテンプレートの基準解像度幅 (Pixel 10 Pro Fold 由来)。
+        // 実フレーム幅 / TEMPLATE_BASE_WIDTH > 1.0 のとき ROI を 1/ratio で
+        // INTER_AREA ダウンサンプリングしてからマッチングを実施する。
+        const val TEMPLATE_BASE_WIDTH = 1080.0
     }
 
     data class ScanResult(val config: BoxConfig, val score: Double, val scale: Double)
@@ -853,13 +858,14 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
             // 【重要】ループに入る前に一度だけコントラスト補正を行う
             val workRoi = Mat()
-            val uiScale = calibrationData.uiScale.toDouble()
-            if (uiScale > 1.0) {
-                // 高 DPI 端末: ROI をテンプレネイティブ解像度にダウンサンプリング
-                //   INTER_AREA は高品質な平均化ダウンサンプリングで、ネイティブ高解像度の
-                //   情報を圧縮しつつテンプレの作成元 (1080-base 解像度) と同等のエッジ
-                //   特性に揃える。これによりシャープネス起因の NCC 低下を回避する。
-                val inv = 1.0 / uiScale
+            // Case D: 発動条件は保存された uiScale ではなく実フレーム幅で判定する。
+            //   ユーザーが校正画面で「デフォルト」を選ぶと uiScale=1.0 が保存されてしまい、
+            //   POCO F7 等の高 DPI 端末でも Case D が起動しないバグがあった。
+            //   実フレーム幅 / 1080-base で見ると uiScale 保存値に依存せず判定できる。
+            val effectiveScale = fullMat.cols() / TEMPLATE_BASE_WIDTH
+            if (effectiveScale > 1.0) {
+                // ROI をテンプレネイティブ解像度にダウンサンプリング (INTER_AREA)
+                val inv = 1.0 / effectiveScale
                 Imgproc.resize(roi, workRoi, Size(), inv, inv, Imgproc.INTER_AREA)
             } else {
                 roi.copyTo(workRoi)
@@ -1062,10 +1068,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return try {
             val roi = mat.submat(top, top + config.height, left, left + config.width)
             // tryIdentify と同じ Case D ダウンサンプリング戦略を適用
+            // (発動条件は実フレーム幅基準。uiScale 保存値には依存しない)
             val workRoi = Mat()
-            val uiScale = calibrationData.uiScale.toDouble()
-            if (uiScale > 1.0) {
-                val inv = 1.0 / uiScale
+            val effectiveScale = mat.cols() / TEMPLATE_BASE_WIDTH
+            if (effectiveScale > 1.0) {
+                val inv = 1.0 / effectiveScale
                 Imgproc.resize(roi, workRoi, Size(), inv, inv, Imgproc.INTER_AREA)
             } else {
                 roi.copyTo(workRoi)
