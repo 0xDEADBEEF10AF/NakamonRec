@@ -30,6 +30,12 @@ class CalibrationActivity : AppCompatActivity() {
     private var detectedScale: Float = 1.0f
     private val executor = Executors.newSingleThreadExecutor()
 
+    // 詳細校正の 8 体指定を Activity セッション中保持する。
+    // ダイアログを開き直しても前回の選択が表示され、選び直し負担を抑える。
+    // Activity 自体が破棄されると初期化されるため (校正画面を閉じて再度入ると消える)、
+    // 別バトル/別校正セッションでの混在は発生しない。
+    private val detailSpecs = arrayOfNulls<String>(8)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -387,8 +393,9 @@ class CalibrationActivity : AppCompatActivity() {
     private fun showDetailCalibrationSpec() {
         val bitmap = sourceBitmap ?: return
 
-        // 8 スロット分の指定状態 (null = 未指定)
-        val specs = arrayOfNulls<String>(8)
+        // 8 スロット分の指定状態。Activity セッション中保持する detailSpecs を使う。
+        // (毎回開くたびに選び直しを強要するのは UX が悪いという feedback への対応)
+        val specs = detailSpecs
         val slotLabels = (0..7).map { i ->
             if (i < 4) getString(R.string.detail_calib_slot_my, i + 1)
             else getString(R.string.detail_calib_slot_enemy, i - 3)
@@ -479,6 +486,19 @@ class CalibrationActivity : AppCompatActivity() {
             slotThumbs[slotIndex] = thumb
             slotNames[slotIndex] = pickedName
             slotCells[slotIndex] = cell
+
+            // 既に指定済みなら表示を反映 (前回開いた時の選択を引き継ぐ)
+            specs[slotIndex]?.let { id ->
+                val monster = dataManager.monsterMaster.firstOrNull { it.name == id }
+                if (monster != null) {
+                    pickedName.text = monster.name
+                    try {
+                        assets.open("templates/${monster.fileName}").use {
+                            thumb.setImageBitmap(BitmapFactory.decodeStream(it))
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
             return cell
         }
 
@@ -532,7 +552,8 @@ class CalibrationActivity : AppCompatActivity() {
 
         dialog.setOnShowListener {
             val okBtn = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
-            okBtn.isEnabled = false
+            // 全 8 スロット指定済みなら開いた瞬間に校正開始できる (前回値の引き継ぎ対応)
+            okBtn.isEnabled = specs.all { it != null }
             // 各スロットセルのクリックで monster picker を開く
             for (i in 0..7) {
                 slotCells[i]?.setOnClickListener {
