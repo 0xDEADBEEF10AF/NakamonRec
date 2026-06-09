@@ -1079,7 +1079,17 @@ class HistoryActivity : AppCompatActivity() {
                 val iconRow = LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
                 }
-                data.key.forEach { name ->
+                // 壁モンスターを左側へ並べ替える (集計キーは順序無視のまま、表示順だけ変更)
+                val displayOrder = data.key.sortedWith(Comparator { a, b ->
+                    val aWall = dataManager.monsterMaster.find { it.name == a }?.isWall == true
+                    val bWall = dataManager.monsterMaster.find { it.name == b }?.isWall == true
+                    if (aWall != bWall) {
+                        if (aWall) -1 else 1
+                    } else {
+                        a.compareTo(b)
+                    }
+                })
+                displayOrder.forEach { name ->
                     val iv = ImageView(context).apply {
                         layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { marginEnd = (4 * density).toInt() }
                         scaleType = ImageView.ScaleType.CENTER_CROP

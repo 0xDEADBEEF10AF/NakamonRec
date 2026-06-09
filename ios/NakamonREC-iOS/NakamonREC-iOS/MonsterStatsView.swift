@@ -146,7 +146,9 @@ struct MonsterStatsView: View {
     }
 
     private func rateColor(_ rate: Double) -> Color {
-        rate >= 50 ? Color.recCoral : Color.sideEnemy
+        if rate >= 80 { return Color.recCoral }
+        if rate >= 50 { return .white }
+        return Color.sideEnemy
     }
 
     // MARK: - Party row
@@ -159,7 +161,7 @@ struct MonsterStatsView: View {
                 .frame(width: 28, alignment: .trailing)
 
             HStack(spacing: 4) {
-                ForEach(Array(row.key.enumerated()), id: \.offset) { _, id in
+                ForEach(Array(partyDisplayOrder(row.key).enumerated()), id: \.offset) { _, id in
                     MonsterThumb(name: id, size: 40)
                 }
             }
@@ -179,6 +181,16 @@ struct MonsterStatsView: View {
         .padding(.vertical, 4)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// パーティ表示用に壁モンスターを左側へ並べ替える。集計キー (順序無視) は変更しない。
+    private func partyDisplayOrder(_ ids: [String]) -> [String] {
+        ids.sorted { a, b in
+            let aWall = MonsterCatalog.isWall(id: a)
+            let bWall = MonsterCatalog.isWall(id: b)
+            if aWall != bWall { return aWall }
+            return a < b
+        }
     }
 
     private var emptyPartyState: some View {

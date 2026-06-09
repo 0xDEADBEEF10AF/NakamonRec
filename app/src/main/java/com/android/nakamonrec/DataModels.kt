@@ -8,6 +8,7 @@ import org.opencv.core.Mat
 data class MonsterData(
     val name: String,
     val fileName: String,
+    val isWall: Boolean = false,
     var templateMat: Mat? = null
 )
 

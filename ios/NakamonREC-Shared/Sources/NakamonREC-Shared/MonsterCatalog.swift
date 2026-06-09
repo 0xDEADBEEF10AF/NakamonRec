@@ -6,6 +6,9 @@ public struct MonsterEntry: Codable, Hashable, Identifiable, Sendable {
     public let name: String
     /// テンプレ画像のファイル名 (例: "id001.png")
     public let fileName: String
+    /// 壁役モンスターか否か。パーティ構成ランキングでの表示順 (壁を左側) に使用。
+    /// monsters.json で省略可能 (省略時 false 扱い)。
+    public let isWall: Bool?
 
     /// テンプレ ID (例: "id001")。fileName から .png を取り除いたもの
     public var id: String {
@@ -39,5 +42,10 @@ public enum MonsterCatalog {
     /// 日本語名から ID への逆引き (見つからなければ nil)。CSV インポート時に使用。
     public static func id(for name: String) -> String? {
         all.first(where: { $0.name == name })?.id
+    }
+
+    /// 指定 ID が壁モンスターか
+    public static func isWall(id: String) -> Bool {
+        all.first(where: { $0.id == id })?.isWall == true
     }
 }
