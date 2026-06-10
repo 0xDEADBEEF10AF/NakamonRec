@@ -41,6 +41,6 @@
     </style>
 
     <style name="NakamonRec.Dialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
-        <item name="android:textColor">#BB86FC</item>
+        <item name="android:textColor">#FFFFFF</item>
     </style>
 </resources>
