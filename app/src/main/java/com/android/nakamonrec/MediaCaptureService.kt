@@ -1,7 +1,10 @@
 package com.android.nakamonrec
 
 import android.app.*
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -19,6 +22,8 @@ import java.util.Locale
 import androidx.core.graphics.createBitmap
 
 private const val ANALYSIS_INTERVAL_MS = 500L
+private const val IDLE_CHECK_INTERVAL_MS = 5 * 60 * 1000L      // 5 分毎にチェック
+private const val IDLE_WARNING_THRESHOLD_MS = 30 * 60 * 1000L  // 最後の確定から 30 分でアラート
 class MediaCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -53,11 +58,40 @@ class MediaCaptureService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 1001
+        private const val IDLE_WARNING_NOTIFICATION_ID = 1002
         private const val CHANNEL_ID = "capture_channel"
+        private const val IDLE_WARNING_CHANNEL_ID = "idle_warning_channel"
         const val ACTION_SERVICE_STOPPED = "com.android.nakamonrec.ACTION_SERVICE_STOPPED"
         const val ACTION_RELOAD_SETTINGS = "com.android.nakamonrec.ACTION_RELOAD_SETTINGS"
         const val ACTION_RELOAD_HISTORY = "com.android.nakamonrec.ACTION_RELOAD_HISTORY"
+        const val ACTION_STOP_FROM_NOTIFICATION = "com.android.nakamonrec.ACTION_STOP_FROM_NOTIFICATION"
         var isRunning = false
+    }
+
+    // REC 放置警告タイマー (POCO F7 ユーザー要望、2026-06-05)
+    private var lastConfirmedAt: Long = 0L
+    private var lastWarnedAt: Long = 0L
+    private val idleCheckHandler = Handler(Looper.getMainLooper())
+    private val idleCheckRunnable = object : Runnable {
+        override fun run() {
+            val now = System.currentTimeMillis()
+            if (now - lastConfirmedAt > IDLE_WARNING_THRESHOLD_MS &&
+                now - lastWarnedAt > IDLE_WARNING_THRESHOLD_MS) {
+                showIdleWarning()
+                lastWarnedAt = now
+            }
+            idleCheckHandler.postDelayed(this, IDLE_CHECK_INTERVAL_MS)
+        }
+    }
+
+    // 通知アクション「停止する」用 BroadcastReceiver
+    private val stopFromNotificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == ACTION_STOP_FROM_NOTIFICATION) {
+                dataManager.appendFlightLog("通知アクションから REC 停止")
+                stopSelf()
+            }
+        }
     }
 
     override fun onCreate() {
@@ -80,11 +114,24 @@ class MediaCaptureService : Service() {
 
         captureThread = HandlerThread("CaptureThread").apply { start() }
         captureHandler = Handler(captureThread!!.looper)
-        
+
         analysisThread = HandlerThread("AnalysisThread").apply { start() }
         analysisHandler = Handler(analysisThread!!.looper)
 
         createNotificationChannel()
+
+        // REC 放置タイマー開始 (起動時刻を初期 lastConfirmedAt として 30 分後から監視)
+        lastConfirmedAt = System.currentTimeMillis()
+        idleCheckHandler.postDelayed(idleCheckRunnable, IDLE_CHECK_INTERVAL_MS)
+
+        // 通知アクション「停止する」を受け取る BroadcastReceiver 登録
+        val filter = IntentFilter(ACTION_STOP_FROM_NOTIFICATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stopFromNotificationReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(stopFromNotificationReceiver, filter)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -405,22 +452,67 @@ class MediaCaptureService : Service() {
             
             dataManager.appendFlightLog(String.format(Locale.US, "📝 戦績記録: %s P[%d] 味方=%s vs 敵=%s",
                 result, sessionPartyIndex + 1, myParty.joinToString(","), enemyParty.joinToString(",")))
-                
+
             currentState = State.IDLE
             // 次回識別のためにセッション情報をクリア
             sessionPartyIndex = -1
             sessionPartyScores = emptyList()
             sessionVsScore = 0.0
-            
+
+            // REC 放置タイマーのリセット (確定があった時点で「最近活動あり」とみなす)
+            lastConfirmedAt = System.currentTimeMillis()
+            lastWarnedAt = 0L
+
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
         }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Capture Service", NotificationManager.IMPORTANCE_HIGH)
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Capture Service", NotificationManager.IMPORTANCE_HIGH)
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(IDLE_WARNING_CHANNEL_ID, "REC 放置警告", NotificationManager.IMPORTANCE_HIGH)
+            )
         }
+    }
+
+    /**
+     * REC を ON にしたまま長時間バトル確定がない場合に出す警告通知。
+     * - 別チャネル ("REC 放置警告") なので foreground 通知とは独立して表示できる
+     * - 「停止する」アクションタップで `stopFromNotificationReceiver` 経由で stopSelf()
+     */
+    private fun showIdleWarning() {
+        val minutes = IDLE_WARNING_THRESHOLD_MS / 60000
+        dataManager.appendFlightLog("⚠ REC 放置警告通知を表示 (${minutes} 分バトル確定なし)")
+
+        val tapIntent = Intent(this, MainActivity::class.java)
+        val tapPi = PendingIntent.getActivity(
+            this, 0, tapIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val stopIntent = Intent(ACTION_STOP_FROM_NOTIFICATION).apply { setPackage(packageName) }
+        val stopPi = PendingIntent.getBroadcast(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, IDLE_WARNING_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("REC 中ですよ")
+            .setContentText("最後のバトル確定から${minutes}分以上経過しています。意図しない記録を防ぐため停止しますか？")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("最後のバトル確定から${minutes}分以上経過しています。意図しない記録を防ぐため停止しますか？"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(tapPi)
+            .setAutoCancel(true)
+            .addAction(android.R.drawable.ic_media_pause, "停止する", stopPi)
+            .build()
+
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(IDLE_WARNING_NOTIFICATION_ID, notification)
     }
 
     private fun buildMyNotification(win: Int, lose: Int, status: String): Notification {
@@ -447,6 +539,10 @@ class MediaCaptureService : Service() {
     override fun onDestroy() {
         isRunning = false
         currentSessionId = 0
+        idleCheckHandler.removeCallbacksAndMessages(null)
+        try { unregisterReceiver(stopFromNotificationReceiver) } catch (_: Exception) {}
+        // 停止時に放置警告通知が残っていれば消す
+        (getSystemService(NOTIFICATION_SERVICE) as? NotificationManager)?.cancel(IDLE_WARNING_NOTIFICATION_ID)
         sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
         clearBurstImages()
         virtualDisplay?.release()

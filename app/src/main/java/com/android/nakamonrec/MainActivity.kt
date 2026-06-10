@@ -213,8 +213,16 @@ class MainActivity : AppCompatActivity() {
                     val latestName = latest.tagName.replace("v", "").trim()
                     val cleanCurrentName = currentName.replace("v", "").trim()
                     Handler(Looper.getMainLooper()).post {
-                        if (isNewerVersion(latestName, cleanCurrentName)) showUpdateDialog(latest.name, latest.htmlUrl)
-                        else if (isManual) showTopToast(getString(R.string.msg_latest_version))
+                        if (isNewerVersion(latestName, cleanCurrentName)) {
+                            // 自動チェック時のみ「このバージョンを抑止」フラグを尊重する。
+                            // 手動 (デバッグメニューから) のときは常にダイアログを出す。
+                            val suppressed = getSuppressedUpdateVersion()
+                            if (!isManual && suppressed == latest.tagName) {
+                                // 抑止対象なのでスキップ
+                            } else {
+                                showUpdateDialog(latest.name, latest.htmlUrl, latest.tagName)
+                            }
+                        } else if (isManual) showTopToast(getString(R.string.msg_latest_version))
                     }
                 }
             } catch (_: Exception) {
@@ -233,10 +241,56 @@ class MainActivity : AppCompatActivity() {
         return false
     }
 
-    private fun showUpdateDialog(title: String, updateUrl: String) {
-        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle(getString(R.string.msg_update_available)).setMessage(getString(R.string.msg_update_desc, title))
-            .setPositiveButton(getString(R.string.btn_update)) { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, updateUrl.toUri())) }
-            .setNegativeButton(getString(R.string.btn_later), null).show()
+    private fun showUpdateDialog(title: String, updateUrl: String, tagName: String) {
+        val density = resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, 0, pad, 0)
+        }
+        val messageView = TextView(this).apply {
+            text = getString(R.string.msg_update_desc, title)
+            textSize = 14f
+            setTextColor(android.graphics.Color.WHITE)
+        }
+        val checkbox = android.widget.CheckBox(this).apply {
+            text = "このバージョンの通知は今後表示しない"
+            textSize = 12f
+            setTextColor(android.graphics.Color.LTGRAY)
+            val mt = (12 * density).toInt()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = mt }
+        }
+        container.addView(messageView)
+        container.addView(checkbox)
+
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle(getString(R.string.msg_update_available))
+            .setView(container)
+            .setPositiveButton(getString(R.string.btn_update)) { _, _ ->
+                if (checkbox.isChecked) saveSuppressedUpdateVersion(tagName)
+                startActivity(Intent(Intent.ACTION_VIEW, updateUrl.toUri()))
+            }
+            .setNegativeButton(getString(R.string.btn_later)) { _, _ ->
+                if (checkbox.isChecked) saveSuppressedUpdateVersion(tagName)
+            }
+            .show()
+    }
+
+    private fun saveSuppressedUpdateVersion(tagName: String) {
+        getSharedPreferences("NakamonPrefs", MODE_PRIVATE).edit()
+            .putString("suppressed_update_version", tagName).apply()
+    }
+
+    private fun getSuppressedUpdateVersion(): String? {
+        return getSharedPreferences("NakamonPrefs", MODE_PRIVATE).getString("suppressed_update_version", null)
+    }
+
+    private fun clearSuppressedUpdateVersion() {
+        getSharedPreferences("NakamonPrefs", MODE_PRIVATE).edit()
+            .remove("suppressed_update_version").apply()
     }
 
     private fun showFileSelectorDialog() {
@@ -848,7 +902,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeveloperMenu(currentVersion: String) {
-        val options = arrayOf("直近の解析ログ", "アプリのアップデートを確認")
+        val suppressedVersion = getSuppressedUpdateVersion()
+        val reEnableLabel = if (suppressedVersion != null) {
+            "アップデート通知を再有効化 ($suppressedVersion を抑止中)"
+        } else {
+            "アップデート通知を再有効化 (抑止なし)"
+        }
+        val options = arrayOf("直近の解析ログ", "アプリのアップデートを確認", reEnableLabel)
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("デバッグメニュー")
             .setItems(options) { _, which ->
@@ -857,6 +917,14 @@ class MainActivity : AppCompatActivity() {
                     1 -> {
                         showTopToast(getString(R.string.msg_checking_update))
                         checkForUpdates(currentVersion, isManual = true)
+                    }
+                    2 -> {
+                        if (suppressedVersion != null) {
+                            clearSuppressedUpdateVersion()
+                            showTopToast("アップデート通知を再有効化しました")
+                        } else {
+                            showTopToast("現在抑止されている通知はありません")
+                        }
                     }
                 }
             }
