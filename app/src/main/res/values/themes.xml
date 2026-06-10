@@ -12,8 +12,8 @@
         全 AlertDialog.Builder に第 2 引数で渡して使用する。
     -->
     <style name="Theme.NakamonRec.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
-        <item name="colorSurface">#333333</item>
-        <item name="android:colorBackground">#333333</item>
+        <item name="colorSurface">#252525</item>
+        <item name="android:colorBackground">#252525</item>
         <item name="colorOnSurface">#FFFFFF</item>
         <item name="colorPrimary">#BB86FC</item>
         <item name="alertDialogStyle">@style/NakamonRec.Dialog.Layout</item>

@@ -751,7 +751,7 @@ class HistoryActivity : AppCompatActivity() {
                     }
                     radius = 12f * resources.displayMetrics.density
                     cardElevation = 4f * resources.displayMetrics.density
-                    setCardBackgroundColor("#252525".toColorInt())
+                    setCardBackgroundColor("#333333".toColorInt())
                     strokeWidth = 0
                     
                     val horizontalRoot = LinearLayout(context).apply {
@@ -966,7 +966,7 @@ class HistoryActivity : AppCompatActivity() {
                 }
                 radius = 8f * density
                 cardElevation = 2f * density
-                setCardBackgroundColor("#252525".toColorInt())
+                setCardBackgroundColor("#333333".toColorInt())
                 strokeWidth = 0
 
                 val root = LinearLayout(context).apply {
@@ -1054,7 +1054,7 @@ class HistoryActivity : AppCompatActivity() {
                 }
                 radius = 8f * density
                 cardElevation = 2f * density
-                setCardBackgroundColor("#252525".toColorInt())
+                setCardBackgroundColor("#333333".toColorInt())
                 strokeWidth = 0
 
                 val root = LinearLayout(context).apply {
