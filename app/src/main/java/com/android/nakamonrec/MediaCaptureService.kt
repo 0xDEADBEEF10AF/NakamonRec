@@ -503,9 +503,8 @@ class MediaCaptureService : Service() {
 
         val notification = NotificationCompat.Builder(this, IDLE_WARNING_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("REC 中ですよ")
-            .setContentText("最後のバトル確定から${minutes}分以上経過しています。意図しない記録を防ぐため停止しますか？")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("最後のバトル確定から${minutes}分以上経過しています。意図しない記録を防ぐため停止しますか？"))
+            .setContentTitle("REC 中ですよ！")
+            .setContentText("最後のバトル確定から${minutes}分以上経過しています。")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(tapPi)
             .setAutoCancel(true)
