@@ -22,9 +22,8 @@ import java.util.Locale
 import androidx.core.graphics.createBitmap
 
 private const val ANALYSIS_INTERVAL_MS = 500L
-// TODO: テスト後に元に戻す (本来 5 分 / 30 分)
-private const val IDLE_CHECK_INTERVAL_MS = 10_000L      // テスト用: 10 秒毎にチェック
-private const val IDLE_WARNING_THRESHOLD_MS = 60_000L   // テスト用: 1 分でアラート
+private const val IDLE_CHECK_INTERVAL_MS = 5 * 60 * 1000L      // 5 分毎にチェック
+private const val IDLE_WARNING_THRESHOLD_MS = 30 * 60 * 1000L  // 最後の確定から 30 分でアラート
 class MediaCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
