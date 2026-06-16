@@ -908,7 +908,12 @@ class MainActivity : AppCompatActivity() {
         } else {
             "アップデート通知を再有効化 (抑止なし)"
         }
-        val options = arrayOf("直近の解析ログ", "アプリのアップデートを確認", reEnableLabel)
+        val options = arrayOf(
+            "直近の解析ログ",
+            "アプリのアップデートを確認",
+            reEnableLabel,
+            "マッチング閾値を調整"
+        )
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("デバッグメニュー")
             .setItems(options) { _, which ->
@@ -926,9 +931,136 @@ class MainActivity : AppCompatActivity() {
                             showTopToast("現在抑止されている通知はありません")
                         }
                     }
+                    3 -> showThresholdAdjustDialog()
                 }
             }
             .show()
+    }
+
+    /**
+     * マッチング閾値 (VS / WIN / LOSE) を 0.4〜0.8 の範囲で調整するダイアログ。
+     * 設定保存時に SharedPreferences に永続化 + 起動中サービスに ACTION_RELOAD_SETTINGS を送信。
+     */
+    private fun showThresholdAdjustDialog() {
+        val density = resources.displayMetrics.density
+        val pad = (16 * density).toInt()
+
+        val min = BattleAnalyzer.THRESHOLD_MIN
+        val max = BattleAnalyzer.THRESHOLD_MAX
+        val step = 0.05
+        val steps = ((max - min) / step).toInt() // 8 (0.40〜0.80 を 0.05 刻み)
+
+        fun toValue(progress: Int): Double = (min + progress * step).let {
+            // floating-point 誤差吸収
+            Math.round(it * 100) / 100.0
+        }
+        fun toProgress(value: Double): Int = ((value - min) / step).toInt().coerceIn(0, steps)
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, 0, pad, 0)
+        }
+
+        val intro = TextView(this).apply {
+            text = "VS / WIN / LOSE 検知の閾値を調整します ($min ～ $max)。\n値を上げると誤検知が減りますが、本来の検知も逃しやすくなります。"
+            textSize = 11f
+            setTextColor(android.graphics.Color.LTGRAY)
+        }
+        container.addView(intro)
+
+        data class Row(val label: String, val initial: Double) {
+            lateinit var valueLabel: TextView
+            lateinit var seekBar: SeekBar
+            var value: Double = initial
+        }
+
+        val rows = listOf(
+            Row("VS 検知", dataManager.vsThreshold),
+            Row("WIN 検知", dataManager.winThreshold),
+            Row("LOSE 検知", dataManager.loseThreshold)
+        )
+
+        rows.forEach { row ->
+            val labelRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                val mt = (16 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = mt }
+            }
+            val labelText = TextView(this).apply {
+                text = row.label
+                textSize = 13f
+                setTextColor(android.graphics.Color.WHITE)
+                setTypeface(null, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val valueLabel = TextView(this).apply {
+                text = String.format(Locale.US, "%.2f", row.initial)
+                textSize = 13f
+                setTextColor(android.graphics.Color.WHITE)
+                setTypeface(null, Typeface.BOLD)
+            }
+            row.valueLabel = valueLabel
+            labelRow.addView(labelText)
+            labelRow.addView(valueLabel)
+            container.addView(labelRow)
+
+            val seek = SeekBar(this).apply {
+                this.max = steps
+                progress = toProgress(row.initial)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                        val v = toValue(p)
+                        row.value = v
+                        row.valueLabel.text = String.format(Locale.US, "%.2f", v)
+                    }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            }
+            row.seekBar = seek
+            container.addView(seek)
+        }
+
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle("マッチング閾値を調整")
+            .setView(container)
+            .setPositiveButton("保存") { _, _ ->
+                dataManager.saveThresholds(rows[0].value, rows[1].value, rows[2].value)
+                if (MediaCaptureService.isRunning) {
+                    val intent = Intent(this, MediaCaptureService::class.java).apply {
+                        action = MediaCaptureService.ACTION_RELOAD_SETTINGS
+                    }
+                    startService(intent)
+                }
+                showTopToast(String.format(
+                    Locale.US,
+                    "閾値を保存: VS=%.2f WIN=%.2f LOSE=%.2f",
+                    rows[0].value, rows[1].value, rows[2].value
+                ))
+            }
+            .setNeutralButton("デフォルトに戻す", null) // OnShowListener で動作上書き
+            .setNegativeButton(getString(R.string.btn_close), null)
+            .create()
+
+        dialog.setOnShowListener {
+            // Neutral ボタンはタップしても dismiss させず、SeekBar をデフォルトに戻すだけ
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val defaults = listOf(
+                    BattleAnalyzer.DEFAULT_VS_THRESHOLD,
+                    BattleAnalyzer.DEFAULT_WIN_THRESHOLD,
+                    BattleAnalyzer.DEFAULT_LOSE_THRESHOLD
+                )
+                rows.zip(defaults).forEach { (row, def) ->
+                    row.value = def
+                    row.seekBar.progress = toProgress(def)
+                    row.valueLabel.text = String.format(Locale.US, "%.2f", def)
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showFlightLog() {

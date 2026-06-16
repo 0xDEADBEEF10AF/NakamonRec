@@ -104,6 +104,9 @@ class MediaCaptureService : Service() {
         analyzer.dataManager = dataManager
         analyzer.loadTemplates(this)
 
+        // ユーザー設定の閾値を反映 (デフォルトと異なる場合のみログ)
+        applyThresholdsAndLog()
+
         val modeLabel = if (dataManager.analysisMode == "light") "軽負荷" else "通常"
         dataManager.appendFlightLog("テンプレート読み込み完了 (${modeLabel}モード, モンスター${dataManager.monsterMaster.size}体)")
 
@@ -138,6 +141,15 @@ class MediaCaptureService : Service() {
         when (intent?.action) {
             ACTION_RELOAD_SETTINGS -> {
                 reloadCalibrationData()
+                // 閾値設定の更新を反映 (SharedPreferences から再読み込み)
+                val prefs = getSharedPreferences("analysis_prefs", MODE_PRIVATE)
+                dataManager.vsThreshold = prefs.getFloat("vs_threshold", BattleAnalyzer.DEFAULT_VS_THRESHOLD.toFloat()).toDouble()
+                    .coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+                dataManager.winThreshold = prefs.getFloat("win_threshold", BattleAnalyzer.DEFAULT_WIN_THRESHOLD.toFloat()).toDouble()
+                    .coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+                dataManager.loseThreshold = prefs.getFloat("lose_threshold", BattleAnalyzer.DEFAULT_LOSE_THRESHOLD.toFloat()).toDouble()
+                    .coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+                applyThresholdsAndLog()
                 return START_NOT_STICKY
             }
             ACTION_RELOAD_HISTORY -> {
@@ -194,6 +206,31 @@ class MediaCaptureService : Service() {
             } catch (e: Exception) {
                 Log.e("CaptureService", "校正データのロード失敗: ${e.message}")
             }
+        }
+    }
+
+    /**
+     * dataManager 側の閾値を analyzer に反映。デフォルトと異なる値があれば flight log に明記し、
+     * 後のサポート時に「ユーザーがいじったか」が一目で分かるようにする。
+     */
+    private fun applyThresholdsAndLog() {
+        analyzer.applyThresholds(
+            dataManager.vsThreshold,
+            dataManager.winThreshold,
+            dataManager.loseThreshold
+        )
+        val anyCustom =
+            dataManager.vsThreshold != BattleAnalyzer.DEFAULT_VS_THRESHOLD ||
+            dataManager.winThreshold != BattleAnalyzer.DEFAULT_WIN_THRESHOLD ||
+            dataManager.loseThreshold != BattleAnalyzer.DEFAULT_LOSE_THRESHOLD
+        if (anyCustom) {
+            dataManager.appendFlightLog(
+                String.format(
+                    Locale.US,
+                    "⚙ カスタム閾値適用 VS=%.2f WIN=%.2f LOSE=%.2f",
+                    dataManager.vsThreshold, dataManager.winThreshold, dataManager.loseThreshold
+                )
+            )
         }
     }
 

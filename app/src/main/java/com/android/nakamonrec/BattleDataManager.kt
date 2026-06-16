@@ -16,6 +16,11 @@ class BattleDataManager(private val context: Context) {
     var analysisMode: String = "normal" // "normal" or "light"
     val lightModeMonsters = mutableSetOf<String>() // 軽負荷モードの対象モンスター名
 
+    // ユーザー可変の検知閾値 (デフォルト 0.4、許容範囲 0.4〜0.8)
+    var vsThreshold: Double = BattleAnalyzer.DEFAULT_VS_THRESHOLD
+    var winThreshold: Double = BattleAnalyzer.DEFAULT_WIN_THRESHOLD
+    var loseThreshold: Double = BattleAnalyzer.DEFAULT_LOSE_THRESHOLD
+
     init {
         loadMasterData()
     }
@@ -29,6 +34,13 @@ class BattleDataManager(private val context: Context) {
         if (prefs.contains("light_monsters")) {
             lightModeMonsters.addAll(prefs.getStringSet("light_monsters", emptySet()) ?: emptySet())
         }
+
+        vsThreshold = prefs.getFloat("vs_threshold", BattleAnalyzer.DEFAULT_VS_THRESHOLD.toFloat()).toDouble()
+            .coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+        winThreshold = prefs.getFloat("win_threshold", BattleAnalyzer.DEFAULT_WIN_THRESHOLD.toFloat()).toDouble()
+            .coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+        loseThreshold = prefs.getFloat("lose_threshold", BattleAnalyzer.DEFAULT_LOSE_THRESHOLD.toFloat()).toDouble()
+            .coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
 
         try {
             // モンスターマスタの読み込み
@@ -182,5 +194,25 @@ class BattleDataManager(private val context: Context) {
             .putString("mode", analysisMode)
             .putStringSet("light_monsters", lightModeMonsters)
             .apply()
+    }
+
+    fun saveThresholds(vs: Double, win: Double, lose: Double) {
+        vsThreshold = vs.coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+        winThreshold = win.coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+        loseThreshold = lose.coerceIn(BattleAnalyzer.THRESHOLD_MIN, BattleAnalyzer.THRESHOLD_MAX)
+        val prefs = context.getSharedPreferences("analysis_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putFloat("vs_threshold", vsThreshold.toFloat())
+            .putFloat("win_threshold", winThreshold.toFloat())
+            .putFloat("lose_threshold", loseThreshold.toFloat())
+            .apply()
+    }
+
+    fun resetThresholds() {
+        saveThresholds(
+            BattleAnalyzer.DEFAULT_VS_THRESHOLD,
+            BattleAnalyzer.DEFAULT_WIN_THRESHOLD,
+            BattleAnalyzer.DEFAULT_LOSE_THRESHOLD
+        )
     }
 }

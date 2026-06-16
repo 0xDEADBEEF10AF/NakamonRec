@@ -47,10 +47,24 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     var dataManager: BattleDataManager? = null // フライトレコーダー書き込み用
     private val slotCandidates = arrayOfNulls<Set<String>>(8) // Top-K 追跡用 (O(1) lookup のため Set)
 
+    // ユーザー可変の検知閾値。MediaCaptureService が dataManager から取得して書き戻す。
+    var vsThreshold: Double = DEFAULT_VS_THRESHOLD
+    var winThreshold: Double = DEFAULT_WIN_THRESHOLD
+    var loseThreshold: Double = DEFAULT_LOSE_THRESHOLD
+
+    fun applyThresholds(vs: Double, win: Double, lose: Double) {
+        vsThreshold = vs.coerceIn(THRESHOLD_MIN, THRESHOLD_MAX)
+        winThreshold = win.coerceIn(THRESHOLD_MIN, THRESHOLD_MAX)
+        loseThreshold = lose.coerceIn(THRESHOLD_MIN, THRESHOLD_MAX)
+    }
+
     companion object {
-        private const val VS_THRESHOLD = 0.4
-        private const val WIN_THRESHOLD = 0.4
-        private const val LOSE_THRESHOLD = 0.4
+        // VS / WIN / LOSE 閾値のデフォルトと許容範囲 (ユーザー設定で 0.4〜0.8 に可変)
+        const val DEFAULT_VS_THRESHOLD = 0.4
+        const val DEFAULT_WIN_THRESHOLD = 0.4
+        const val DEFAULT_LOSE_THRESHOLD = 0.4
+        const val THRESHOLD_MIN = 0.4
+        const val THRESHOLD_MAX = 0.8
         private const val MONSTER_THRESHOLD = 0.7
         private const val PARTY_THRESHOLD = 0.7
         private const val CANDIDATE_COUNT = 10 // Top-10 追跡
@@ -698,10 +712,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         
         var detected = false
         if (vsCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) detected = true
+            if (performColorMatchCached(bitmap, calibrationData.vsBox, vsCustomTemplateScaled, vMargin, hMargin) > vsThreshold) detected = true
         }
-        if (!detected && performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) detected = true
-        if (!detected && performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin) > VS_THRESHOLD) detected = true
+        if (!detected && performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin) > vsThreshold) detected = true
+        if (!detected && performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin) > vsThreshold) detected = true
         
         if (detected) {
             saveRoi(bitmap, calibrationData.vsBox, "vs", vMargin, hMargin)
@@ -716,9 +730,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         // WIN判定
         var detected: String? = null
         if (winCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled, vMargin, hMargin) > WIN_THRESHOLD) detected = "WIN"
+            if (performColorMatchCached(bitmap, calibrationData.winBox, winCustomTemplateScaled, vMargin, hMargin) > winThreshold) detected = "WIN"
         }
-        if (detected == null && performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, vMargin, hMargin) > WIN_THRESHOLD) detected = "WIN"
+        if (detected == null && performColorMatchCached(bitmap, calibrationData.winBox, winTemplateScaled, vMargin, hMargin) > winThreshold) detected = "WIN"
 
         if (detected == "WIN") {
             saveRoi(bitmap, calibrationData.winBox, "result", vMargin, hMargin)
@@ -727,9 +741,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         // LOSE判定
         if (loseCustomTemplateScaled != null) {
-            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled, vMargin, hMargin) > LOSE_THRESHOLD) detected = "LOSE"
+            if (performColorMatchCached(bitmap, calibrationData.loseBox, loseCustomTemplateScaled, vMargin, hMargin) > loseThreshold) detected = "LOSE"
         }
-        if (detected == null && performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, vMargin, hMargin) > LOSE_THRESHOLD) detected = "LOSE"
+        if (detected == null && performColorMatchCached(bitmap, calibrationData.loseBox, loseTemplateScaled, vMargin, hMargin) > loseThreshold) detected = "LOSE"
         
         if (detected == "LOSE") {
             saveRoi(bitmap, calibrationData.loseBox, "result", vMargin, hMargin)
