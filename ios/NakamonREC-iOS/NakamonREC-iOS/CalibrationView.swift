@@ -334,10 +334,18 @@ struct CalibrationView: View {
         hasCustomTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let baseScaled = self.templateScaledToScene(base, scene: scene)
-            let loc = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: baseScaled)
+            // マルチスケール: 各倍率で最良位置を取り、スコア最大のものを採用
+            var bestLoc: NakamonMatchLocation? = nil
+            for ms in Self.autoCalMicroScales {
+                let scaled = self.templateScaledToScene(base, scene: scene, microScale: ms)
+                let loc = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: scaled)
+                if bestLoc == nil || loc.score > bestLoc!.score {
+                    bestLoc = loc
+                }
+            }
+            let finalLoc = bestLoc ?? NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: base)
             DispatchQueue.main.async {
-                handleResultAutoCalResult(matchLocation: loc, kind: kind, scene: scene)
+                handleResultAutoCalResult(matchLocation: finalLoc, kind: kind, scene: scene)
             }
         }
     }
@@ -392,13 +400,25 @@ struct CalibrationView: View {
         let suppressHalfH = Int32(sceneH * 0.07)
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let locations = NakamonWrapper.findTopKMatches(inScene: scene,
-                                                           templateImg: baseSelect,
-                                                           k: 3,
-                                                           suppressHalfWidth: suppressHalfW,
-                                                           suppressHalfHeight: suppressHalfH)
+            // マルチスケール: 各倍率で top-3 を取り、上位 3 件の合計スコア最大の倍率を採用。
+            // 3 件ピックなので「最良 1 件のスコア」より「3 件揃ったスコア」の方が安定指標。
+            var bestLocations: [NakamonMatchLocation] = []
+            var bestSumScore: Double = -1.0
+            for ms in Self.autoCalMicroScales {
+                let scaled = self.templateScaledToScene(baseSelect, scene: scene, microScale: ms)
+                let locs = NakamonWrapper.findTopKMatches(inScene: scene,
+                                                          templateImg: scaled,
+                                                          k: 3,
+                                                          suppressHalfWidth: suppressHalfW,
+                                                          suppressHalfHeight: suppressHalfH)
+                let sumScore = locs.reduce(0.0) { $0 + $1.score }
+                if sumScore > bestSumScore {
+                    bestSumScore = sumScore
+                    bestLocations = Array(locs)
+                }
+            }
             DispatchQueue.main.async {
-                handleAutoCalibrationResult(locations: Array(locations),
+                handleAutoCalibrationResult(locations: bestLocations,
                                             scene: scene)
             }
         }
@@ -422,17 +442,27 @@ struct CalibrationView: View {
         hasCustomTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // --- 1. VS 検出 (テンプレを scene スケールにリサイズしてからマッチング) ---
-            let vsFMScaled = self.templateScaledToScene(vsFM, scene: scene)
-            let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFMScaled)
-            var bestVSLoc = locFM
-            if let vsMG = vsMG {
-                let vsMGScaled = self.templateScaledToScene(vsMG, scene: scene)
-                let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMGScaled)
-                if locMG.score > bestVSLoc.score {
-                    bestVSLoc = locMG
+            // --- 1. VS 検出 (テンプレを scene スケール × マルチスケールでリサイズしてマッチング) ---
+            //   FM と MG の両テンプレを 5 段階の倍率で試し、全体の最高スコアを採用する。
+            var bestVSLocOpt: NakamonMatchLocation? = nil
+            for ms in Self.autoCalMicroScales {
+                let vsFMScaled = self.templateScaledToScene(vsFM, scene: scene, microScale: ms)
+                let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFMScaled)
+                if bestVSLocOpt == nil || locFM.score > bestVSLocOpt!.score {
+                    bestVSLocOpt = locFM
+                }
+                if let vsMG = vsMG {
+                    let vsMGScaled = self.templateScaledToScene(vsMG, scene: scene, microScale: ms)
+                    let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMGScaled)
+                    if bestVSLocOpt == nil || locMG.score > bestVSLocOpt!.score {
+                        bestVSLocOpt = locMG
+                    }
                 }
             }
+            // 以降のロジック (slotResults 取得 + handleBattlePrepAutoCalResult への引き渡し) は
+            // 旧コードと同じく非 Optional の `bestVSLoc` を期待しているため、ここで展開する。
+            // マルチスケールループ後は必ず 1 つ以上の loc が代入されているので nil ではない。
+            let bestVSLoc: NakamonMatchLocation = bestVSLocOpt!
 
             // --- 2. 全モンスターテンプレをロード + scene スケールにリサイズ + キャッシュ ---
             let scale = scene.size.width / 1080.0
@@ -550,8 +580,10 @@ struct CalibrationView: View {
     /// BASE テンプレ (1080-ref) を被探索 scene の横幅に合わせてリサイズする。
     /// matchTemplate は同一ピクセルスケール前提のため、低解像度端末 (例: iPhone SE 750w) では
     /// テンプレを縮小しないと VS/WIN/LOSE 等の大きめロゴが検出できない。
-    private func templateScaledToScene(_ image: UIImage, scene: UIImage) -> UIImage {
-        let scale = scene.size.width / 1080.0
+    /// microScale で base スケール (scene.width / 1080) にさらに係数をかけられる。
+    /// auto-cal で複数の倍率を試して最高スコアを取るために使う。
+    private func templateScaledToScene(_ image: UIImage, scene: UIImage, microScale: CGFloat = 1.0) -> UIImage {
+        let scale = (scene.size.width / 1080.0) * microScale
         let target = CGSize(width: image.size.width * scale,
                             height: image.size.height * scale)
         let format = UIGraphicsImageRendererFormat()
@@ -561,6 +593,12 @@ struct CalibrationView: View {
             image.draw(in: CGRect(origin: .zero, size: target))
         }
     }
+
+    /// auto-cal 用のマイクロスケール群。
+    /// ±10% (Android 標準) より広めの ±20% を採用し、iPhone SE3 等の
+    /// アスペクト比が他機種と大きく異なる端末でも適切な倍率を捕捉できるようにする。
+    /// 中央の 1.0 が含まれるため、Pixel 系・modern iPhone では従来同等のスコアになる。
+    private static let autoCalMicroScales: [CGFloat] = [0.85, 0.95, 1.0, 1.10, 1.20]
 
     private func handleAutoCalibrationResult(locations: [NakamonMatchLocation],
                                              scene: UIImage) {
