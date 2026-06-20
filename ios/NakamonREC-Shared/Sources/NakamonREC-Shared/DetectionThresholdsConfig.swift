@@ -13,8 +13,8 @@ public enum DetectionThresholdsConfig {
     private static let loseKey = "detectionThreshold.lose"
 
     public static let defaultVS: Double = 0.5
-    public static let defaultWin: Double = 0.4
-    public static let defaultLose: Double = 0.4
+    public static let defaultWin: Double = 0.5
+    public static let defaultLose: Double = 0.5
     public static let minimum: Double = 0.4
     public static let maximum: Double = 0.8
 
