@@ -1,106 +1,137 @@
 import SwiftUI
 import NakamonREC_Shared
 
-/// 詳細校正シート: VS画面校正の opt-in モード。
-/// 8 スロット (味方0..3, 敵0..3) それぞれに「ここに居るモンスター」を事前指定し、
-/// 1-vs-1 マッチで磁石テンプレ問題を回避する。
-/// 設定保存後にシートを閉じ、呼び出し元の CalibrationView 側で
-/// 「自動校正」ボタン押下時に詳細校正フローへ分岐する。
+/// 詳細校正パネル (CalibrationView 上に overlay で表示される)。
+/// - 4×2 グリッドで実際の VS 画面と同じ並びを表現:
+///   - 上段: 敵 0〜3 (slot index 4..7)
+///   - 下段: 味方 0〜3 (slot index 0..3)
+/// - 背景は半透明 → インポート済み VS スクショが透けて見えるので、画面に居る monster の
+///   位置を確認しながら指定できる
+/// - 各セルをタップでモンスターピッカー (サムネのみのグリッド) を開く
+/// - 全 8 スロット指定後、「校正開始」ボタンで即実行
 struct DetailCalibrationSheet: View {
-    @Binding var enabled: Bool
     @Binding var slotIds: [String?]
     let onChange: () -> Void
+    let onStart: () -> Void
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var pickerSlotIdx: Int? = nil
 
+    private var allAssigned: Bool { slotIds.allSatisfy { $0 != nil } }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Toggle("詳細校正モード", isOn: $enabled)
-                        .onChange(of: enabled) { _, _ in onChange() }
-                    Text("自動校正で精度が出ない場合に有効化します。\n8 スロットすべてに「そこに居るモンスター」を事前指定すると、1-vs-1 マッチで磁石テンプレ干渉を回避できます。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        ZStack {
+            // 半透明 → CalibrationView のインポート済みスクショが透けて見える
+            Color.black.opacity(0.35).ignoresSafeArea()
 
-                Section("スロット指定") {
-                    slotRow(index: 0, side: "味方 0")
-                    slotRow(index: 1, side: "味方 1")
-                    slotRow(index: 2, side: "味方 2")
-                    slotRow(index: 3, side: "味方 3")
-                    slotRow(index: 4, side: "敵 0")
-                    slotRow(index: 5, side: "敵 1")
-                    slotRow(index: 6, side: "敵 2")
-                    slotRow(index: 7, side: "敵 3")
-                }
-
-                Section {
-                    Button(role: .destructive) {
-                        slotIds = Array(repeating: nil, count: DetailCalibrationConfig.slotCount)
-                        onChange()
-                    } label: {
-                        Label("全スロット未指定に戻す", systemImage: "arrow.counterclockwise")
+            VStack(spacing: 10) {
+                // Top bar (戻る / タイトル / 校正開始)
+                HStack {
+                    Button("戻る") { onClose() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.gray)
+                    Spacer()
+                    Text("詳細校正の指定")
+                        .font(.headline.bold())
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button("校正開始") {
+                        onStart()
+                        onClose()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.recCoral)
+                    .disabled(!allAssigned)
                 }
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
 
-                if !DetailCalibrationConfig.allSlotsAssigned {
-                    Section {
-                        Label("8 スロットすべての指定が必要です", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .font(.caption)
-                    }
-                }
+                // 上下の Spacer で 8 体スロットを縦方向の中央に配置
+                Spacer()
+
+                Text("各スロットの「居るモンスター」を指定して校正開始を押してください。")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.black.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                // 上段: 敵 0〜3 (slot index 4..7)
+                slotRow(indices: 4...7, prefix: "敵")
+                // 下段: 味方 0〜3 (slot index 0..3)
+                slotRow(indices: 0...3, prefix: "自")
+
+                Spacer()
             }
-            .navigationTitle("詳細校正の設定")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("閉じる") { dismiss() }
-                }
-            }
-            .sheet(item: Binding(
-                get: { pickerSlotIdx.map(IdentifiableInt.init) },
-                set: { pickerSlotIdx = $0?.value })) { wrapper in
-                MonsterPickerSheet(currentId: slotIds[wrapper.value]) { picked in
-                    slotIds[wrapper.value] = picked
-                    onChange()
-                    pickerSlotIdx = nil
-                }
+            // 下に約 1 サムネ分のパディングを追加して 8 体グリッドを中央より上に寄せる
+            .padding(.bottom, 100)
+        }
+        .sheet(item: Binding(
+            get: { pickerSlotIdx.map(IdentifiableInt.init) },
+            set: { pickerSlotIdx = $0?.value })) { wrapper in
+            MonsterPickerGridSheet(currentId: slotIds[wrapper.value]) { picked in
+                slotIds[wrapper.value] = picked
+                onChange()
+                pickerSlotIdx = nil
             }
         }
     }
 
     @ViewBuilder
-    private func slotRow(index: Int, side: String) -> some View {
+    private func slotRow(indices: ClosedRange<Int>, prefix: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            ForEach(Array(indices), id: \.self) { idx in
+                let slotInRow = idx % 4
+                slotCell(slotIndex: idx, label: "\(prefix)\(slotInRow)")
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private func slotCell(slotIndex: Int, label: String) -> some View {
         Button {
-            pickerSlotIdx = index
+            pickerSlotIdx = slotIndex
         } label: {
-            HStack(spacing: 12) {
-                Text(side)
-                    .font(.callout.bold())
+            VStack(spacing: 2) {
+                Text(label)
+                    .font(.caption2.bold())
                     .foregroundStyle(.white)
-                    .frame(width: 60, alignment: .leading)
-                if let id = slotIds[index] {
-                    if let path = Bundle.main.path(forResource: id, ofType: "png", inDirectory: "templates"),
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(Color.black.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                ZStack {
+                    Color(white: 0.2)
+                    if let id = slotIds[slotIndex],
+                       let path = Bundle.main.path(forResource: id, ofType: "png", inDirectory: "templates"),
                        let img = UIImage(contentsOfFile: path) {
                         Image(uiImage: img)
                             .resizable()
-                            .frame(width: 40, height: 40)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: "questionmark")
+                            .font(.caption)
+                            .foregroundStyle(.gray)
                     }
-                    Text(MonsterCatalog.name(for: id))
-                        .foregroundStyle(.white)
-                } else {
-                    Text("未指定")
-                        .foregroundStyle(.orange)
-                        .italic()
                 }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.gray)
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(slotIds[slotIndex] == nil ? Color.orange : Color.recCoral,
+                                lineWidth: 1)
+                )
+                Text(slotIds[slotIndex].map(MonsterCatalog.name(for:)) ?? "未指定")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(Color.black.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -109,65 +140,66 @@ private struct IdentifiableInt: Identifiable {
     var id: Int { value }
 }
 
-/// シンプルなモンスター ID ピッカー。検索 + リストから選択。
-struct MonsterPickerSheet: View {
+/// 軽負荷モードと同じスタイルのモンスター選択 UI。
+/// サムネ 70pt + 名前付きの adaptive グリッド。タップで即選択 + 即閉じる
+/// (Android `showMonsterPickerForSlot` と同等の操作感)。
+struct MonsterPickerGridSheet: View {
     let currentId: String?
     let onPick: (String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var query: String = ""
 
-    private var filteredEntries: [MonsterEntry] {
-        if query.isEmpty { return MonsterCatalog.all }
-        return MonsterCatalog.all.filter { entry in
-            entry.name.localizedCaseInsensitiveContains(query) ||
-            entry.id.localizedCaseInsensitiveContains(query)
-        }
-    }
+    private let columns = [GridItem(.adaptive(minimum: 76), spacing: 8)]
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Button(role: .destructive) {
-                        onPick(nil)
-                    } label: {
-                        Label("選択をクリア", systemImage: "xmark.circle")
-                    }
-                }
-                Section("モンスター一覧") {
-                    ForEach(filteredEntries) { entry in
-                        Button {
-                            onPick(entry.id)
-                        } label: {
-                            HStack(spacing: 12) {
-                                if let path = Bundle.main.path(forResource: entry.id, ofType: "png", inDirectory: "templates"),
-                                   let img = UIImage(contentsOfFile: path) {
-                                    Image(uiImage: img)
-                                        .resizable()
-                                        .frame(width: 32, height: 32)
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                                }
-                                VStack(alignment: .leading) {
-                                    Text(entry.name).foregroundStyle(.white)
-                                    Text(entry.id).font(.caption2).foregroundStyle(.gray)
-                                }
-                                Spacer()
-                                if entry.id == currentId {
-                                    Image(systemName: "checkmark").foregroundStyle(Color.recCoral)
-                                }
-                            }
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(MonsterCatalog.all) { entry in
+                            cell(entry)
                         }
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
                 }
             }
-            .searchable(text: $query, prompt: "名前または ID で検索")
             .navigationTitle("モンスター選択")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("閉じる") { dismiss() }
+                    Button("戻る") { dismiss() }
                 }
+            }
+        }
+    }
+
+    private func cell(_ entry: MonsterEntry) -> some View {
+        let isOn = entry.id == currentId
+        return Button {
+            onPick(entry.id)
+        } label: {
+            VStack(spacing: 2) {
+                ZStack(alignment: .topTrailing) {
+                    MonsterThumb(name: entry.id, size: 70)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isOn ? Color.recCoral : Color.gray.opacity(0.3),
+                                        lineWidth: isOn ? 2 : 1)
+                        )
+                    if isOn {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color.recCoral, .white)
+                            .offset(x: 4, y: -4)
+                    }
+                }
+                Text(entry.name)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
     }

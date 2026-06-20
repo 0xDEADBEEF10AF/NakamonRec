@@ -1,26 +1,19 @@
 import Foundation
 
-/// 詳細校正の永続化設定。VS画面のカスタム auto-cal で「8 スロット各々のモンスター ID 指定」と
-/// 「詳細校正モード ON/OFF」を保存する。
+/// 詳細校正の永続化設定。VS画面のカスタム auto-cal で「8 スロット各々のモンスター ID 指定」を保存する。
 ///
 /// - スロット順: 味方 0..3, 敵 0..3 (battlePrepMonsterROIs と同じ順)
 /// - ID は MonsterCatalog の id 形式 (例 "id018")。nil は「未指定」
-/// - モードが OFF のとき、保存済 ID は残るが auto-cal は通常モードで動作する
+/// - 詳細校正は CalibrationView でユーザーがシートを開いて「校正開始」を押した時のみ実行されるため、
+///   ON/OFF のフラグは保持しない (Android のフロー同等)
 public enum DetailCalibrationConfig {
     private static let suiteName = "group.com.android.NakamonREC-iOS"
-    private static let modeKey = "detailCalibration.enabled"
     private static let slotsKey = "detailCalibration.slotIds"
 
     public static let slotCount = 8
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: suiteName)
-    }
-
-    /// 詳細校正モードが有効か (デフォルト false = 通常 auto-cal)
-    public static var isEnabled: Bool {
-        get { defaults?.bool(forKey: modeKey) ?? false }
-        set { defaults?.set(newValue, forKey: modeKey) }
     }
 
     /// 8 スロットの monster ID 配列 (nil = 未指定)

@@ -17,7 +17,6 @@ struct CalibrationView: View {
 
     // 詳細校正 (VS画面のみ): 8 スロットに事前にモンスター ID を指定し、1-vs-1 マッチで校正する
     @State private var showDetailCalSheet: Bool = false
-    @State private var detailCalEnabled: Bool = DetailCalibrationConfig.isEnabled
     @State private var detailCalSlotIds: [String?] = DetailCalibrationConfig.slotIds
 
     var body: some View {
@@ -87,18 +86,29 @@ struct CalibrationView: View {
         } message: {
             Text(statusMessage ?? "")
         }
-        .sheet(isPresented: $showDetailCalSheet) {
-            DetailCalibrationSheet(
-                enabled: $detailCalEnabled,
-                slotIds: $detailCalSlotIds,
-                onChange: persistDetailCalibration
-            )
+        .overlay {
+            if showDetailCalSheet {
+                DetailCalibrationSheet(
+                    slotIds: $detailCalSlotIds,
+                    onChange: { DetailCalibrationConfig.slotIds = detailCalSlotIds },
+                    onStart: triggerDetailCalibration,
+                    onClose: { showDetailCalSheet = false }
+                )
+                .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: showDetailCalSheet)
     }
 
-    private func persistDetailCalibration() {
-        DetailCalibrationConfig.isEnabled = detailCalEnabled
+    /// 詳細校正シートで「校正開始」が押された時に呼ばれる。シートは自動で閉じるので、
+    /// ここでは即座に runBattlePrepDetailCal を起動する。
+    private func triggerDetailCalibration() {
+        guard let scene = screenshotImage else {
+            statusMessage = "スクショが読み込めていません。"
+            return
+        }
         DetailCalibrationConfig.slotIds = detailCalSlotIds
+        runBattlePrepDetailCal(scene: scene)
     }
 
     // MARK: - Bottom bar
@@ -112,11 +122,9 @@ struct CalibrationView: View {
                 .buttonStyle(.bordered)
                 .tint(.gray)
             if screen == .battlePrep {
-                Button(detailCalEnabled ? "詳細校正 ON" : "詳細校正") {
-                    showDetailCalSheet = true
-                }
-                .buttonStyle(.bordered)
-                .tint(detailCalEnabled ? Color.recCoral : .gray)
+                Button("詳細校正") { showDetailCalSheet = true }
+                    .buttonStyle(.bordered)
+                    .tint(.gray)
             }
             Spacer()
             Button("戻る") { dismiss() }
@@ -336,16 +344,7 @@ struct CalibrationView: View {
         }
         switch screen {
         case .partySelect: runPartySelectAutoCal(scene: scene)
-        case .battlePrep:
-            if detailCalEnabled {
-                if DetailCalibrationConfig.allSlotsAssigned {
-                    runBattlePrepDetailCal(scene: scene)
-                } else {
-                    statusMessage = "詳細校正モードが ON ですが、8 スロットすべてのモンスターを指定していません。「詳細校正」ボタンを押してスロットを設定してください。"
-                }
-            } else {
-                runBattlePrepAutoCal(scene: scene)
-            }
+        case .battlePrep:  runBattlePrepAutoCal(scene: scene)
         case .win:         runResultAutoCal(scene: scene, kind: .win)
         case .lose:        runResultAutoCal(scene: scene, kind: .lose)
         }
