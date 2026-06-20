@@ -495,6 +495,45 @@ static cv::Mat gPreparedSceneMat;
     return [[NakamonMatchResult alloc] initWithScore:bestScore index:bestIdx];
 }
 
+#pragma mark - Detail calibration (1-vs-1 specific monster matching)
+
++ (NakamonMatchLocation *)findSpecificMonsterLocationInRegion:(UIImage *)scene
+                                                  templateImg:(UIImage *)templateImg
+                                                      centerX:(int)centerX
+                                                      centerY:(int)centerY
+                                                        width:(int)width
+                                                       height:(int)height {
+    cv::Mat sceneMat = [self cvMatFromUIImage:scene];
+    cv::Mat tplMat = [self cvMatFromUIImage:templateImg];
+    if (sceneMat.empty() || tplMat.empty()) {
+        return [[NakamonMatchLocation alloc] initWithCenterX:0 centerY:0 score:0];
+    }
+    int imgW = sceneMat.cols;
+    int imgH = sceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    sceneMat(roiRect).copyTo(workRoi);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    if (tplMat.cols > workRoi.cols || tplMat.rows > workRoi.rows) {
+        return [[NakamonMatchLocation alloc] initWithCenterX:0 centerY:0 score:0];
+    }
+    cv::Mat result;
+    cv::matchTemplate(workRoi, tplMat, result, cv::TM_CCOEFF_NORMED);
+    double maxVal = 0;
+    cv::Point maxLoc;
+    cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+
+    // ROI 内 left-top → scene 内中心座標
+    CGFloat sceneX = roiRect.x + maxLoc.x + tplMat.cols * 0.5;
+    CGFloat sceneY = roiRect.y + maxLoc.y + tplMat.rows * 0.5;
+    return [[NakamonMatchLocation alloc] initWithCenterX:sceneX centerY:sceneY score:maxVal];
+}
+
 #pragma mark - Prepared-scene fast path (Phase 2.1: per-frame Mat caching)
 
 + (void)prepareSceneMat:(UIImage *)scene {

@@ -15,6 +15,11 @@ struct CalibrationView: View {
     @State private var isAutoCalibrating: Bool = false
     @State private var statusMessage: String? = nil
 
+    // 詳細校正 (VS画面のみ): 8 スロットに事前にモンスター ID を指定し、1-vs-1 マッチで校正する
+    @State private var showDetailCalSheet: Bool = false
+    @State private var detailCalEnabled: Bool = DetailCalibrationConfig.isEnabled
+    @State private var detailCalSlotIds: [String?] = DetailCalibrationConfig.slotIds
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -82,6 +87,18 @@ struct CalibrationView: View {
         } message: {
             Text(statusMessage ?? "")
         }
+        .sheet(isPresented: $showDetailCalSheet) {
+            DetailCalibrationSheet(
+                enabled: $detailCalEnabled,
+                slotIds: $detailCalSlotIds,
+                onChange: persistDetailCalibration
+            )
+        }
+    }
+
+    private func persistDetailCalibration() {
+        DetailCalibrationConfig.isEnabled = detailCalEnabled
+        DetailCalibrationConfig.slotIds = detailCalSlotIds
     }
 
     // MARK: - Bottom bar
@@ -94,6 +111,13 @@ struct CalibrationView: View {
             Button("デフォルト") { resetToDefault() }
                 .buttonStyle(.bordered)
                 .tint(.gray)
+            if screen == .battlePrep {
+                Button(detailCalEnabled ? "詳細校正 ON" : "詳細校正") {
+                    showDetailCalSheet = true
+                }
+                .buttonStyle(.bordered)
+                .tint(detailCalEnabled ? Color.recCoral : .gray)
+            }
             Spacer()
             Button("戻る") { dismiss() }
                 .buttonStyle(.bordered)
@@ -312,7 +336,16 @@ struct CalibrationView: View {
         }
         switch screen {
         case .partySelect: runPartySelectAutoCal(scene: scene)
-        case .battlePrep:  runBattlePrepAutoCal(scene: scene)
+        case .battlePrep:
+            if detailCalEnabled {
+                if DetailCalibrationConfig.allSlotsAssigned {
+                    runBattlePrepDetailCal(scene: scene)
+                } else {
+                    statusMessage = "詳細校正モードが ON ですが、8 スロットすべてのモンスターを指定していません。「詳細校正」ボタンを押してスロットを設定してください。"
+                }
+            } else {
+                runBattlePrepAutoCal(scene: scene)
+            }
         case .win:         runResultAutoCal(scene: scene, kind: .win)
         case .lose:        runResultAutoCal(scene: scene, kind: .lose)
         }
@@ -579,6 +612,96 @@ struct CalibrationView: View {
 
     /// BASE テンプレ (1080-ref) を被探索 scene の横幅に合わせてリサイズする。
     /// matchTemplate は同一ピクセルスケール前提のため、低解像度端末 (例: iPhone SE 750w) では
+    /// 詳細校正用の自動校正フロー。
+    /// 1. VS 検出 (通常 auto-cal と同じくマルチスケール検索)
+    /// 2. 各スロットでユーザー指定モンスター 1 体を 1-vs-1 で検索 (findSpecificMonsterLocation)
+    /// 3. 磁石テンプレ干渉なしで真モンスター位置を確定し、ROI 中心を更新
+    private func runBattlePrepDetailCal(scene: UIImage) {
+        guard let vsFM = loadTemplate("VS_FM") else {
+            statusMessage = "BASE VS_FM テンプレが見つかりません。"
+            return
+        }
+        let vsMG = loadTemplate("VS_MG")
+        let slotIds = DetailCalibrationConfig.slotIds
+        // モンスターテンプレ事前ロード (8 スロットぶん、id→UIImage 辞書)
+        var monsterImages: [String: UIImage] = [:]
+        for case let id? in slotIds {
+            if monsterImages[id] == nil,
+               let path = Bundle.main.path(forResource: id, ofType: "png", inDirectory: "templates"),
+               let img = UIImage(contentsOfFile: path) {
+                monsterImages[id] = img
+            }
+        }
+
+        isAutoCalibrating = true
+        CustomTemplateStore.remove(.vs)
+        hasCustomTemplate = false
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // --- 1. VS 検出 (マルチスケール) ---
+            var bestVSLocOpt: NakamonMatchLocation? = nil
+            for ms in Self.autoCalMicroScales {
+                let vsFMScaled = self.templateScaledToScene(vsFM, scene: scene, microScale: ms)
+                let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFMScaled)
+                if bestVSLocOpt == nil || locFM.score > bestVSLocOpt!.score {
+                    bestVSLocOpt = locFM
+                }
+                if let vsMG = vsMG {
+                    let vsMGScaled = self.templateScaledToScene(vsMG, scene: scene, microScale: ms)
+                    let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMGScaled)
+                    if bestVSLocOpt == nil || locMG.score > bestVSLocOpt!.score {
+                        bestVSLocOpt = locMG
+                    }
+                }
+            }
+            let bestVSLoc = bestVSLocOpt!
+
+            // --- 2. 各スロットを 1-vs-1 で検索 ---
+            // 探索範囲は通常 auto-cal と同じ (X ±100, Y ±350 ぶん) — 詳細校正でも広めに取る
+            let slotSearchW = 200.0 / 1080.0
+            let slotSearchH = 700.0 / 2364.0
+            let sceneW = scene.size.width
+            let sceneH = scene.size.height
+            // テンプレも各スロットでマルチスケール探索
+            var slotResults: [(ratioX: Double, ratioY: Double, score: Double, id: String)] = []
+            for (slotIdx, defROI) in CalibrationDefaults.battlePrepMonsterROIs.enumerated() {
+                guard let monsterId = slotIds[slotIdx],
+                      let baseTpl = monsterImages[monsterId] else {
+                    slotResults.append((defROI.centerXRatio, defROI.centerYRatio, 0, "?"))
+                    continue
+                }
+                let cx = Int32(sceneW * defROI.centerXRatio)
+                let cy = Int32(sceneH * defROI.centerYRatio)
+                let w = Int32(sceneW * slotSearchW)
+                let h = Int32(sceneH * slotSearchH)
+                // マルチスケールで最良位置
+                var bestLoc: NakamonMatchLocation? = nil
+                for ms in Self.autoCalMicroScales {
+                    let scaledTpl = self.templateScaledToScene(baseTpl, scene: scene, microScale: ms)
+                    let loc = NakamonWrapper.findSpecificMonsterLocation(
+                        inRegion: scene,
+                        templateImg: scaledTpl,
+                        centerX: cx, centerY: cy,
+                        width: w, height: h
+                    )
+                    if bestLoc == nil || loc.score > bestLoc!.score {
+                        bestLoc = loc
+                    }
+                }
+                let loc = bestLoc!
+                let rx = Double(loc.centerX) / Double(sceneW)
+                let ry = Double(loc.centerY) / Double(sceneH)
+                slotResults.append((rx, ry, loc.score, monsterId))
+            }
+
+            DispatchQueue.main.async {
+                handleBattlePrepAutoCalResult(vsLocation: bestVSLoc,
+                                              slotResults: slotResults,
+                                              scene: scene)
+            }
+        }
+    }
+
     /// テンプレを縮小しないと VS/WIN/LOSE 等の大きめロゴが検出できない。
     /// microScale で base スケール (scene.width / 1080) にさらに係数をかけられる。
     /// auto-cal で複数の倍率を試して最高スコアを取るために使う。

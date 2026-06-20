@@ -147,6 +147,20 @@ NS_ASSUME_NONNULL_BEGIN
                                            height:(int)height;
 
 /**
+ * 詳細校正用: 指定された 1 つのモンスターテンプレを使い、ROI 内の最良位置を返す。
+ * 全 127 体走査ではなく単一テンプレ走査なので、磁石テンプレ (低スコアでもピークが出やすい
+ * テンプレ群) の false positive を回避できる。事前にユーザーが「このスロットにはこのモンスター」
+ * を指定する詳細校正フロー専用。返り値の center は scene のピクセル座標。
+ */
++ (NakamonMatchLocation *)findSpecificMonsterLocationInRegion:(UIImage *)scene
+                                                  templateImg:(UIImage *)templateImg
+                                                      centerX:(int)centerX
+                                                      centerY:(int)centerY
+                                                        width:(int)width
+                                                       height:(int)height
+NS_SWIFT_NAME(findSpecificMonsterLocation(inRegion:templateImg:centerX:centerY:width:height:));
+
+/**
  * 1 フレームを cv::Mat に 1 回だけ変換してプロセス内にキャッシュする。
  * 連続して同一 scene に対して複数 ROI を評価する performDeepAnalysis のホットパスで
  * UIImage→cv::Mat 変換コストを削減するために使う。
