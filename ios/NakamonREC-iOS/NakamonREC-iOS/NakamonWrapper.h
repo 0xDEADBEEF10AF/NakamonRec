@@ -54,8 +54,18 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * モンスターテンプレートを cv::Mat に変換してプロセス内キャッシュに保持する。
  * 初期化 (calibrate) 直後に 1 回だけ呼ぶことで、以降のマッチ呼び出しで再変換を不要にする。
+ * 1 monster あたり 1 バリアント (単一スケール) として格納される。
  */
 + (void)cacheMonsterTemplates:(NSArray<UIImage *> *)templates;
+
+/**
+ * モンスターテンプレートを「monster ごとの複数バリアント (マルチスケール) 」としてキャッシュする。
+ * - 外側配列: monster (1 entry per monster)
+ * - 内側配列: その monster のスケールバリアント (例: 0.85x / 0.95x / 1.0x / 1.10x / 1.20x)
+ * ランタイムマッチングで monster ごとに全バリアントを試し、最高スコアを採用する。
+ * iPhone SE3 等、UI 描画サイズが他機種と乖離する端末でも適切な倍率を捕捉できるようにするのが目的。
+ */
++ (void)cacheMonsterTemplatesGrouped:(NSArray<NSArray<UIImage *> *> *)templateGroups;
 
 /**
  * cacheMonsterTemplates: で保持されたキャッシュを使ってマッチングを行う。
@@ -135,6 +145,43 @@ NS_ASSUME_NONNULL_BEGIN
                                           centerY:(int)centerY
                                             width:(int)width
                                            height:(int)height;
+
+/**
+ * 1 フレームを cv::Mat に 1 回だけ変換してプロセス内にキャッシュする。
+ * 連続して同一 scene に対して複数 ROI を評価する performDeepAnalysis のホットパスで
+ * UIImage→cv::Mat 変換コストを削減するために使う。
+ * 次の prepareSceneMat: 呼び出しか clearPreparedSceneMat で上書き/解放される。
+ */
++ (void)prepareSceneMat:(UIImage *)scene;
+
+/** prepareSceneMat: で保持された cv::Mat を解放する。フレーム解析完了時に呼ぶ。 */
++ (void)clearPreparedSceneMat;
+
+/**
+ * prepareSceneMat: で準備済の scene Mat を使い、bestMonsterInRegion と同等の処理を行う。
+ * UIImage→Mat 変換が省ける分だけ高速。事前に必ず prepareSceneMat: を呼ぶこと。
+ */
++ (NakamonMatchResult *)bestMonsterInPreparedSceneCenterX:(int)centerX
+                                                   centerY:(int)centerY
+                                                     width:(int)width
+                                                    height:(int)height
+NS_SWIFT_NAME(bestMonsterInPreparedScene(centerX:centerY:width:height:));
+
+/** prepareSceneMat: 済の scene を使う bestMonsterInRegion:templateIndices: 相当。 */
++ (NakamonMatchResult *)bestMonsterInPreparedSceneCenterX:(int)centerX
+                                                   centerY:(int)centerY
+                                                     width:(int)width
+                                                    height:(int)height
+                                           templateIndices:(NSArray<NSNumber *> *)indices
+NS_SWIFT_NAME(bestMonsterInPreparedScene(centerX:centerY:width:height:templateIndices:));
+
+/** prepareSceneMat: 済の scene を使う topKMonstersInRegion 相当。 */
++ (NSArray<NakamonMatchResult *> *)topKMonstersInPreparedSceneCenterX:(int)centerX
+                                                               centerY:(int)centerY
+                                                                 width:(int)width
+                                                                height:(int)height
+                                                                  topK:(int)topK
+NS_SWIFT_NAME(topKMonstersInPreparedScene(centerX:centerY:width:height:topK:));
 
 /**
  * 指定領域でキャッシュ済テンプレすべてを照合し、スコア降順で上位 topK 件を返す。

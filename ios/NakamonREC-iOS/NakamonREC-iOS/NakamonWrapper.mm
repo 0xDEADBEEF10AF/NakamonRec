@@ -45,9 +45,18 @@
 
 @implementation NakamonWrapper
 
-// プロセス内モンスターテンプレキャッシュ。
-// Extension 起動から終了までの間、calibrate 後に 1 回 populate される。
-static std::vector<cv::Mat> gCachedMonsterTemplates;
+// プロセス内モンスターテンプレキャッシュ (グループ構造)。
+// 各 monster ごとに複数スケール (micro-scale) のバリアントを持つ:
+//   gCachedMonsterTemplateGroups[m] = monster m のスケールバリアント配列
+// 単一スケールのレガシー cacheMonsterTemplates: は 1 要素のグループとして格納する。
+// runtime matching では monster 単位で全バリアントを試して最高スコアを採用する。
+static std::vector<std::vector<cv::Mat>> gCachedMonsterTemplateGroups;
+
+// 1 フレームを cv::Mat 化した結果のプロセス内キャッシュ。
+// performDeepAnalysis で 1 フレームに対し 8 スロット分の matching を回すホットパスで
+// 同じ UIImage を毎呼び出し変換していたコスト (~3MB ピクセルコピー × 8 = 24MB/フレーム)
+// を 3MB/フレームに削減する。prepareSceneMat: で更新、clearPreparedSceneMat で解放。
+static cv::Mat gPreparedSceneMat;
 
 /**
  * UIImage を cv::Mat (RGB) に変換するヘルパー
@@ -112,21 +121,50 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
 }
 
 + (void)cacheMonsterTemplates:(NSArray<UIImage *> *)templates {
-    gCachedMonsterTemplates.clear();
-    gCachedMonsterTemplates.reserve(templates.count);
+    // レガシー: 1 monster あたり 1 バリアントとしてグループ化して格納する
+    gCachedMonsterTemplateGroups.clear();
+    gCachedMonsterTemplateGroups.reserve(templates.count);
     for (UIImage *img in templates) {
-        gCachedMonsterTemplates.push_back([self cvMatFromUIImage:img]);
+        std::vector<cv::Mat> group;
+        group.push_back([self cvMatFromUIImage:img]);
+        gCachedMonsterTemplateGroups.push_back(std::move(group));
+    }
+}
+
++ (void)cacheMonsterTemplatesGrouped:(NSArray<NSArray<UIImage *> *> *)templateGroups {
+    // monster ごとに複数スケールバリアントをキャッシュ。
+    // ランタイムの runtime monster matching が SE3 等の機種で適切な倍率を捕捉できるようにする。
+    gCachedMonsterTemplateGroups.clear();
+    gCachedMonsterTemplateGroups.reserve(templateGroups.count);
+    for (NSArray<UIImage *> *group in templateGroups) {
+        std::vector<cv::Mat> mats;
+        mats.reserve(group.count);
+        for (UIImage *img in group) {
+            mats.push_back([self cvMatFromUIImage:img]);
+        }
+        gCachedMonsterTemplateGroups.push_back(std::move(mats));
     }
 }
 
 + (double)findBestMonsterMatchUsingCache:(UIImage *)roi {
-    if (gCachedMonsterTemplates.empty()) {
+    if (gCachedMonsterTemplateGroups.empty()) {
         return 0.0;
     }
     cv::Mat roiMat = [self cvMatFromUIImage:roi];
     Nakamon::NakamonAnalyzerCore::normalizeImage(roiMat);
-    Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(roiMat, gCachedMonsterTemplates);
-    return res.score;
+    // 全 monster × 全バリアントで最高スコアを取る
+    double bestScore = 0.0;
+    for (const auto& group : gCachedMonsterTemplateGroups) {
+        for (const auto& tpl : group) {
+            if (tpl.cols > roiMat.cols || tpl.rows > roiMat.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(roiMat, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > bestScore) bestScore = maxVal;
+        }
+    }
+    return bestScore;
 }
 
 + (double)findBestMonsterMatchInRegion:(UIImage *)scene
@@ -269,7 +307,7 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                           centerY:(int)centerY
                                             width:(int)width
                                            height:(int)height {
-    if (gCachedMonsterTemplates.empty()) {
+    if (gCachedMonsterTemplateGroups.empty()) {
         return [[NakamonSlotMatch alloc] initWithCenterX:0 centerY:0 score:0 index:-1];
     }
     cv::Mat sceneMat = [self cvMatFromUIImage:scene];
@@ -288,20 +326,22 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
     int bestIdx = -1;
     cv::Point bestLoc(0, 0);
     int bestTplW = 0, bestTplH = 0;
-    for (size_t i = 0; i < gCachedMonsterTemplates.size(); ++i) {
-        const auto& tpl = gCachedMonsterTemplates[i];
-        if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
-        cv::Mat result;
-        cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
-        double maxVal = 0;
-        cv::Point maxLoc;
-        cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
-        if (maxVal > bestScore) {
-            bestScore = maxVal;
-            bestIdx = (int)i;
-            bestLoc = maxLoc;
-            bestTplW = tpl.cols;
-            bestTplH = tpl.rows;
+    for (size_t m = 0; m < gCachedMonsterTemplateGroups.size(); ++m) {
+        const auto& group = gCachedMonsterTemplateGroups[m];
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal = 0;
+            cv::Point maxLoc;
+            cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+            if (maxVal > bestScore) {
+                bestScore = maxVal;
+                bestIdx = (int)m;  // monster index (not variant index)
+                bestLoc = maxLoc;
+                bestTplW = tpl.cols;
+                bestTplH = tpl.rows;
+            }
         }
     }
     // ROI 内 left-top → scene 内 center に変換
@@ -319,7 +359,7 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                                   width:(int)width
                                                  height:(int)height
                                                    topK:(int)topK {
-    if (gCachedMonsterTemplates.empty() || topK <= 0) {
+    if (gCachedMonsterTemplateGroups.empty() || topK <= 0) {
         return @[];
     }
     cv::Mat sceneMat = [self cvMatFromUIImage:scene];
@@ -334,16 +374,23 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
     sceneMat(roiRect).copyTo(workRoi);
     Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
 
+    // monster ごとに全バリアントを試し、その monster のベストスコアを記録
     std::vector<std::pair<double, int>> scored;
-    scored.reserve(gCachedMonsterTemplates.size());
-    for (size_t i = 0; i < gCachedMonsterTemplates.size(); ++i) {
-        const auto& tpl = gCachedMonsterTemplates[i];
-        if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
-        cv::Mat result;
-        cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
-        double maxVal;
-        cv::minMaxLoc(result, nullptr, &maxVal);
-        scored.emplace_back(maxVal, (int)i);
+    scored.reserve(gCachedMonsterTemplateGroups.size());
+    for (size_t m = 0; m < gCachedMonsterTemplateGroups.size(); ++m) {
+        const auto& group = gCachedMonsterTemplateGroups[m];
+        double monsterBest = -1.0;
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > monsterBest) monsterBest = maxVal;
+        }
+        if (monsterBest >= 0.0) {
+            scored.emplace_back(monsterBest, (int)m);
+        }
     }
     int k = std::min(topK, (int)scored.size());
     if (k <= 0) return @[];
@@ -364,7 +411,7 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                       width:(int)width
                                      height:(int)height
                             templateIndices:(NSArray<NSNumber *> *)indices {
-    if (gCachedMonsterTemplates.empty() || indices.count == 0) {
+    if (gCachedMonsterTemplateGroups.empty() || indices.count == 0) {
         return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
     }
     cv::Mat sceneMat = [self cvMatFromUIImage:scene];
@@ -381,18 +428,21 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
 
     double bestScore = -1.0;
     int bestIdx = -1;
+    // indices は monster index (group index) を指す。各 monster の全バリアントを試す。
     for (NSNumber *num in indices) {
-        int i = num.intValue;
-        if (i < 0 || i >= (int)gCachedMonsterTemplates.size()) continue;
-        const auto& tpl = gCachedMonsterTemplates[i];
-        if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
-        cv::Mat result;
-        cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
-        double maxVal;
-        cv::minMaxLoc(result, nullptr, &maxVal);
-        if (maxVal > bestScore) {
-            bestScore = maxVal;
-            bestIdx = i;
+        int m = num.intValue;
+        if (m < 0 || m >= (int)gCachedMonsterTemplateGroups.size()) continue;
+        const auto& group = gCachedMonsterTemplateGroups[m];
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > bestScore) {
+                bestScore = maxVal;
+                bestIdx = m;
+            }
         }
     }
     return [[NakamonMatchResult alloc] initWithScore:bestScore index:bestIdx];
@@ -404,7 +454,7 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
                                               width:(int)width
                                              height:(int)height
                                            savePath:(NSString *)savePath {
-    if (gCachedMonsterTemplates.empty()) {
+    if (gCachedMonsterTemplateGroups.empty()) {
         return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
     }
 
@@ -425,8 +475,161 @@ static std::vector<cv::Mat> gCachedMonsterTemplates;
     }
 
     Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
-    Nakamon::MatchResult res = Nakamon::NakamonAnalyzerCore::findBestMatchWithScales(workRoi, gCachedMonsterTemplates);
-    return [[NakamonMatchResult alloc] initWithScore:res.score index:res.bestScaleIndex];
+    // monster ごとに全バリアントを試し、最高スコアの monster index を返す
+    double bestScore = -1.0;
+    int bestIdx = -1;
+    for (size_t m = 0; m < gCachedMonsterTemplateGroups.size(); ++m) {
+        const auto& group = gCachedMonsterTemplateGroups[m];
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > bestScore) {
+                bestScore = maxVal;
+                bestIdx = (int)m;
+            }
+        }
+    }
+    return [[NakamonMatchResult alloc] initWithScore:bestScore index:bestIdx];
+}
+
+#pragma mark - Prepared-scene fast path (Phase 2.1: per-frame Mat caching)
+
++ (void)prepareSceneMat:(UIImage *)scene {
+    gPreparedSceneMat = [self cvMatFromUIImage:scene];
+}
+
++ (void)clearPreparedSceneMat {
+    gPreparedSceneMat.release();
+}
+
+/**
+ * gPreparedSceneMat を使って ROI 内の monster matching を行う共通ロジック。
+ * indices が nil の場合は全 monster を走査、そうでない場合は指定 monster indices のみ走査。
+ */
++ (NakamonMatchResult *)_bestMonsterInPreparedRoiAtCenterX:(int)centerX
+                                                     centerY:(int)centerY
+                                                       width:(int)width
+                                                      height:(int)height
+                                              templateIndices:(NSArray<NSNumber *> *)indices {
+    if (gCachedMonsterTemplateGroups.empty() || gPreparedSceneMat.empty()) {
+        return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
+    }
+    int imgW = gPreparedSceneMat.cols;
+    int imgH = gPreparedSceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    gPreparedSceneMat(roiRect).copyTo(workRoi);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    double bestScore = -1.0;
+    int bestIdx = -1;
+    // 指定インデックス集合を作る (indices == nil の場合は全 monster)
+    std::vector<int> monsterIdxToEval;
+    if (indices == nil) {
+        monsterIdxToEval.reserve(gCachedMonsterTemplateGroups.size());
+        for (int m = 0; m < (int)gCachedMonsterTemplateGroups.size(); ++m) {
+            monsterIdxToEval.push_back(m);
+        }
+    } else {
+        monsterIdxToEval.reserve(indices.count);
+        for (NSNumber *num in indices) monsterIdxToEval.push_back(num.intValue);
+    }
+    for (int monsterIdx : monsterIdxToEval) {
+        if (monsterIdx < 0 || monsterIdx >= (int)gCachedMonsterTemplateGroups.size()) continue;
+        const auto& group = gCachedMonsterTemplateGroups[monsterIdx];
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > bestScore) {
+                bestScore = maxVal;
+                bestIdx = monsterIdx;
+            }
+        }
+    }
+    return [[NakamonMatchResult alloc] initWithScore:bestScore index:bestIdx];
+}
+
++ (NakamonMatchResult *)bestMonsterInPreparedSceneCenterX:(int)centerX
+                                                   centerY:(int)centerY
+                                                     width:(int)width
+                                                    height:(int)height {
+    return [self _bestMonsterInPreparedRoiAtCenterX:centerX
+                                            centerY:centerY
+                                              width:width
+                                             height:height
+                                    templateIndices:nil];
+}
+
++ (NakamonMatchResult *)bestMonsterInPreparedSceneCenterX:(int)centerX
+                                                   centerY:(int)centerY
+                                                     width:(int)width
+                                                    height:(int)height
+                                           templateIndices:(NSArray<NSNumber *> *)indices {
+    if (indices == nil || indices.count == 0) {
+        return [[NakamonMatchResult alloc] initWithScore:0.0 index:-1];
+    }
+    return [self _bestMonsterInPreparedRoiAtCenterX:centerX
+                                            centerY:centerY
+                                              width:width
+                                             height:height
+                                    templateIndices:indices];
+}
+
++ (NSArray<NakamonMatchResult *> *)topKMonstersInPreparedSceneCenterX:(int)centerX
+                                                               centerY:(int)centerY
+                                                                 width:(int)width
+                                                                height:(int)height
+                                                                  topK:(int)topK {
+    if (gCachedMonsterTemplateGroups.empty() || gPreparedSceneMat.empty() || topK <= 0) {
+        return @[];
+    }
+    int imgW = gPreparedSceneMat.cols;
+    int imgH = gPreparedSceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    gPreparedSceneMat(roiRect).copyTo(workRoi);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    std::vector<std::pair<double, int>> scored;
+    scored.reserve(gCachedMonsterTemplateGroups.size());
+    for (size_t m = 0; m < gCachedMonsterTemplateGroups.size(); ++m) {
+        const auto& group = gCachedMonsterTemplateGroups[m];
+        double monsterBest = -1.0;
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > monsterBest) monsterBest = maxVal;
+        }
+        if (monsterBest >= 0.0) scored.emplace_back(monsterBest, (int)m);
+    }
+    int k = std::min(topK, (int)scored.size());
+    if (k <= 0) return @[];
+    std::partial_sort(scored.begin(), scored.begin() + k, scored.end(),
+                      [](const std::pair<double,int>& a,
+                         const std::pair<double,int>& b) { return a.first > b.first; });
+    NSMutableArray<NakamonMatchResult *> *results = [NSMutableArray arrayWithCapacity:k];
+    for (int i = 0; i < k; i++) {
+        [results addObject:[[NakamonMatchResult alloc] initWithScore:scored[i].first
+                                                                index:scored[i].second]];
+    }
+    return results;
 }
 
 @end

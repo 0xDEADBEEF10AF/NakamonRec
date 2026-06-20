@@ -180,6 +180,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         monsterTemplates = monsterTemplates.map { resizeImage($0, scale: scale) }
 
         // C++ 側にもモンスターテンプレを cv::Mat で 1 回だけ変換してキャッシュ
+        // (Android と統一: runtime は単一スケール。SE3 のような特殊端末は将来 TODO ③ の詳細校正で個別救済)
         NakamonWrapper.cacheMonsterTemplates(monsterTemplates)
         BattleLogger.append("モンスターテンプレ cv::Mat キャッシュ完了")
     }
@@ -420,6 +421,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 let frame = frames.removeFirst()
                 let w = frame.size.width
                 let h = frame.size.height
+                // Phase 2.1: UIImage → cv::Mat 変換を 1 フレーム = 1 回に集約
+                // (8 スロット × 5 フレーム = 40 回 → 5 回。Android 同等にする)
+                NakamonWrapper.prepareSceneMat(frame)
                 for (slotIdx, roi) in slotROIs.enumerated() {
                     let cx = Int32(w * roi.centerXRatio)
                     let cy = Int32(h * roi.centerYRatio)
@@ -430,12 +434,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                     let bestIndex: Int
                     if isFirstFrame {
                         // Frame 1: 全テンプレ走査 + Top-K キャッシュ
-                        let topResults = NakamonWrapper.topKMonsters(inRegion: frame,
-                                                                      centerX: cx,
-                                                                      centerY: cy,
-                                                                      width: rw,
-                                                                      height: rh,
-                                                                      topK: topK)
+                        let topResults = NakamonWrapper.topKMonstersInPreparedScene(centerX: cx,
+                                                                                     centerY: cy,
+                                                                                     width: rw,
+                                                                                     height: rh,
+                                                                                     topK: topK)
                         if let first = topResults.first {
                             bestScore = first.score
                             bestIndex = first.index
@@ -449,21 +452,19 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                         }
                     } else if slotFallback[slotIdx] {
                         // フォールバック: Frame 1 で max < 0.5 のスロットは全テンプレ走査を継続
-                        let r = NakamonWrapper.bestMonster(inRegion: frame,
-                                                           centerX: cx,
-                                                           centerY: cy,
-                                                           width: rw,
-                                                           height: rh)
+                        let r = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
+                                                                           centerY: cy,
+                                                                           width: rw,
+                                                                           height: rh)
                         bestScore = r.score
                         bestIndex = r.index
                     } else {
                         // Top-K サブセットのみ評価
-                        let r = NakamonWrapper.bestMonster(inRegion: frame,
-                                                           centerX: cx,
-                                                           centerY: cy,
-                                                           width: rw,
-                                                           height: rh,
-                                                           templateIndices: slotTopKIndices[slotIdx])
+                        let r = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
+                                                                           centerY: cy,
+                                                                           width: rw,
+                                                                           height: rh,
+                                                                           templateIndices: slotTopKIndices[slotIdx])
                         bestScore = r.score
                         bestIndex = r.index
                     }
@@ -484,6 +485,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 isFirstFrame = false
             }
         }
+        // Phase 2.1: scene Mat キャッシュを解放 (Broadcast Extension 50MB 制限への配慮)
+        NakamonWrapper.clearPreparedSceneMat()
 
         let elapsed = Date().timeIntervalSince(startedAt)
         logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s")
