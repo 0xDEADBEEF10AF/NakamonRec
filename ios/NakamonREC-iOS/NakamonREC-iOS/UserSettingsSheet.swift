@@ -123,7 +123,7 @@ extension CalibrationScreen {
     var title: String {
         switch self {
         case .partySelect: return "パーティ選択画面"
-        case .battlePrep:  return "対戦じゅんび画面"
+        case .battlePrep:  return "VS画面"
         case .win:         return "勝利画面"
         case .lose:        return "ざんねん画面"
         }

@@ -172,6 +172,13 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         let scale = frameWidth / templateReferenceWidth
         logger.log("Calibrating templates: frameWidth=\(Int(frameWidth)), scale=\(scale, format: .fixed(precision: 3))")
         BattleLogger.append(String(format: "校正完了 frame幅=%d scale=%.3f", Int(frameWidth), scale))
+        // ユーザーがカスタム閾値を設定している場合は記録 (サポート時の切り分け補助)
+        if DetectionThresholdsConfig.isCustomized {
+            BattleLogger.append(String(format: "⚙ カスタム閾値適用 VS=%.2f WIN=%.2f LOSE=%.2f",
+                                       DetectionThresholdsConfig.vsThreshold,
+                                       DetectionThresholdsConfig.winThreshold,
+                                       DetectionThresholdsConfig.loseThreshold))
+        }
 
         vsLogos = vsLogos.map { resizeImage($0, scale: scale) }
         winLogo = winLogo.map { resizeImage($0, scale: scale) }
@@ -330,8 +337,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                               horizontalMargin: hMargin)
             if s > score { score = s; bestVS = vs }
         }
-        // VS は画面遷移途中などで誤検知しやすいので WIN/LOSE より厳しめ
-        if score > 0.5 {
+        // VS 検知閾値はユーザー可変 (DetectionThresholdsConfig, デフォルト 0.5、範囲 0.4〜0.8)
+        if score > DetectionThresholdsConfig.vsThreshold {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             BattleLogger.rotate()
             if lastDetectedPartyIndex >= 0 {
@@ -566,7 +573,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                   centerY: cy,
                                                   verticalMargin: vMargin,
                                                   horizontalMargin: hMargin)
-            if score > 0.4 {
+            if score > DetectionThresholdsConfig.winThreshold {
                 logger.log("🏆 Battle Won! (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "🏆 勝利検知 Score %.3f", score))
                 isBattleInProgress = false
@@ -589,7 +596,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                   centerY: cy,
                                                   verticalMargin: vMargin,
                                                   horizontalMargin: hMargin)
-            if score > 0.4 {
+            if score > DetectionThresholdsConfig.loseThreshold {
                 logger.log("💀 Battle Lost... (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "💀 敗北検知 Score %.3f", score))
                 isBattleInProgress = false

@@ -422,6 +422,12 @@ private struct DebugMenuView: View {
                         Label("アプリのアップデートを確認", systemImage: "arrow.triangle.2.circlepath")
                             .foregroundStyle(.white)
                     }
+
+                    NavigationLink {
+                        ThresholdAdjustView()
+                    } label: {
+                        Label("マッチング閾値を調整", systemImage: "slider.horizontal.3")
+                    }
                 }
             }
             .navigationTitle("デバッグメニュー")
@@ -433,6 +439,72 @@ private struct DebugMenuView: View {
             }
         }
     }
+}
+
+// MARK: - Detection threshold adjustment UI
+
+private struct ThresholdAdjustView: View {
+    @State private var vsValue: Double = DetectionThresholdsConfig.vsThreshold
+    @State private var winValue: Double = DetectionThresholdsConfig.winThreshold
+    @State private var loseValue: Double = DetectionThresholdsConfig.loseThreshold
+    @Environment(\.dismiss) private var dismiss
+
+    private let range: ClosedRange<Double> = DetectionThresholdsConfig.minimum...DetectionThresholdsConfig.maximum
+    private let step: Double = 0.05
+
+    var body: some View {
+        Form {
+            Section {
+                Text("VS / WIN / LOSE 検知の閾値を調整します (\(format(DetectionThresholdsConfig.minimum)) 〜 \(format(DetectionThresholdsConfig.maximum)))。\n値を上げると誤検知が減りますが、本来の検知も逃しやすくなります。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            thresholdRow(label: "VS 検知", value: $vsValue, default: DetectionThresholdsConfig.defaultVS)
+            thresholdRow(label: "WIN 検知", value: $winValue, default: DetectionThresholdsConfig.defaultWin)
+            thresholdRow(label: "LOSE 検知", value: $loseValue, default: DetectionThresholdsConfig.defaultLose)
+
+            Section {
+                Button("デフォルトに戻す") {
+                    vsValue = DetectionThresholdsConfig.defaultVS
+                    winValue = DetectionThresholdsConfig.defaultWin
+                    loseValue = DetectionThresholdsConfig.defaultLose
+                }
+                .foregroundStyle(.orange)
+            }
+        }
+        .navigationTitle("マッチング閾値を調整")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("保存") {
+                    DetectionThresholdsConfig.vsThreshold = vsValue
+                    DetectionThresholdsConfig.winThreshold = winValue
+                    DetectionThresholdsConfig.loseThreshold = loseValue
+                    dismiss()
+                }
+                .bold()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func thresholdRow(label: String, value: Binding<Double>, default defaultValue: Double) -> some View {
+        Section {
+            HStack {
+                Text(label).bold()
+                Spacer()
+                Text(format(value.wrappedValue))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
+            Slider(value: value, in: range, step: step)
+            Text("デフォルト: \(format(defaultValue))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func format(_ v: Double) -> String { String(format: "%.2f", v) }
 }
 
 #Preview {

@@ -20,19 +20,21 @@ struct MatchingScoreDetailView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 16) {
-                        if !isCurrentSnapshot {
-                            pastRecordNotice
-                        }
-                        partySection
+                VStack(spacing: 8) {
+                    if !isCurrentSnapshot {
+                        pastRecordNotice
+                    }
+                    partySection
+                    // VS と勝敗は横並びにして 1 画面に収める
+                    HStack(spacing: 8) {
                         vsSection
-                        monstersSection
                         resultSection
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 16)
+                    monstersSection
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
             .navigationTitle("マッチングスコア詳細")
             .navigationBarTitleDisplayMode(.inline)
@@ -68,20 +70,20 @@ struct MatchingScoreDetailView: View {
     private var partySection: some View {
         sectionCard(title: "パーティ選択") {
             let scores = record.partySelectScores ?? []
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: 8) {
                 ForEach(0..<3, id: \.self) { i in
-                    VStack(spacing: 6) {
+                    VStack(spacing: 3) {
                         Text("P\(i + 1)")
-                            .font(.caption.bold())
+                            .font(.caption2.bold())
                             .foregroundStyle(i == record.partyIndex ? Color.recCoral : .white)
-                        snapshotImage(forFile: "p\(i).png", height: 90)
+                        snapshotImage(forFile: "p\(i).png", height: 56)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(i == record.partyIndex ? Color.recCoral : Color.gray.opacity(0.3),
                                             lineWidth: i == record.partyIndex ? 2 : 1)
                             )
                         Text(scoreString(scores[safe: i]))
-                            .font(.caption2.monospacedDigit())
+                            .font(.system(size: 9).monospacedDigit())
                             .foregroundStyle(.gray)
                     }
                     .frame(maxWidth: .infinity)
@@ -91,33 +93,26 @@ struct MatchingScoreDetailView: View {
     }
 
     private var vsSection: some View {
-        sectionCard(title: "VS ロゴ検知") {
-            HStack(spacing: 12) {
-                snapshotImage(forFile: "vs.png", height: 90)
-                    .frame(maxWidth: 200)
+        sectionCard(title: "VS ロゴ") {
+            VStack(spacing: 4) {
+                snapshotImage(forFile: "vs.png", height: 50)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Score")
-                        .font(.caption)
-                        .foregroundStyle(.gray)
-                    Text(scoreString(record.vsScore))
-                        .font(.title3.monospacedDigit().bold())
-                        .foregroundStyle(.white)
-                    Text("閾値 0.50")
-                        .font(.caption2)
-                        .foregroundStyle(.gray)
-                }
-                Spacer()
+                Text(scoreString(record.vsScore))
+                    .font(.callout.monospacedDigit().bold())
+                    .foregroundStyle(.white)
+                Text(String(format: "閾値 %.2f", DetectionThresholdsConfig.vsThreshold))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.gray)
             }
         }
     }
 
     private var monstersSection: some View {
         sectionCard(title: "モンスター識別") {
-            VStack(spacing: 12) {
+            VStack(spacing: 6) {
                 slotRow(label: "味方", color: Color.sideMy,
                         names: record.myParty,
                         scores: record.myPartyScores ?? [],
@@ -132,56 +127,54 @@ struct MatchingScoreDetailView: View {
 
     private func slotRow(label: String, color: Color,
                          names: [String], scores: [Double], slotIdxOffset: Int) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .top, spacing: 6) {
             Text(label)
-                .font(.caption.bold())
+                .font(.caption2.bold())
                 .foregroundStyle(color)
-            HStack(alignment: .top, spacing: 6) {
-                ForEach(0..<4, id: \.self) { i in
-                    VStack(spacing: 4) {
-                        snapshotImage(forFile: "slot_\(slotIdxOffset + i).png", height: 70)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(color.opacity(0.6), lineWidth: 1)
-                            )
-                        Text(names[safe: i].map(MonsterCatalog.name(for:)) ?? "?")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text(scoreString(scores[safe: i]))
-                            .font(.system(size: 9).monospacedDigit())
-                            .foregroundStyle(.gray)
-                    }
-                    .frame(maxWidth: .infinity)
+                .frame(width: 26, alignment: .leading)
+                .padding(.top, 14) // サムネに対して中央寄せ
+            ForEach(0..<4, id: \.self) { i in
+                VStack(spacing: 2) {
+                    snapshotImage(forFile: "slot_\(slotIdxOffset + i).png", height: 48)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(color.opacity(0.6), lineWidth: 1)
+                        )
+                    Text(names[safe: i].map(MonsterCatalog.name(for:)) ?? "?")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(scoreString(scores[safe: i]))
+                        .font(.system(size: 8).monospacedDigit())
+                        .foregroundStyle(.gray)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
     }
 
     private var resultSection: some View {
-        sectionCard(title: "勝敗ロゴ検知") {
+        sectionCard(title: "勝敗ロゴ") {
             let label = record.result
             let color: Color = label == "WIN" ? Color.sideMy : (label == "LOSE" ? Color.sideEnemy : .gray)
-            HStack(spacing: 12) {
-                snapshotImage(forFile: "result.png", height: 90)
-                    .frame(maxWidth: 200)
+            let thr = label == "LOSE" ? DetectionThresholdsConfig.loseThreshold
+                                       : DetectionThresholdsConfig.winThreshold
+            VStack(spacing: 4) {
+                snapshotImage(forFile: "result.png", height: 50)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(color.opacity(0.6), lineWidth: 1)
                     )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(label.isEmpty ? "?" : label)
-                        .font(.title3.bold())
-                        .foregroundStyle(color)
-                    Text(scoreString(record.resultScore))
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.white)
-                    Text("閾値 0.40")
-                        .font(.caption2)
-                        .foregroundStyle(.gray)
-                }
-                Spacer()
+                Text(label.isEmpty ? "?" : label)
+                    .font(.caption.bold())
+                    .foregroundStyle(color)
+                Text(scoreString(record.resultScore))
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.white)
+                Text(String(format: "閾値 %.2f", thr))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.gray)
             }
         }
     }
@@ -190,15 +183,16 @@ struct MatchingScoreDetailView: View {
 
     private func sectionCard<Content: View>(title: String,
                                             @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.subheadline.bold())
+                .font(.caption.bold())
                 .foregroundStyle(Color.recCoral)
             content()
         }
-        .padding(12)
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     /// App Group からスナップショット画像を読み込んで表示。
