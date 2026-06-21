@@ -60,9 +60,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
     companion object {
         // VS / WIN / LOSE 閾値のデフォルトと許容範囲 (ユーザー設定で 0.4〜0.8 に可変)
-        const val DEFAULT_VS_THRESHOLD = 0.4
-        const val DEFAULT_WIN_THRESHOLD = 0.4
-        const val DEFAULT_LOSE_THRESHOLD = 0.4
+        // iOS 版 (DetectionThresholdsConfig) とデフォルト値を統一
+        const val DEFAULT_VS_THRESHOLD = 0.5
+        const val DEFAULT_WIN_THRESHOLD = 0.5
+        const val DEFAULT_LOSE_THRESHOLD = 0.5
         const val THRESHOLD_MIN = 0.4
         const val THRESHOLD_MAX = 0.8
         private const val MONSTER_THRESHOLD = 0.7
