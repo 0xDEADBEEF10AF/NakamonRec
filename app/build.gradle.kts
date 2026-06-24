@@ -26,12 +26,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.android.nakamonrec"
+        applicationId = "com.dqw.nakamonrec"
         minSdk = 24
         targetSdk = 35
-        
+
         versionCode = gitCommitCount
-        versionName = "1.7.1"
+        versionName = "26.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
