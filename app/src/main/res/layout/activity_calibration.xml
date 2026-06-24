@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <com.android.nakamonrec.CalibrationView
+    <com.dqw.nakamonrec.CalibrationView
         android:id="@+id/calibrationView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

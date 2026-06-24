@@ -1,4 +1,4 @@
-package com.android.nakamonrec
+package com.dqw.nakamonrec
 
 import android.app.*
 import android.content.BroadcastReceiver
@@ -61,10 +61,10 @@ class MediaCaptureService : Service() {
         private const val IDLE_WARNING_NOTIFICATION_ID = 1002
         private const val CHANNEL_ID = "capture_channel"
         private const val IDLE_WARNING_CHANNEL_ID = "idle_warning_channel"
-        const val ACTION_SERVICE_STOPPED = "com.android.nakamonrec.ACTION_SERVICE_STOPPED"
-        const val ACTION_RELOAD_SETTINGS = "com.android.nakamonrec.ACTION_RELOAD_SETTINGS"
-        const val ACTION_RELOAD_HISTORY = "com.android.nakamonrec.ACTION_RELOAD_HISTORY"
-        const val ACTION_STOP_FROM_NOTIFICATION = "com.android.nakamonrec.ACTION_STOP_FROM_NOTIFICATION"
+        const val ACTION_SERVICE_STOPPED = "com.dqw.nakamonrec.ACTION_SERVICE_STOPPED"
+        const val ACTION_RELOAD_SETTINGS = "com.dqw.nakamonrec.ACTION_RELOAD_SETTINGS"
+        const val ACTION_RELOAD_HISTORY = "com.dqw.nakamonrec.ACTION_RELOAD_HISTORY"
+        const val ACTION_STOP_FROM_NOTIFICATION = "com.dqw.nakamonrec.ACTION_STOP_FROM_NOTIFICATION"
         var isRunning = false
     }
 

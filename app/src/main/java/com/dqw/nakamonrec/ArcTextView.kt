@@ -1,4 +1,4 @@
-package com.android.nakamonrec
+package com.dqw.nakamonrec
 
 import android.content.Context
 import android.graphics.*

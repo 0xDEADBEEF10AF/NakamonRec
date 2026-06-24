@@ -119,7 +119,7 @@
         app:layout_constraintTop_toBottomOf="@id/layoutTopHeader"
         app:layout_constraintBottom_toTopOf="@id/layoutBottomButtons">
 
-        <com.android.nakamonrec.ArcTextView
+        <com.dqw.nakamonrec.ArcTextView
             android:id="@+id/arcTitle"
             android:layout_width="300dp"
             android:layout_height="300dp"

@@ -9,7 +9,7 @@ val gitCommitCountProvider = providers.exec {
 val gitCommitCount = gitCommitCountProvider.standardOutput.asText.map { it.trim().toInt() }.getOrElse(1)
 
 android {
-    namespace = "com.android.nakamonrec"
+    namespace = "com.dqw.nakamonrec"
     // ★Android 14実機インストールのために安定版の35を使用
     compileSdk = 35 
 

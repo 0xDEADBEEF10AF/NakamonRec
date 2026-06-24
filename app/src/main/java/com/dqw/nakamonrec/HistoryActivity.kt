@@ -1,4 +1,4 @@
-package com.android.nakamonrec
+package com.dqw.nakamonrec
 
 import androidx.appcompat.app.AlertDialog
 import android.content.Intent
@@ -18,7 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import androidx.core.graphics.toColorInt
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.android.nakamonrec.databinding.ActivityHistoryBinding
+import com.dqw.nakamonrec.databinding.ActivityHistoryBinding
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date

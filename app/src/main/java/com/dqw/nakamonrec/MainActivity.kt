@@ -1,4 +1,4 @@
-package com.android.nakamonrec
+package com.dqw.nakamonrec
 
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
@@ -33,7 +33,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
-import com.android.nakamonrec.databinding.ActivityMainBinding
+import com.dqw.nakamonrec.databinding.ActivityMainBinding
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken

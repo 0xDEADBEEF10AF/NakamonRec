@@ -1,4 +1,4 @@
-package com.android.nakamonrec
+package com.dqw.nakamonrec
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -11,7 +11,7 @@ import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
-import com.android.nakamonrec.databinding.ActivityCalibrationBinding
+import com.dqw.nakamonrec.databinding.ActivityCalibrationBinding
 import com.google.gson.Gson
 import java.io.File
 import java.util.concurrent.Executors

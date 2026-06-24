@@ -112,7 +112,7 @@
                     android:textStyle="bold"
                     android:layout_marginEnd="4dp"/>
 
-                <com.android.nakamonrec.WinRateGraphView
+                <com.dqw.nakamonrec.WinRateGraphView
                     android:id="@+id/winRateGraph"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
