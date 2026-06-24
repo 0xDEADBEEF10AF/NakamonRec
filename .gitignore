@@ -1,6 +1,7 @@
 # Key files
 *.keystore
 *.jks
+keystore.properties
 
 # Android
 .gradle

@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -7,6 +10,16 @@ val gitCommitCountProvider = providers.exec {
     commandLine("git", "rev-list", "--count", "HEAD")
 }
 val gitCommitCount = gitCommitCountProvider.standardOutput.asText.map { it.trim().toInt() }.getOrElse(1)
+
+// 本番リリース署名情報を app/keystore.properties から読み込む (gitignore 対象)。
+// ファイル不在時は release ビルドが debug 署名で署名されるため、Play 公開には使えないが、
+// 開発マシンでの構文チェック等は通る。
+val keystorePropsFile = file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) {
+        load(FileInputStream(keystorePropsFile))
+    }
+}
 
 android {
     namespace = "com.dqw.nakamonrec"
@@ -22,6 +35,18 @@ android {
             keyPassword = "android"
             enableV2Signing = true
             enableV3Signing = true
+        }
+        create("release") {
+            // app/keystore.properties (gitignore) から本番署名情報を読み込む。
+            // ファイル不在時は storeFile を未設定にして release ビルドを debug 署名にフォールバック。
+            if (keystorePropsFile.exists()) {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+                enableV2Signing = true
+                enableV3Signing = true
+            }
         }
     }
 
@@ -47,8 +72,12 @@ android {
         }
         release {
             isMinifyEnabled = false
-            // リリース版にも同じデバッグ署名を適用して上書き・インストールを可能にする
-            signingConfig = signingConfigs.getByName("debug")
+            // app/keystore.properties が存在すれば release 署名、無ければ debug 署名にフォールバック
+            signingConfig = if (keystorePropsFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
