@@ -37,4 +37,7 @@ apks/
 !app/src/main/assets/**/*.png
 !ios/**/templates/*.png
 !ios/**/AppIcon.appiconset/*.png
+!docs/**/*.png
+
+# 署名済みリリース AAB (Generate Signed Bundle の出力先)
 /app/release/app-release.aab
