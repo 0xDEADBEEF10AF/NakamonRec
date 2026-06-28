@@ -332,11 +332,16 @@ struct CalibrationView: View {
     // MARK: - Auto-calibration
 
     /// パーティ選択画面用の自動校正。
-    /// アルゴリズム (NMS):
-    ///   1. BASE SELECT で imported screenshot 全体を matchTemplate
-    ///   2. NMS で上位 3 件の位置を抽出 (水色 1 + 黄色 2、または黄色 3)
-    ///   3. Y で昇順ソートして P1/P2/P3 にそのまま割り当て
-    ///   4. 最高スコア位置 (水色) で screenshot を切り出し、1080-ref サイズに正規化 → SELECT_custom.png
+    /// アルゴリズム (per-ROI 近傍探索):
+    ///   1. 各デフォルト ROI (P1/P2/P3) の近傍窓内で BASE SELECT を matchTemplate
+    ///      - X 窓: cx=0.787 ±0.12 (左半分の磁石 = ネームプレート左隣 を構造的に除外)
+    ///      - Y 窓: 各 centerY ±0.065 (隣接パーティと重ならず、上下ツールバーも除外)
+    ///   2. 各 ROI の窓内 best をそのまま P1/P2/P3 に割り当て (全画面 NMS は廃止)
+    ///   3. 最高スコア位置で screenshot を切り出し、1080-ref サイズに正規化 → SELECT_custom.png
+    ///
+    /// 旧実装は全画面 NMS top-3 だったが、非フォーカス行のスコア低下時に
+    /// 左半分の磁石へ乗っ取られる誤校正 (iPhone15 報告 2026-06-28) があったため、
+    /// 探索範囲を各 ROI 近傍に限定して磁石を構造的に排除する方式へ変更した。
     private func runAutoCalibration() {
         guard let scene = screenshotImage else {
             statusMessage = "スクショが読み込めていません。"
@@ -428,29 +433,43 @@ struct CalibrationView: View {
 
         let sceneW = scene.size.width
         let sceneH = scene.size.height
-        let suppressHalfW = Int32(sceneW * 0.05)
-        let suppressHalfH = Int32(sceneH * 0.07)
+
+        // per-ROI 近傍探索の窓幅 (デフォルト中心 ± half)。
+        // X ±0.12 → 0.67〜0.91: 左半分の磁石を窓外に追い出す。
+        // Y ±0.065 → 隣接パーティ (間隔 0.169) と重ならない (隙間 0.039)。誤割当防止。
+        let searchHalfWRatio: CGFloat = 0.12
+        let searchHalfHRatio: CGFloat = 0.065
+        let defaults = CalibrationDefaults.partySelectROIs
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // マルチスケール: 各倍率で top-3 を取り、上位 3 件の合計スコア最大の倍率を採用。
-            // 3 件ピックなので「最良 1 件のスコア」より「3 件揃ったスコア」の方が安定指標。
-            var bestLocations: [NakamonMatchLocation] = []
-            var bestSumScore: Double = -1.0
-            for ms in Self.autoCalMicroScales {
-                let scaled = self.templateScaledToScene(baseSelect, scene: scene, microScale: ms)
-                let locs = NakamonWrapper.findTopKMatches(inScene: scene,
-                                                          templateImg: scaled,
-                                                          k: 3,
-                                                          suppressHalfWidth: suppressHalfW,
-                                                          suppressHalfHeight: suppressHalfH)
-                let sumScore = locs.reduce(0.0) { $0 + $1.score }
-                if sumScore > bestSumScore {
-                    bestSumScore = sumScore
-                    bestLocations = Array(locs)
+            // 各パーティ ROI の近傍窓内で SELECT を探し、その窓の best をそのまま採用する。
+            // 全画面 NMS を廃止したことで、左半分の磁石・上下ツールバーへの誤検出を構造的に排除。
+            // 窓内マッチングはマルチスケールで最良位置を取る (battlePrep スロット探索と同方式)。
+            var locations: [NakamonMatchLocation] = []
+            for def in defaults {
+                let cx = Int32(sceneW * CGFloat(def.centerXRatio))
+                let cy = Int32(sceneH * CGFloat(def.centerYRatio))
+                let w = Int32(sceneW * (searchHalfWRatio * 2))
+                let h = Int32(sceneH * (searchHalfHRatio * 2))
+                var bestLoc: NakamonMatchLocation? = nil
+                for ms in Self.autoCalMicroScales {
+                    let scaled = self.templateScaledToScene(baseSelect, scene: scene, microScale: ms)
+                    let loc = NakamonWrapper.findSpecificMonsterLocation(
+                        inRegion: scene,
+                        templateImg: scaled,
+                        centerX: cx, centerY: cy,
+                        width: w, height: h
+                    )
+                    if bestLoc == nil || loc.score > bestLoc!.score {
+                        bestLoc = loc
+                    }
+                }
+                if let bestLoc = bestLoc {
+                    locations.append(bestLoc)
                 }
             }
             DispatchQueue.main.async {
-                handleAutoCalibrationResult(locations: bestLocations,
+                handleAutoCalibrationResult(locations: locations,
                                             scene: scene)
             }
         }
