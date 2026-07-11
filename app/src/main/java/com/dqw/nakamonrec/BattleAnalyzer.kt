@@ -603,14 +603,31 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     fun autoCalibrateParty(sceneBitmap: Bitmap): Pair<List<BoxConfig>, Float>? {
         val standardTpl = partySelectTemplate ?: return null
         val customTpl = partyCustomTemplate
-        
+
         val fullMat = Mat()
         Utils.bitmapToMat(sceneBitmap, fullMat)
         val grayScene = Mat()
         Imgproc.cvtColor(fullMat, grayScene, Imgproc.COLOR_RGBA2GRAY)
-        
+
+        val sceneW = grayScene.cols()
+        val sceneH = grayScene.rows()
         val standardWidth = standardTpl.cols().toDouble()
-        
+
+        // per-ROI 近傍探索 (iOS runPartySelectAutoCal と同方式)。
+        // 旧実装は全画面 NMS top-3 で、非フォーカス行のスコア低下時に
+        // 左半分の磁石 (ネームプレート左隣) へ枠が乗っ取られる誤校正があった
+        // (iPhone15 報告 2026-06-28)。各パーティのデフォルト中心の周囲だけを
+        // 探索することで、磁石 (左半分) と上下ツールバーを構造的に排除する。
+        //
+        // デフォルト中心は CalibrationData の partySelectBoxes 初期値
+        // (Pixel10Pro 1080x2364 基準、cx=850/1080, cy=1030/1430/1830/2364) と一致。
+        val roiCxRatio = 850.0 / 1080.0
+        val roiCyRatios = doubleArrayOf(1030.0 / 2364.0, 1430.0 / 2364.0, 1830.0 / 2364.0)
+        // X ±0.12 → 0.67〜0.91 (左半分の磁石を窓外に追い出す)
+        // Y ±0.065 → 隣接パーティ (間隔 0.169) と重ならない (隙間 0.039)
+        val halfWRatio = 0.12
+        val halfHRatio = 0.065
+
         data class PartyCandidate(val configs: List<BoxConfig>, val score: Double, val uiScale: Double)
         var bestCandidate: PartyCandidate? = null
 
@@ -623,52 +640,65 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         for ((type, tpl) in targets) {
             val grayTpl = Mat()
             Imgproc.cvtColor(tpl, grayTpl, Imgproc.COLOR_RGB2GRAY)
-            
+
             // カスタムの場合は 1.0 固定、標準の場合はマルチスケール
             val scales = if (type == "custom") listOf(1.0) else listOf(0.7, 1.0, 1.3, 1.6, 1.9, 2.2, 2.5)
-            
+
             for (s in scales) {
                 val scaledTpl = Mat()
                 Imgproc.resize(grayTpl, scaledTpl, Size(), s, s, Imgproc.INTER_CUBIC)
-                
-                if (scaledTpl.cols() >= grayScene.cols() || scaledTpl.rows() >= grayScene.rows()) {
+                val tplW = scaledTpl.cols()
+                val tplH = scaledTpl.rows()
+
+                if (tplW >= sceneW || tplH >= sceneH) {
                     scaledTpl.release()
                     continue
                 }
 
-                val result = Mat()
-                Imgproc.matchTemplate(grayScene, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
+                // 各パーティ ROI の近傍窓内だけで best を取り、その窓の位置を採用する。
                 val currentConfigs = mutableListOf<BoxConfig>()
                 var sumScore = 0.0
-                
-                repeat(3) {
+                var ok = true
+                for (cyR in roiCyRatios) {
+                    val cxPx = roiCxRatio * sceneW
+                    val cyPx = cyR * sceneH
+                    // テンプレ中心が窓 (±half) 内に収まるよう ±(half + tpl/2) で submat を切り出す
+                    val x0 = (cxPx - halfWRatio * sceneW - tplW / 2.0).toInt().coerceAtLeast(0)
+                    val y0 = (cyPx - halfHRatio * sceneH - tplH / 2.0).toInt().coerceAtLeast(0)
+                    val x1 = (cxPx + halfWRatio * sceneW + tplW / 2.0).toInt().coerceAtMost(sceneW)
+                    val y1 = (cyPx + halfHRatio * sceneH + tplH / 2.0).toInt().coerceAtMost(sceneH)
+                    // 窓がテンプレより小さいと matchTemplate 不可 → この倍率は不採用
+                    if (x1 - x0 <= tplW || y1 - y0 <= tplH) { ok = false; break }
+
+                    val roiScene = grayScene.submat(y0, y1, x0, x1)
+                    val result = Mat()
+                    Imgproc.matchTemplate(roiScene, scaledTpl, result, Imgproc.TM_CCOEFF_NORMED)
                     val mm = Core.minMaxLoc(result)
-                    if (mm.maxVal < 0.25) return@repeat
+                    result.release()
+                    roiScene.release()
+
                     sumScore += mm.maxVal
                     val pos = mm.maxLoc
-                    currentConfigs.add(BoxConfig((pos.x + scaledTpl.cols() / 2).toFloat() / grayScene.cols(), (pos.y + scaledTpl.rows() / 2).toFloat() / grayScene.rows(), scaledTpl.cols(), scaledTpl.rows()))
-                    
-                    val mask = result.submat((pos.y - scaledTpl.rows()).toInt().coerceAtLeast(0), (pos.y + scaledTpl.rows() * 2).toInt().coerceAtMost(result.rows()), (pos.x - scaledTpl.cols()).toInt().coerceAtLeast(0), (pos.x + scaledTpl.cols() * 2).toInt().coerceAtMost(result.cols()))
-                    mask.setTo(Scalar(-1.0))
-                    mask.release()
+                    val centerX = (x0 + pos.x + tplW / 2.0).toFloat() / sceneW
+                    val centerY = (y0 + pos.y + tplH / 2.0).toFloat() / sceneH
+                    currentConfigs.add(BoxConfig(centerX, centerY, tplW, tplH))
                 }
 
-                if (currentConfigs.size == 3) {
+                if (ok && currentConfigs.size == 3) {
                     // カスタムの場合は画像サイズから uiScale を逆算、標準の場合は s をそのまま使う
-                    val calculatedUiScale = if (type == "custom") scaledTpl.cols().toDouble() / standardWidth else s
+                    val calculatedUiScale = if (type == "custom") tplW.toDouble() / standardWidth else s
                     if (bestCandidate == null || sumScore > bestCandidate!!.score) {
                         bestCandidate = PartyCandidate(currentConfigs.sortedBy { it.centerY }, sumScore, calculatedUiScale)
                     }
                 }
-                result.release()
                 scaledTpl.release()
             }
             grayTpl.release()
         }
-        
+
         grayScene.release()
         fullMat.release()
-        
+
         return bestCandidate?.let { it.configs to it.uiScale.toFloat() }
     }
 
