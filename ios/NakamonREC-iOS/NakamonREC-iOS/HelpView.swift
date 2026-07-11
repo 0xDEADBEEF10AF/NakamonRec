@@ -126,8 +126,10 @@ struct HelpView: View {
     private let requirements = """
 ・OS: iOS 17.0 以上
 ・メモリ: 4GB 以上推奨 (Broadcast Upload Extension は 50MB 制限がありシビアです)
-・動作確認済み: iPhone 13 mini
-・他機種は未検証ですが、校正機能で機種差は吸収できる設計です
+・動作確認済み: iPhone 13 mini / iPhone 15
+・iPhone SE シリーズ (ホームボタン搭載・4.7インチ) は画面の縦横比が他機種と異なり、自動校正が正しく機能しないため非対応です
+・iPad は動作対象外です (iPhone 専用アプリ)
+・上記以外の機種は未検証ですが、校正機能で多くの機種差は吸収できる設計です
 """
 
     private let cautions = """
