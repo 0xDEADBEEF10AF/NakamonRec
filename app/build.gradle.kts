@@ -23,8 +23,9 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.dqw.nakamonrec"
-    // ★Android 14実機インストールのために安定版の35を使用
-    compileSdk = 35 
+    // Google Play の対象 API レベル要件 (2026/08/31 以降 API 36 必須) に準拠するため 36 に復帰。
+    // 初期は 36 で作成 → 実機インストール互換性のため一時 35 に下げていたが、API 36 正式版化に伴い再度 36 へ。
+    compileSdk = 36
 
     signingConfigs {
         getByName("debug") {
@@ -53,7 +54,7 @@ android {
     defaultConfig {
         applicationId = "com.dqw.nakamonrec"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
 
         versionCode = gitCommitCount
         versionName = "26.7.1"
