@@ -624,9 +624,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val roiCxRatio = 850.0 / 1080.0
         val roiCyRatios = doubleArrayOf(1030.0 / 2364.0, 1430.0 / 2364.0, 1830.0 / 2364.0)
         // X ±0.12 → 0.67〜0.91 (左半分の磁石を窓外に追い出す)
-        // Y ±0.065 → 隣接パーティ (間隔 0.169) と重ならない (隙間 0.039)
+        //
+        // Y は上下非対称。ゲーム UI は幅基準でスケールし上寄せ配置のため、
+        // Pixel(19.7:9) より縦長の端末では実際の枠が画面比で上方向へシフトする
+        // (21:9 Xperia 1080x2520 実測 2026-08-01: P1 0.364 / P2 0.519 / P3 0.671、
+        //  下の行ほどズレが累積し P3 は旧 ±0.065 窓の 77px 上)。
+        // 上 0.125 / 下 0.044 (計 0.169 = 行間隔) で、隣接窓と重ならない上限まで
+        // 上方向に拡張する。21:9 実測値でも P3 に比率 0.022 (約56px) の余裕を確保。
         val halfWRatio = 0.12
-        val halfHRatio = 0.065
+        val upHalfHRatio = 0.125
+        val downHalfHRatio = 0.044
 
         data class PartyCandidate(val configs: List<BoxConfig>, val score: Double, val maxScore: Double, val uiScale: Double)
         var bestCandidate: PartyCandidate? = null
@@ -665,9 +672,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                     val cyPx = cyR * sceneH
                     // テンプレ中心が窓 (±half) 内に収まるよう ±(half + tpl/2) で submat を切り出す
                     val x0 = (cxPx - halfWRatio * sceneW - tplW / 2.0).toInt().coerceAtLeast(0)
-                    val y0 = (cyPx - halfHRatio * sceneH - tplH / 2.0).toInt().coerceAtLeast(0)
+                    val y0 = (cyPx - upHalfHRatio * sceneH - tplH / 2.0).toInt().coerceAtLeast(0)
                     val x1 = (cxPx + halfWRatio * sceneW + tplW / 2.0).toInt().coerceAtMost(sceneW)
-                    val y1 = (cyPx + halfHRatio * sceneH + tplH / 2.0).toInt().coerceAtMost(sceneH)
+                    val y1 = (cyPx + downHalfHRatio * sceneH + tplH / 2.0).toInt().coerceAtMost(sceneH)
                     // 窓がテンプレより小さいと matchTemplate 不可 → この倍率は不採用
                     if (x1 - x0 <= tplW || y1 - y0 <= tplH) { ok = false; break }
 
