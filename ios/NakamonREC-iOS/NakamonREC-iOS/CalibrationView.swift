@@ -434,11 +434,17 @@ struct CalibrationView: View {
         let sceneW = scene.size.width
         let sceneH = scene.size.height
 
-        // per-ROI 近傍探索の窓幅 (デフォルト中心 ± half)。
+        // per-ROI 近傍探索の窓幅 (デフォルト中心基準)。
         // X ±0.12 → 0.67〜0.91: 左半分の磁石を窓外に追い出す。
-        // Y ±0.065 → 隣接パーティ (間隔 0.169) と重ならない (隙間 0.039)。誤割当防止。
+        //
+        // Y は上下非対称 (Android a2b2096 と同値)。ゲーム UI は幅基準スケール +
+        // 上寄せ配置のため、基準端末より縦長の画面では枠が画面比で上方向へシフトする
+        // (21:9 Android 端末の実測で確認: 下の行ほどズレが累積し P3 は ±0.065 窓の外)。
+        // 上 0.125 / 下 0.044 (計 0.169 = 行間隔) — 隣接パーティ窓と重ならない上限まで
+        // 上方向に拡張する。
         let searchHalfWRatio: CGFloat = 0.12
-        let searchHalfHRatio: CGFloat = 0.065
+        let searchUpHRatio: CGFloat = 0.125
+        let searchDownHRatio: CGFloat = 0.044
         let defaults = CalibrationDefaults.partySelectROIs
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -448,9 +454,11 @@ struct CalibrationView: View {
             var locations: [NakamonMatchLocation] = []
             for def in defaults {
                 let cx = Int32(sceneW * CGFloat(def.centerXRatio))
-                let cy = Int32(sceneH * CGFloat(def.centerYRatio))
+                // findSpecificMonsterLocation は中心+サイズ指定 (対称窓) のため、
+                // 非対称窓は「中心を上へずらした対称窓」として渡す
+                let cy = Int32(sceneH * (CGFloat(def.centerYRatio) - (searchUpHRatio - searchDownHRatio) / 2))
                 let w = Int32(sceneW * (searchHalfWRatio * 2))
-                let h = Int32(sceneH * (searchHalfHRatio * 2))
+                let h = Int32(sceneH * (searchUpHRatio + searchDownHRatio))
                 var bestLoc: NakamonMatchLocation? = nil
                 for ms in Self.autoCalMicroScales {
                     let scaled = self.templateScaledToScene(baseSelect, scene: scene, microScale: ms)
