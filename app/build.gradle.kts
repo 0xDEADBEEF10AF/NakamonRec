@@ -57,7 +57,7 @@ android {
         targetSdk = 36
 
         versionCode = gitCommitCount
-        versionName = "26.7.2"
+        versionName = "26.8.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
