@@ -628,7 +628,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val halfWRatio = 0.12
         val halfHRatio = 0.065
 
-        data class PartyCandidate(val configs: List<BoxConfig>, val score: Double, val uiScale: Double)
+        data class PartyCandidate(val configs: List<BoxConfig>, val score: Double, val maxScore: Double, val uiScale: Double)
         var bestCandidate: PartyCandidate? = null
 
         // 検索対象のテンプレートリスト
@@ -658,6 +658,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                 // 各パーティ ROI の近傍窓内だけで best を取り、その窓の位置を採用する。
                 val currentConfigs = mutableListOf<BoxConfig>()
                 var sumScore = 0.0
+                var maxScore = 0.0
                 var ok = true
                 for (cyR in roiCyRatios) {
                     val cxPx = roiCxRatio * sceneW
@@ -678,6 +679,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                     roiScene.release()
 
                     sumScore += mm.maxVal
+                    maxScore = maxOf(maxScore, mm.maxVal)
                     val pos = mm.maxLoc
                     val centerX = (x0 + pos.x + tplW / 2.0).toFloat() / sceneW
                     val centerY = (y0 + pos.y + tplH / 2.0).toFloat() / sceneH
@@ -688,7 +690,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                     // カスタムの場合は画像サイズから uiScale を逆算、標準の場合は s をそのまま使う
                     val calculatedUiScale = if (type == "custom") tplW.toDouble() / standardWidth else s
                     if (bestCandidate == null || sumScore > bestCandidate!!.score) {
-                        bestCandidate = PartyCandidate(currentConfigs.sortedBy { it.centerY }, sumScore, calculatedUiScale)
+                        bestCandidate = PartyCandidate(currentConfigs.sortedBy { it.centerY }, sumScore, maxScore, calculatedUiScale)
                     }
                 }
                 scaledTpl.release()
@@ -699,7 +701,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         grayScene.release()
         fullMat.release()
 
-        return bestCandidate?.let { it.configs to it.uiScale.toFloat() }
+        // 最高スコア (= フォーカス行の水色 SELECT) が閾値未満なら校正失敗として null を返す。
+        // iOS handleAutoCalibrationResult の bestScore >= 0.4 ガードと同契約。
+        // このガードがないと、SELECT 枠が画面に映っていない状態 (P1〜P3 フォーカスなし等) でも
+        // 窓内のゴミマッチを黙って採用し、デタラメな位置で「校正成功」してしまう (テスター報告 2026-07-25)。
+        return bestCandidate?.takeIf { it.maxScore >= 0.4 }?.let { it.configs to it.uiScale.toFloat() }
     }
 
     fun autoCalibrateResult(sceneBitmap: Bitmap, isWin: Boolean): Pair<BoxConfig, Float>? {
