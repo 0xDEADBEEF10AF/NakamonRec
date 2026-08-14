@@ -117,10 +117,13 @@ class CalibrationView @JvmOverloads constructor(
             
             // 探索範囲の可視化
             if (box.label.startsWith("P")) {
-                // パーティ選択：BattleAnalyzer.ROI_PAD_PARTY_V/Hと同期
+                // パーティ選択：BattleAnalyzer.ROI_PAD_PARTY_V/H と同期。
+                // 実行時判定 (detectSelectedParty) はスクロール吸収分だけ上方向に
+                // 非対称拡張されるため (上200/下100)、可視化も上側のみ広げる
                 val padH = (BattleAnalyzer.ROI_PAD_PARTY_H * uiScale) * scaleX
                 val padV = (BattleAnalyzer.ROI_PAD_PARTY_V * uiScale) * scaleY
-                bufferRect.set(reusableRect.left - padH, reusableRect.top - padV, reusableRect.right + padH, reusableRect.bottom + padV)
+                val padVUp = ((BattleAnalyzer.ROI_PAD_PARTY_V + BattleAnalyzer.ROI_PAD_PARTY_SCROLL_V) * uiScale) * scaleY
+                bufferRect.set(reusableRect.left - padH, reusableRect.top - padVUp, reusableRect.right + padH, reusableRect.bottom + padV)
                 canvas.drawRect(bufferRect, paintBufferFill)
                 canvas.drawRect(bufferRect, paintBufferStroke)
             } else if (box.label.contains("自") || box.label.contains("敵")) {

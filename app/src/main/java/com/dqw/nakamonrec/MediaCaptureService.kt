@@ -414,10 +414,14 @@ class MediaCaptureService : Service() {
                 dataManager.appendFlightLog("パーティ選択検知 P[${detected + 1}] Score ${String.format(Locale.US, "%.3f", scores[detected])}")
                 // マッチングスコア詳細用に 3 枚セットで保存。パーティ変化時のみ実行することで
                 // 画面遷移中のフェードフレームでの誤上書きを防ぐ（初回検知 or 心変わり時のみ）。
-                val vMargin = (BattleAnalyzer.ROI_PAD_PARTY_V * analyzer.calibrationData.uiScale).toInt()
+                // 切り出し範囲は detectSelectedParty の非対称探索窓 (上200/下100) と同期:
+                // 「中心を上へ 50px ずらした ±150px 窓」で切り出す (スクロール時のヒット位置もサムネに写す)
+                val scrollShiftPx = (BattleAnalyzer.ROI_PAD_PARTY_SCROLL_V / 2f) * analyzer.calibrationData.uiScale
+                val vMargin = ((BattleAnalyzer.ROI_PAD_PARTY_V + BattleAnalyzer.ROI_PAD_PARTY_SCROLL_V / 2) * analyzer.calibrationData.uiScale).toInt()
                 val hMargin = (BattleAnalyzer.ROI_PAD_PARTY_H * analyzer.calibrationData.uiScale).toInt()
                 analyzer.calibrationData.partySelectBoxes.forEachIndexed { i, config ->
-                    analyzer.saveRoi(bitmap, config, "party_p$i", vMargin, hMargin)
+                    val shifted = config.copy(centerY = config.centerY - scrollShiftPx / bitmap.height)
+                    analyzer.saveRoi(bitmap, shifted, "party_p$i", vMargin, hMargin)
                 }
             }
             lastDetectedPartyIndex = detected
