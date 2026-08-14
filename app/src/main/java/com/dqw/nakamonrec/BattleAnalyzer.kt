@@ -87,6 +87,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         const val ROI_PAD_MONSTER = 20
         const val ROI_PAD_PARTY_H = 30  // GALAXY等の縦横比ズレを考慮
         const val ROI_PAD_PARTY_V = 100 // GALAXY等の縦方向ズレを考慮
+        const val ROI_PAD_PARTY_SCROLL_V = 100 // ユーザースクロール吸収の上方向追加分 (detectSelectedParty 専用)
         const val ROI_PAD_GENERAL_H = 10 // 一般的な水平マージン
 
         // Case D で参照するテンプレートの基準解像度幅 (Pixel 10 Pro Fold 由来)。
@@ -1170,13 +1171,21 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         var bestIndex = -1
         var maxScore = -1.0
 
+        // スクロール吸収: 探索窓を上方向のみ +100px (@1080-ref) 拡張する (上 200 / 下 100)。
+        // パーティ選択リストのスクロールは「下を見るため内容が上へ動く」一方向で、
+        // iPhone 15 実測では枠高の約半分 (~165px) 上へずれて旧 ±100px 窓を外れた (P? 事象)。
+        // 対称 ±200 では P2/P3 窓が接触し、想定超スクロール時に隣パーティを高スコア
+        // 誤記録するため下側は据え置き、P? で止まる安全バッファを残す。
+        // performColorMatchCached は対称窓のみのため「中心を上へ 50px ずらした ±150px 窓」で渡す。
+        val scrollShiftPx = (ROI_PAD_PARTY_SCROLL_V / 2f) * calibrationData.uiScale
         for (i in calibrationData.partySelectBoxes.indices) {
             val config = calibrationData.partySelectBoxes[i]
-            // パーティ選択は垂直方向に大きな遊びを持たせる
-            val vMargin = (ROI_PAD_PARTY_V * calibrationData.uiScale).toInt()
+            // パーティ選択は垂直方向に大きな遊びを持たせる (+ 上方向スクロール吸収分の半分)
+            val vMargin = ((ROI_PAD_PARTY_V + ROI_PAD_PARTY_SCROLL_V / 2) * calibrationData.uiScale).toInt()
             // 水平方向にもマージンを持たせる
             val hMargin = (ROI_PAD_PARTY_H * calibrationData.uiScale).toInt()
-            val score = performColorMatchCached(bitmap, config, template, vMargin, hMargin)
+            val shifted = config.copy(centerY = config.centerY - scrollShiftPx / bitmap.height)
+            val score = performColorMatchCached(bitmap, shifted, template, vMargin, hMargin)
             
             allScores.add(score)
             if (score > maxScore) {
