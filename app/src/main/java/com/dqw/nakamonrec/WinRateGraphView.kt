@@ -267,7 +267,7 @@ class WinRateGraphView @JvmOverloads constructor(
                 canvas.drawCircle(targetX, targetY, 8f, circlePaint.apply { color = Color.WHITE })
                 canvas.drawCircle(targetX, targetY, 6f, circlePaint.apply { color = linePaint.color })
                 
-                val tooltip = if (data.label.contains("Matches")) data.label else String.format(Locale.US, "%.1f%%：%s", data.rate, data.label)
+                val tooltip = if (data.label.contains("Matches")) data.label else String.format(Locale.US, "%s：%s", RateFormat.percent(data.rate), data.label)
                 
                 val textWidth = tooltipPaint.measureText(tooltip)
                 var drawX = targetX

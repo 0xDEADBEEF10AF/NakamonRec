@@ -563,7 +563,7 @@ class MediaCaptureService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(status)
-            .setContentText("${win}W - ${lose}L (${String.format(Locale.US, "%.1f", winRate)}%)")
+            .setContentText("${win}W - ${lose}L (${RateFormat.percent(winRate)})")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

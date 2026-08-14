@@ -336,7 +336,7 @@ class HistoryActivity : AppCompatActivity() {
             binding.textTotalLabel.text = getString(R.string.label_total_win_rate)
         }
         
-        binding.valTotalRate.text = String.format(Locale.US, "%.1f%%", rate)
+        binding.valTotalRate.text = RateFormat.percent(rate)
         binding.valTotalCount.text = getString(R.string.label_matches_format, totalCount)
         binding.valTotalWinLose.text = buildWinLoseSpan(wins, losses)
 
@@ -374,7 +374,7 @@ class HistoryActivity : AppCompatActivity() {
                 Triple(w, l, r)
             }
 
-            val rateStr = String.format(Locale.US, "%.1f%%", rate)
+            val rateStr = RateFormat.percent(rate)
             val winLoseStr: CharSequence = buildWinLoseSpan(wins, losses)
             
             // 使用率の計算 (組成フィルタ時はその組成の使用率)
@@ -384,7 +384,7 @@ class HistoryActivity : AppCompatActivity() {
             } else {
                 globalStats.partyStats.find { it.index == i }?.usageRate ?: 0.0
             }
-            val usageRateStr = getString(R.string.label_usage_short_format, String.format(Locale.US, "%.1f%%", usageRate))
+            val usageRateStr = getString(R.string.label_usage_short_format, RateFormat.percent(usageRate))
 
             val latestRecord = allRecords.lastOrNull { it.partyIndex == i }
             val myParty = if (filterPartyIndex == i && filterMyPartyComposition != null) {
@@ -441,7 +441,7 @@ class HistoryActivity : AppCompatActivity() {
             val wins = subList.count { it.result == "WIN" }
             val rate = (wins.toDouble() / subList.size) * 100.0
             // タップ時に表示する情報を label に格納: "〇%：〇Matches" (〇番目の試合)
-            val label = String.format(Locale.US, "%.1f%%：%dMatches", rate, i + 1)
+            val label = String.format(Locale.US, "%s：%dMatches", RateFormat.percent(rate), i + 1)
             dataPoints.add(WinRateGraphView.PointData(rate, label))
         }
         binding.winRateGraph.setData(dataPoints)
@@ -525,7 +525,7 @@ class HistoryActivity : AppCompatActivity() {
                 val statsText = TextView(this@HistoryActivity).apply {
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 16 }
                     val label = if (item.isTotal) " (Total)" else ""
-                    text = String.format(Locale.US, "%d Matches (%.1f%%)%s", item.count, item.winRate, label)
+                    text = String.format(Locale.US, "%d Matches (%s)%s", item.count, RateFormat.percent(item.winRate), label)
                     setTextColor(if (item.isTotal) "#90D7EC".toColorInt() else Color.WHITE)
                     textSize = 14f
                     setTypeface(null, if (item.isTotal) Typeface.BOLD else Typeface.NORMAL)
@@ -677,7 +677,7 @@ class HistoryActivity : AppCompatActivity() {
                 val rate = (wins.toDouble() / dayRecords.size) * 100.0
                 val dateLabel = try { sdfDisplay.format(sdfDate.parse(dateStr)!!) } catch (_: Exception) { dateStr.takeLast(5) }
                 // タップ時に表示する情報を label に格納。X軸表示用の日付はここでは含めず、ツールチップ用として構成
-                val tooltipLabel = String.format(Locale.US, "%.1f%%：%dMatches (%s)", rate, dayRecords.size, dateLabel)
+                val tooltipLabel = String.format(Locale.US, "%s：%dMatches (%s)", RateFormat.percent(rate), dayRecords.size, dateLabel)
                 WinRateGraphView.PointData(rate, tooltipLabel)
             }
         }
@@ -799,7 +799,7 @@ class HistoryActivity : AppCompatActivity() {
                         layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
                     }
                     val rateText = TextView(context).apply {
-                        text = String.format(Locale.US, "%.1f%%", stats.winRate)
+                        text = RateFormat.percent(stats.winRate)
                         setTextColor(if (stats.winRate >= 50.0) "#F09199".toColorInt() else "#90D7EC".toColorInt())
                         textSize = 15f
                         setTypeface(null, android.graphics.Typeface.BOLD)
@@ -818,7 +818,7 @@ class HistoryActivity : AppCompatActivity() {
                             text = "${matchesStr}\n${wlStr}"
                         } else {
                             val usageRate = (stats.total.toDouble() / allRecords.size * 100.0)
-                            val usageStr = String.format(Locale.US, "%.1f%%", usageRate)
+                            val usageStr = RateFormat.percent(usageRate)
                             text = "${matchesStr}\n${wlStr}(Use:${usageStr})"
                         }
 
@@ -1013,12 +1013,12 @@ class HistoryActivity : AppCompatActivity() {
                     maxLines = 1
                 }
                 val appearText = TextView(context).apply {
-                    text = String.format(Locale.US, "出現:%d回(%.1f%%)", data.count, data.appearanceRate)
+                    text = String.format(Locale.US, "出現:%d回(%s)", data.count, RateFormat.percent(data.appearanceRate))
                     setTextColor(Color.LTGRAY)
                     textSize = 10f
                 }
                 val winRateText = TextView(context).apply {
-                    text = String.format(Locale.US, "勝率:%.1f%%", data.winRate)
+                    text = "勝率:" + RateFormat.percent(data.winRate)
                     setTextColor(when {
                         data.winRate >= 80.0 -> "#F09199".toColorInt()
                         data.winRate >= 50.0 -> Color.WHITE
@@ -1113,13 +1113,13 @@ class HistoryActivity : AppCompatActivity() {
                     gravity = Gravity.END
                 }
                 val appearText = TextView(context).apply {
-                    text = String.format(Locale.US, "出現:%d回(%.1f%%)", data.count, data.appearanceRate)
+                    text = String.format(Locale.US, "出現:%d回(%s)", data.count, RateFormat.percent(data.appearanceRate))
                     setTextColor(Color.LTGRAY)
                     textSize = 11f
                     gravity = Gravity.END
                 }
                 val winRateText = TextView(context).apply {
-                    text = String.format(Locale.US, "勝率:%.1f%%", data.winRate)
+                    text = "勝率:" + RateFormat.percent(data.winRate)
                     setTextColor(when {
                         data.winRate >= 80.0 -> "#F09199".toColorInt()
                         data.winRate >= 50.0 -> Color.WHITE

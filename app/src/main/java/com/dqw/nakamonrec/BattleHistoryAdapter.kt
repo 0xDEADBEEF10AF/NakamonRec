@@ -69,7 +69,9 @@ class BattleHistoryAdapter(
         holder.result.text = record.result
         holder.result.setTextColor(if (record.result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt())
         holder.party.text = "P${record.partyIndex + 1}"
-        holder.time.text = record.timestamp
+        // 表示専用: 日付をドット区切り (2026.08.14) にして横幅を詰める
+        // (保存形式・CSV は yyyy-MM-dd のまま変更しない。時刻の「:」は影響なし)
+        holder.time.text = record.timestamp.replace('-', '.')
 
         // スコア表示
         holder.vsScore.visibility = View.GONE

@@ -803,7 +803,7 @@ class MainActivity : AppCompatActivity() {
         else { binding.btnToggleService.apply { text = getString(R.string.btn_rec); backgroundTintList = ColorStateList.valueOf("#F09199".toColorInt()); strokeColor = ColorStateList.valueOf("#CCFFFFFF".toColorInt()) }; binding.cardCurrentFile.apply { strokeWidth = (1f * resources.displayMetrics.density).toInt(); strokeColor = "#444444".toColorInt() }; stopPulseAnimation() }
         val currentName = getCurrentFileName(); binding.textCurrentFile.text = getString(R.string.file_name_ext_format, currentName)
         val stats = dataManager.apply { loadHistory(currentName) }.getStatistics()
-        binding.valTotalRateMain.text = String.format(Locale.US, "%.1f%%", stats.winRate); binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
+        binding.valTotalRateMain.text = RateFormat.percent(stats.winRate); binding.valTotalCountMain.text = getString(R.string.label_matches_format, stats.totalWins + stats.totalLosses)
         // W は recCoral 系 (REC ボタン色)、L は sideEnemy 系 (STOP ボタン色) で色分けして
         // 数字を見なくても勝敗バランスが分かるようにする (iOS 版と挙動を揃える)
         val winText = "${stats.totalWins}W"
