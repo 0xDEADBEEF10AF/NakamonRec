@@ -255,11 +255,18 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         var bestScore: Double = 0
         var bestIndex: Int = -1
         var allScores: [Double] = []
+        // スクロール吸収: 探索窓を上方向のみ +100px (@1080×2364-ref) 拡張する (上 200 / 下 100)。
+        // パーティ選択リストのスクロールは「下を見るため内容が上へ動く」一方向で、
+        // iPhone 15 実測では枠高の約半分 (~165px) 上へずれて旧 ±100px 窓を外れた (P? 事象)。
+        // 対称 ±200 では P2/P3 窓が接触し、想定超スクロール時に隣パーティを高スコア
+        // 誤記録するため下側は据え置き、P? で止まる安全バッファを残す。
+        // performMatch は対称窓のみのため「中心を上へ 50px 相当ずらした ±(margin+50px) 窓」で渡す。
+        let scrollAllowanceRatio = 100.0 / 2364.0
         for (i, roi) in rois.enumerated() {
             let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * roi.centerYRatio)
+            let cy = Int32(h * (roi.centerYRatio - scrollAllowanceRatio / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
-            let vMargin = Int32(h * roi.searchVMarginRatio)
+            let vMargin = Int32(h * (roi.searchVMarginRatio + scrollAllowanceRatio / 2))
             let score = NakamonWrapper.performMatch(withScene: scene,
                                                   templateImg: select,
                                                   centerX: cx,
