@@ -206,7 +206,7 @@ struct ContentView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "chart.bar.xaxis")
                         .foregroundStyle(.gray)
-                    Text(String(format: "%.1f%%", winRate))
+                    Text(RateFormat.percent(winRate))
                         .foregroundStyle(Color.recCoral)
                         .font(.body.bold())
                     Text("\(totalMatches) Matches")

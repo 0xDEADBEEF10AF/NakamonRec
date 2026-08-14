@@ -233,7 +233,7 @@ struct MonsterDailyTrendChart: View {
                 labelCtx.addFilter(.shadow(color: .black.opacity(0.95), radius: 1.5))
 
                 // 勝率 値ラベル (recCoral)
-                let winText = Text(String(format: "%.1f%%", pt.winRate))
+                let winText = Text(RateFormat.percent(pt.winRate))
                     .font(.system(size: 10, weight: .bold).monospacedDigit())
                     .foregroundStyle(Color.recCoral)
                 let winResolved = labelCtx.resolve(winText)
@@ -244,7 +244,7 @@ struct MonsterDailyTrendChart: View {
                 labelCtx.draw(winResolved, at: CGPoint(x: winLX, y: winY), anchor: winAnchor)
 
                 // 出現率 値ラベル (sideEnemy)
-                let encText = Text(String(format: "%.1f%%", pt.encounterRate))
+                let encText = Text(RateFormat.percent(pt.encounterRate))
                     .font(.system(size: 10, weight: .bold).monospacedDigit())
                     .foregroundStyle(Color.sideEnemy)
                 let encResolved = labelCtx.resolve(encText)

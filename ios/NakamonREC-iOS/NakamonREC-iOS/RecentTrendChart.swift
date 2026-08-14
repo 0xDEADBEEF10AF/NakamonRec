@@ -1,4 +1,5 @@
 import SwiftUI
+import NakamonREC_Shared
 
 /// 戦績画面の RECENT TREND グラフ (Android `WinRateGraphView.kt` の iOS 移植版)
 /// - SwiftUI Charts ではなく Canvas + DragGesture で実装し、1700+ 戦の大量データでも軽快にスライドできる
@@ -201,7 +202,7 @@ struct RecentTrendChart: View {
                 let pointRect = CGRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6)
                 ctx.fill(Path(ellipseIn: pointRect), with: .color(.white))
                 // ツールチップテキスト + 背景
-                let label = String(format: "%.1f%%: %dMatches", pt.winRate, pt.battleNum)
+                let label = "\(RateFormat.percent(pt.winRate)): \(pt.battleNum)Matches"
                 let text = Text(label)
                     .font(.system(size: 9, weight: .bold).monospacedDigit())
                     .foregroundStyle(.white)

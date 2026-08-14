@@ -195,7 +195,7 @@ struct BattleHistoryView: View {
             Text(useFiltered ? "FILTER WIN RATE" : "TOTAL WIN RATE")
                 .font(.caption2)
                 .foregroundStyle(.gray)
-            Text(String(format: "%.1f%%", winRate))
+            Text(RateFormat.percent(winRate))
                 .font(.system(size: 36, weight: .bold))
                 .foregroundStyle(Color.recCoral)
             Text("\(total) Matches")
@@ -303,10 +303,10 @@ struct BattleHistoryView: View {
                     MonsterThumb(name: latest?.myParty[safe: i], size: 22)
                 }
             }
-            Text(String(format: "%.1f%%", winRate))
+            Text(RateFormat.percent(winRate))
                 .font(.title3.bold())
                 .foregroundStyle(Color.recCoral)
-            Text(String(format: "Use: %.1f%%", useRate))
+            Text("Use: \(RateFormat.percent(useRate))")
                 .font(.caption2)
                 .foregroundStyle(.gray)
             HStack(spacing: 2) {
@@ -573,12 +573,14 @@ private struct BattleRecordRow: View {
         }
     }
 
+    /// 表示専用の分割。日付はドット区切り (2026.08.14) にして横幅を詰める
+    /// (保存形式・CSV は yyyy-MM-dd のまま変更しない)。
     private func splitTimestamp(_ ts: String) -> (date: String, time: String) {
         let parts = ts.split(separator: " ", maxSplits: 1)
         if parts.count == 2 {
-            return (String(parts[0]), String(parts[1]))
+            return (String(parts[0]).replacingOccurrences(of: "-", with: "."), String(parts[1]))
         }
-        return (ts, "")
+        return (ts.replacingOccurrences(of: "-", with: "."), "")
     }
 }
 

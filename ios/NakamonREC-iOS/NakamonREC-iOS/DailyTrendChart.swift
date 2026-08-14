@@ -217,7 +217,7 @@ struct DailyTrendChart: View {
                 let r = CGRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6)
                 ctx.fill(Path(ellipseIn: r), with: .color(.white))
                 // recCoral 値ラベル (黒シャドウで線と分離して可読性確保)
-                let label = String(format: "%.1f%%", pt.winRate)
+                let label = RateFormat.percent(pt.winRate)
                 let text = Text(label)
                     .font(.system(size: 10, weight: .bold).monospacedDigit())
                     .foregroundStyle(Color.recCoral)

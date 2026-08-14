@@ -125,10 +125,10 @@ struct MonsterStatsView: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(String(format: "出現:%d回(%.1f%%)", row.encounters, row.encounterRate))
+                    Text("出現:\(row.encounters)回(\(RateFormat.percent(row.encounterRate)))")
                         .font(.system(size: 9).monospacedDigit())
                         .foregroundStyle(.gray)
-                    Text(String(format: "勝率:%.1f%%", row.winRate))
+                    Text("勝率:\(RateFormat.percent(row.winRate))")
                         .font(.system(size: 9).monospacedDigit())
                         .foregroundStyle(rateColor(row.winRate))
                 }
@@ -169,10 +169,10 @@ struct MonsterStatsView: View {
             Spacer(minLength: 4)
 
             VStack(alignment: .trailing, spacing: 1) {
-                Text(String(format: "出現:%d回(%.1f%%)", row.encounters, row.encounterRate))
+                Text("出現:\(row.encounters)回(\(RateFormat.percent(row.encounterRate)))")
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.gray)
-                Text(String(format: "勝率:%.1f%%", row.winRate))
+                Text("勝率:\(RateFormat.percent(row.winRate))")
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(rateColor(row.winRate))
             }
