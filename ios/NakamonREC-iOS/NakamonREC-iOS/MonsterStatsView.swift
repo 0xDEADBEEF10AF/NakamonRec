@@ -257,11 +257,28 @@ struct MonsterStatsView: View {
         }
     }
 
+    /// 同率タイの並びが Dictionary の反復順 (再評価ごとにランダム) に依存して
+    /// 揺れないよう、副キー→名前まで含めて決定的に順序付ける (Android と同一規則)。
     private var sortedRows: [Row] {
         switch sortKey {
-        case .encountersDesc: return rows.sorted { $0.encounters > $1.encounters }
-        case .winRateAsc:     return rows.sorted { $0.winRate < $1.winRate }
-        case .winRateDesc:    return rows.sorted { $0.winRate > $1.winRate }
+        case .encountersDesc:
+            return rows.sorted {
+                if $0.encounters != $1.encounters { return $0.encounters > $1.encounters }
+                if $0.winRate != $1.winRate { return $0.winRate > $1.winRate }
+                return MonsterCatalog.name(for: $0.id) < MonsterCatalog.name(for: $1.id)
+            }
+        case .winRateAsc:
+            return rows.sorted {
+                if $0.winRate != $1.winRate { return $0.winRate < $1.winRate }
+                if $0.encounters != $1.encounters { return $0.encounters > $1.encounters }
+                return MonsterCatalog.name(for: $0.id) < MonsterCatalog.name(for: $1.id)
+            }
+        case .winRateDesc:
+            return rows.sorted {
+                if $0.winRate != $1.winRate { return $0.winRate > $1.winRate }
+                if $0.encounters != $1.encounters { return $0.encounters > $1.encounters }
+                return MonsterCatalog.name(for: $0.id) < MonsterCatalog.name(for: $1.id)
+            }
         }
     }
 
@@ -305,11 +322,27 @@ struct MonsterStatsView: View {
         }
     }
 
+    /// sortedRows と同じ理由で、副キー→構成キー文字列まで決定的に順序付ける。
     private var sortedPartyRows: [PartyRow] {
         switch sortKey {
-        case .encountersDesc: return partyRows.sorted { $0.encounters > $1.encounters }
-        case .winRateAsc:     return partyRows.sorted { $0.winRate < $1.winRate }
-        case .winRateDesc:    return partyRows.sorted { $0.winRate > $1.winRate }
+        case .encountersDesc:
+            return partyRows.sorted {
+                if $0.encounters != $1.encounters { return $0.encounters > $1.encounters }
+                if $0.winRate != $1.winRate { return $0.winRate > $1.winRate }
+                return $0.id < $1.id
+            }
+        case .winRateAsc:
+            return partyRows.sorted {
+                if $0.winRate != $1.winRate { return $0.winRate < $1.winRate }
+                if $0.encounters != $1.encounters { return $0.encounters > $1.encounters }
+                return $0.id < $1.id
+            }
+        case .winRateDesc:
+            return partyRows.sorted {
+                if $0.winRate != $1.winRate { return $0.winRate > $1.winRate }
+                if $0.encounters != $1.encounters { return $0.encounters > $1.encounters }
+                return $0.id < $1.id
+            }
         }
     }
 }
