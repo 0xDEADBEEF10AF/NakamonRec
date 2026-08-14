@@ -651,7 +651,7 @@ class HistoryActivity : AppCompatActivity() {
         // 日次グラフの表示/非表示 (シンプルビュー)。モンスター集計と共通キーで永続化
         // (iOS の @AppStorage "showStatsTrendGraphs" と対応する設定)
         val prefsStats = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        val showTrendGraphs = prefsStats.getBoolean("show_stats_trend_graphs", true)
+        val showTrendGraphs = prefsStats.getBoolean("show_stats_trend_graphs", false)
 
         val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -759,25 +759,9 @@ class HistoryActivity : AppCompatActivity() {
                     setCardBackgroundColor("#252525".toColorInt())
                     strokeWidth = 0
                     
-                    val horizontalRoot = LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        val p = (12 * resources.displayMetrics.density).toInt()
-                        setPadding(p, p, p, p)
-                        gravity = Gravity.CENTER_VERTICAL
-                    }
+                    val density = resources.displayMetrics.density
+                    val contentPad = (12 * density).toInt()
 
-                    // 左側コンテンツ (テキストとアイコン)
-                    val leftContent = LinearLayout(context).apply {
-                        orientation = LinearLayout.VERTICAL
-                        layoutParams = LinearLayout.LayoutParams((124 * resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-                    }
-
-                    // タイトルと勝率
-                    val titleRow = LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                    }
                     val titleText = if (stats.isTotal) {
                         "TOTAL"
                     } else {
@@ -785,7 +769,7 @@ class HistoryActivity : AppCompatActivity() {
                         val mainIdx = stats.lastUsedIndex
                         // その他の利用履歴スロットを昇順で抽出
                         val otherIndices = stats.partyIndices.filter { it != mainIdx && it >= 0 }.sorted()
-                        
+
                         val sb = StringBuilder(if (mainIdx != -1) "P${mainIdx + 1}" else "P?")
                         if (otherIndices.isNotEmpty()) {
                             sb.append(",")
@@ -800,46 +784,20 @@ class HistoryActivity : AppCompatActivity() {
                         textSize = 14f
                         setTypeface(null, android.graphics.Typeface.BOLD)
                     }
-                    val spacer = View(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+                    val rateColor = if (stats.winRate >= 50.0) "#F09199".toColorInt() else "#90D7EC".toColorInt()
+                    val matchesStr = getString(R.string.label_matches_format, stats.total)
+                    val wlStr = getString(R.string.label_win_lose_format, stats.wins, stats.losses)
+                    val useStr = if (stats.isTotal) null else {
+                        val usageRate = (stats.total.toDouble() / allRecords.size * 100.0)
+                        "Use:${RateFormat.percent(usageRate)}"
                     }
-                    val rateText = TextView(context).apply {
-                        text = RateFormat.percent(stats.winRate)
-                        setTextColor(if (stats.winRate >= 50.0) "#F09199".toColorInt() else "#90D7EC".toColorInt())
-                        textSize = 15f
-                        setTypeface(null, android.graphics.Typeface.BOLD)
-                    }
-                    titleRow.addView(title)
-                    titleRow.addView(spacer)
-                    titleRow.addView(rateText)
-                    leftContent.addView(titleRow)
 
-                    // 対戦数・使用率 (2行に分割、フォーマット統一)
-                    val subInfo = TextView(context).apply {
-                        val matchesStr = getString(R.string.label_matches_format, stats.total)
-                        val wlStr = getString(R.string.label_win_lose_format, stats.wins, stats.losses)
-                        
-                        if (stats.isTotal) {
-                            text = "${matchesStr}\n${wlStr}"
-                        } else {
-                            val usageRate = (stats.total.toDouble() / allRecords.size * 100.0)
-                            val usageStr = RateFormat.percent(usageRate)
-                            text = "${matchesStr}\n${wlStr}(Use:${usageStr})"
-                        }
-
-                        setTextColor(Color.LTGRAY)
-                        textSize = 11f
-                        setPadding(0, 2, 0, 0)
-                    }
-                    leftContent.addView(subInfo)
-
-                    // モンスターアイコン
-                    if (!stats.partyIndices.contains(-1)) {
+                    fun buildIconsLayout(iconDp: Int, topPad: Int): LinearLayout {
                         val iconsLayout = LinearLayout(context).apply {
                             orientation = LinearLayout.HORIZONTAL
-                            setPadding(0, 8, 0, 0)
+                            setPadding(0, topPad, 0, 0)
                         }
-                        val iconSize = (28 * resources.displayMetrics.density).toInt()
+                        val iconSize = (iconDp * density).toInt()
                         stats.members.forEach { name ->
                             val iv = ImageView(context).apply {
                                 layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { marginEnd = 4 }
@@ -852,14 +810,60 @@ class HistoryActivity : AppCompatActivity() {
                             applyRoundedCorners(iv)
                             iconsLayout.addView(iv)
                         }
-                        leftContent.addView(iconsLayout)
+                        return iconsLayout
                     }
-                    horizontalRoot.addView(leftContent)
 
-                    // 右側：勝率推移グラフ (シンプルビュー時は非表示)
                     if (showTrendGraphs) {
+                        val horizontalRoot = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            setPadding(contentPad, contentPad, contentPad, contentPad)
+                            gravity = Gravity.CENTER_VERTICAL
+                        }
+
+                        // 左側コンテンツ (テキストとアイコン)
+                        val leftContent = LinearLayout(context).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams((124 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+                        }
+
+                        // タイトルと勝率
+                        val titleRow = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                        }
+                        val spacer = View(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+                        }
+                        val rateText = TextView(context).apply {
+                            text = RateFormat.percent(stats.winRate)
+                            setTextColor(rateColor)
+                            textSize = 15f
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                        }
+                        titleRow.addView(title)
+                        titleRow.addView(spacer)
+                        titleRow.addView(rateText)
+                        leftContent.addView(titleRow)
+
+                        // 対戦数・使用率 (2行に分割、フォーマット統一)
+                        val subInfo = TextView(context).apply {
+                            text = if (useStr == null) "${matchesStr}\n${wlStr}" else "${matchesStr}\n${wlStr}(${useStr})"
+                            setTextColor(Color.LTGRAY)
+                            textSize = 11f
+                            setPadding(0, 2, 0, 0)
+                        }
+                        leftContent.addView(subInfo)
+
+                        // モンスターアイコン
+                        if (!stats.partyIndices.contains(-1)) {
+                            leftContent.addView(buildIconsLayout(28, 8))
+                        }
+                        horizontalRoot.addView(leftContent)
+
+                        // 右側：勝率推移グラフ
                         val graphContainer = FrameLayout(context).apply {
-                            layoutParams = LinearLayout.LayoutParams(0, (80 * resources.displayMetrics.density).toInt(), 1f).apply {
+                            layoutParams = LinearLayout.LayoutParams(0, (80 * density).toInt(), 1f).apply {
                                 marginStart = 16
                             }
                             val graph = WinRateGraphView(context).apply {
@@ -869,9 +873,50 @@ class HistoryActivity : AppCompatActivity() {
                             addView(graph)
                         }
                         horizontalRoot.addView(graphContainer)
+
+                        addView(horizontalRoot)
+                    } else {
+                        // シンプルビュー: 上段「ラベル+サムネ(40dp)+勝率(大)」、下段に数値1行。
+                        // カード高さを最小化して一覧性を重視する (iOS PartyStatsView.simpleRow と同一構成)
+                        val simpleRoot = LinearLayout(context).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(contentPad, contentPad, contentPad, contentPad)
+                        }
+                        val topRow = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                        }
+                        topRow.addView(title)
+                        if (!stats.partyIndices.contains(-1)) {
+                            val icons = buildIconsLayout(40, 0)
+                            icons.layoutParams = LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                            ).apply { marginStart = (8 * density).toInt() }
+                            topRow.addView(icons)
+                        }
+                        val spacer = View(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+                        }
+                        val bigRate = TextView(context).apply {
+                            text = RateFormat.percent(stats.winRate)
+                            setTextColor(rateColor)
+                            textSize = 28f
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                        }
+                        topRow.addView(spacer)
+                        topRow.addView(bigRate)
+                        simpleRoot.addView(topRow)
+
+                        val infoLine = TextView(context).apply {
+                            text = listOfNotNull(matchesStr, wlStr, useStr).joinToString("・")
+                            setTextColor(Color.LTGRAY)
+                            textSize = 12f
+                            setPadding(0, 2, 0, 0)
+                        }
+                        simpleRoot.addView(infoLine)
+
+                        addView(simpleRoot)
                     }
-                    
-                    addView(horizontalRoot)
                 }
                 return card
             }
@@ -899,7 +944,7 @@ class HistoryActivity : AppCompatActivity() {
         // 日別推移グラフの表示/非表示 (シンプルビュー)。パーティ集計と共通キーで永続化。
         // グラフボタンで切替時は refreshList() で再構築するため var で持つ
         val prefsStats = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
-        var showTrendGraphs = prefsStats.getBoolean("show_stats_trend_graphs", true)
+        var showTrendGraphs = prefsStats.getBoolean("show_stats_trend_graphs", false)
 
         val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -1031,11 +1076,10 @@ class HistoryActivity : AppCompatActivity() {
                 applyRoundedCorners(imageView)
                 root.addView(imageView)
 
-                val infoLayout = LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams((90 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        marginStart = (8 * density).toInt()
-                    }
+                val winRateColor = when {
+                    data.winRate >= 80.0 -> "#F09199".toColorInt()
+                    data.winRate >= 50.0 -> Color.WHITE
+                    else -> "#90D7EC".toColorInt()
                 }
                 val nameText = TextView(context).apply {
                     text = data.name
@@ -1044,28 +1088,30 @@ class HistoryActivity : AppCompatActivity() {
                     setTypeface(null, Typeface.BOLD)
                     maxLines = 1
                 }
-                val appearText = TextView(context).apply {
-                    text = String.format(Locale.US, "出現:%d回(%s)", data.count, RateFormat.percent(data.appearanceRate))
-                    setTextColor(Color.LTGRAY)
-                    textSize = 10f
-                }
-                val winRateText = TextView(context).apply {
-                    text = "勝率:" + RateFormat.percent(data.winRate)
-                    setTextColor(when {
-                        data.winRate >= 80.0 -> "#F09199".toColorInt()
-                        data.winRate >= 50.0 -> Color.WHITE
-                        else -> "#90D7EC".toColorInt()
-                    })
-                    textSize = 10f
-                    setTypeface(null, Typeface.BOLD)
-                }
-                infoLayout.addView(nameText)
-                infoLayout.addView(appearText)
-                infoLayout.addView(winRateText)
-                root.addView(infoLayout)
 
-                // シンプルビュー時は日別推移グラフを非表示
                 if (showTrendGraphs) {
+                    val infoLayout = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams((90 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            marginStart = (8 * density).toInt()
+                        }
+                    }
+                    val appearText = TextView(context).apply {
+                        text = String.format(Locale.US, "出現:%d回(%s)", data.count, RateFormat.percent(data.appearanceRate))
+                        setTextColor(Color.LTGRAY)
+                        textSize = 10f
+                    }
+                    val winRateText = TextView(context).apply {
+                        text = "勝率:" + RateFormat.percent(data.winRate)
+                        setTextColor(winRateColor)
+                        textSize = 10f
+                        setTypeface(null, Typeface.BOLD)
+                    }
+                    infoLayout.addView(nameText)
+                    infoLayout.addView(appearText)
+                    infoLayout.addView(winRateText)
+                    root.addView(infoLayout)
+
                     val graphContainer = FrameLayout(context).apply {
                         layoutParams = LinearLayout.LayoutParams(0, (60 * density).toInt(), 1f).apply {
                             marginStart = (4 * density).toInt()
@@ -1076,6 +1122,48 @@ class HistoryActivity : AppCompatActivity() {
                         addView(graph)
                     }
                     root.addView(graphContainer)
+                } else {
+                    // シンプルビュー: 名前+回数を左に、右の空きスペースへ「出現率」「勝率」を
+                    // 大きめ数字 (17sp)+キャプションの2列で配置し視認性を上げる
+                    // (iOS MonsterStatsView.simpleMetric と同一構成)
+                    val infoLayout = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            marginStart = (8 * density).toInt()
+                        }
+                    }
+                    val countText = TextView(context).apply {
+                        text = "${data.count}回"
+                        setTextColor(Color.LTGRAY)
+                        textSize = 11f
+                    }
+                    infoLayout.addView(nameText)
+                    infoLayout.addView(countText)
+                    root.addView(infoLayout)
+
+                    fun metricColumn(value: String, caption: String, valueColor: Int) = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams((62 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            marginStart = (6 * density).toInt()
+                        }
+                        addView(TextView(context).apply {
+                            text = value
+                            setTextColor(valueColor)
+                            textSize = 17f
+                            setTypeface(null, Typeface.BOLD)
+                            gravity = Gravity.END
+                            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                        })
+                        addView(TextView(context).apply {
+                            text = caption
+                            setTextColor(Color.GRAY)
+                            textSize = 9f
+                            gravity = Gravity.END
+                            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                        })
+                    }
+                    root.addView(metricColumn(RateFormat.percent(data.appearanceRate), "出現率", Color.WHITE))
+                    root.addView(metricColumn(RateFormat.percent(data.winRate), "勝率", winRateColor))
                 }
 
                 addView(root)
