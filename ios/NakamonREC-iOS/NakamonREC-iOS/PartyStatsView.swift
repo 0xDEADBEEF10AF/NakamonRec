@@ -17,8 +17,9 @@ import NakamonREC_Shared
 struct PartyStatsView: View {
     let records: [BattleRecord]
     @Environment(\.dismiss) private var dismiss
-    // 日次グラフの表示/非表示 (シンプルビュー)。モンスター集計と共通のキーで永続化
-    @AppStorage("showStatsTrendGraphs") private var showTrendGraphs = true
+    // 日次グラフの表示/非表示 (シンプルビュー)。モンスター集計と共通のキーで永続化。
+    // デフォルトは非表示 (シンプルビュー) — 2026-08-15 ビーフ決定
+    @AppStorage("showStatsTrendGraphs") private var showTrendGraphs = false
 
     var body: some View {
         NavigationStack {
@@ -66,23 +67,88 @@ struct PartyStatsView: View {
 
     @ViewBuilder
     private func rowCard(_ kind: RowKind) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            // 左: ラベル + 数字 + サムネ (縦並び)
-            leftColumn(kind)
-                .frame(width: 160, alignment: .leading)
-            // 右: 1 日ごとの勝率グラフ (シンプルビュー時は非表示)
+        Group {
             if showTrendGraphs {
-                chartArea(kind)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 88)
+                HStack(alignment: .top, spacing: 8) {
+                    // 左: ラベル + 数字 + サムネ (縦並び)
+                    leftColumn(kind)
+                        .frame(width: 160, alignment: .leading)
+                    // 右: 1 日ごとの勝率グラフ
+                    chartArea(kind)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 88)
+                }
             } else {
-                Spacer(minLength: 0)
+                simpleRow(kind)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Simple view (グラフ非表示時の1行凝縮レイアウト)
+
+    /// 上段「ラベル+サムネ+勝率(大)」、下段に数値まとめ。カード高さを最小化して一覧性を重視する。
+    @ViewBuilder
+    private func simpleRow(_ kind: RowKind) -> some View {
+        switch kind {
+        case .total(let stats):
+            simpleRowContent(label: "TOTAL", labelColor: .white, stats: stats, showUse: false, ids: nil)
+        case .latestSlot(let p, let stats):
+            if let s = stats {
+                simpleRowContent(label: "P\(p + 1)(最新)", labelColor: .white, stats: s, showUse: true, ids: s.partyIDs)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text("P\(p + 1)(未使用)")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.gray)
+                        Spacer()
+                        Text("—")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(.gray)
+                    }
+                    Text("0Matches")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.gray)
+                }
+            }
+        case .past(let row):
+            simpleRowContent(label: row.label, labelColor: .gray, stats: row.stats, showUse: true, ids: row.stats.partyIDs)
+        }
+    }
+
+    private func simpleRowContent(label: String, labelColor: Color,
+                                  stats: StatsBundle, showUse: Bool, ids: [String]?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(labelColor)
+                if let ids {
+                    HStack(spacing: 3) {
+                        ForEach(0..<4, id: \.self) { i in
+                            MonsterThumb(name: ids[safe: i] ?? "?", size: 40)
+                        }
+                    }
+                }
+                Spacer()
+                Text(RateFormat.percent(stats.winRate))
+                    .font(.system(size: 28, weight: .bold).monospacedDigit())
+                    .foregroundStyle(rateColor(stats.winRate))
+            }
+            Text(simpleInfoLine(stats: stats, showUse: showUse))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.gray)
+        }
+    }
+
+    private func simpleInfoLine(stats: StatsBundle, showUse: Bool) -> String {
+        var line = "\(stats.matches)Matches・\(stats.wins)W-\(stats.losses)L"
+        if showUse { line += "・Use:\(RateFormat.percent(stats.usageRate))" }
+        return line
     }
 
     @ViewBuilder

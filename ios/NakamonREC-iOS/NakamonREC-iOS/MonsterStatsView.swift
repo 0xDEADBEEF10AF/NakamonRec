@@ -12,8 +12,9 @@ struct MonsterStatsView: View {
     let records: [BattleRecord]
     let partyFilter: Int?     // 0/1/2 = P1/P2/P3、nil = TOTAL
     @Environment(\.dismiss) private var dismiss
-    // 日別推移グラフの表示/非表示 (シンプルビュー)。パーティ集計と共通のキーで永続化
-    @AppStorage("showStatsTrendGraphs") private var showTrendGraphs = true
+    // 日別推移グラフの表示/非表示 (シンプルビュー)。パーティ集計と共通のキーで永続化。
+    // デフォルトは非表示 (シンプルビュー) — 2026-08-15 ビーフ決定
+    @AppStorage("showStatsTrendGraphs") private var showTrendGraphs = false
 
     enum SortKey: String, CaseIterable, Identifiable {
         case encountersDesc, winRateAsc, winRateDesc
@@ -121,36 +122,55 @@ struct MonsterStatsView: View {
 
     private func monsterRow(rank: Int, row: Row) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            // 左カラム (rank + thumb + 名前/出現/勝率) — 高さは chart と揃える
-            HStack(spacing: 6) {
+            if showTrendGraphs {
+                // 左カラム (rank + thumb + 名前/出現/勝率) — 高さは chart と揃える
+                HStack(spacing: 6) {
+                    Text("\(rank)")
+                        .font(.caption.bold().monospacedDigit())
+                        .foregroundStyle(.gray)
+                        .frame(width: 28, alignment: .trailing)
+                    MonsterThumb(name: row.id, size: 40)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(MonsterCatalog.name(for: row.id))
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text("出現:\(row.encounters)回(\(RateFormat.percent(row.encounterRate)))")
+                            .font(.system(size: 9).monospacedDigit())
+                            .foregroundStyle(.gray)
+                        Text("勝率:\(RateFormat.percent(row.winRate))")
+                            .font(.system(size: 9).monospacedDigit())
+                            .foregroundStyle(rateColor(row.winRate))
+                    }
+                }
+                .frame(width: 180, height: rowContentHeight, alignment: .leading)
+
+                MonsterDailyTrendChart(filteredRecords: records, monsterID: row.id)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: rowContentHeight)
+            } else {
+                // シンプルビュー: 右の空きスペースに出現率/勝率を大きめ2列で配置し視認性を上げる
                 Text("\(rank)")
                     .font(.caption.bold().monospacedDigit())
                     .foregroundStyle(.gray)
                     .frame(width: 28, alignment: .trailing)
                 MonsterThumb(name: row.id, size: 40)
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(MonsterCatalog.name(for: row.id))
                         .font(.caption.bold())
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text("出現:\(row.encounters)回(\(RateFormat.percent(row.encounterRate)))")
-                        .font(.system(size: 9).monospacedDigit())
+                    Text("\(row.encounters)回")
+                        .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(.gray)
-                    Text("勝率:\(RateFormat.percent(row.winRate))")
-                        .font(.system(size: 9).monospacedDigit())
-                        .foregroundStyle(rateColor(row.winRate))
                 }
-            }
-            .frame(width: 180, height: rowContentHeight, alignment: .leading)
-
-            // シンプルビュー時は日別推移グラフを非表示
-            if showTrendGraphs {
-                MonsterDailyTrendChart(filteredRecords: records, monsterID: row.id)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: rowContentHeight)
-            } else {
-                Spacer(minLength: 0)
+                Spacer(minLength: 4)
+                simpleMetric(value: RateFormat.percent(row.encounterRate),
+                             caption: "出現率", valueColor: .white)
+                simpleMetric(value: RateFormat.percent(row.winRate),
+                             caption: "勝率", valueColor: rateColor(row.winRate))
             }
         }
         .padding(.horizontal, 8)
@@ -195,6 +215,19 @@ struct MonsterStatsView: View {
         .padding(.vertical, 4)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// シンプルビューの右側メトリクス列 (値 17pt + キャプション 9pt、固定幅で行間の縦揃え)
+    private func simpleMetric(value: String, caption: String, valueColor: Color) -> some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(value)
+                .font(.system(size: 17, weight: .bold).monospacedDigit())
+                .foregroundStyle(valueColor)
+            Text(caption)
+                .font(.system(size: 9))
+                .foregroundStyle(.gray)
+        }
+        .frame(width: 62, alignment: .trailing)
     }
 
     /// パーティ表示用に壁モンスターを左側へ並べ替える。集計キー (順序無視) は変更しない。
