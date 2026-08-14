@@ -261,7 +261,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 対称 ±200 では P2/P3 窓が接触し、想定超スクロール時に隣パーティを高スコア
         // 誤記録するため下側は据え置き、P? で止まる安全バッファを残す。
         // performMatch は対称窓のみのため「中心を上へ 50px 相当ずらした ±(margin+50px) 窓」で渡す。
-        let scrollAllowanceRatio = 100.0 / 2364.0
+        let scrollAllowanceRatio = CalibrationDefaults.partyScrollAllowanceVRatio
         for (i, roi) in rois.enumerated() {
             let cx = Int32(w * roi.centerXRatio)
             let cy = Int32(h * (roi.centerYRatio - scrollAllowanceRatio / 2))
@@ -304,12 +304,15 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                  scores: [Double]) {
         let w = scene.size.width
         let h = scene.size.height
+        // 切り出し範囲は scanForPartySelect の非対称探索窓 (上200/下100) と同期:
+        // スクロール時のヒット位置もサムネに写るよう「中心を上へ 50px 相当ずらした窓」で保存
+        let scrollAllowanceRatio = CalibrationDefaults.partyScrollAllowanceVRatio
         for (i, roi) in rois.enumerated() {
             let path = MatchingScoreSnapshot.path(forFile: "p\(i).png")
             let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * roi.centerYRatio)
+            let cy = Int32(h * (roi.centerYRatio - scrollAllowanceRatio / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
-            let vMargin = Int32(h * roi.searchVMarginRatio)
+            let vMargin = Int32(h * (roi.searchVMarginRatio + scrollAllowanceRatio / 2))
             _ = NakamonWrapper.performMatchAndSave(withScene: scene,
                                                    templateImg: select,
                                                    centerX: cx,

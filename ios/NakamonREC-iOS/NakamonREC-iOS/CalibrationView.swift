@@ -146,16 +146,21 @@ struct CalibrationView: View {
         let roi = rois[idx]
         let center = layout.point(forRatio: CGPoint(x: roi.centerXRatio, y: roi.centerYRatio))
         let templateSize = layout.size(forRatio: CGSize(width: roi.widthRatio, height: roi.heightRatio))
+        // パーティ選択は実行時判定の窓が上方向へスクロール吸収分だけ非対称に広がるため、
+        // 薄緑もそれに同期させる (上へ allowance/2 シフト + 高さ +allowance)
+        let scrollAllowance = (screen == .partySelect) ? CalibrationDefaults.partyScrollAllowanceVRatio : 0
+        let searchCenter = layout.point(forRatio: CGPoint(x: roi.centerXRatio,
+                                                          y: roi.centerYRatio - scrollAllowance / 2))
         let searchSize = layout.size(forRatio: CGSize(
             width: roi.widthRatio + 2 * roi.searchHMarginRatio,
-            height: roi.heightRatio + 2 * roi.searchVMarginRatio
+            height: roi.heightRatio + 2 * roi.searchVMarginRatio + scrollAllowance
         ))
         return ZStack {
             // 薄緑塗り (探索範囲)
             Rectangle()
                 .fill(Color.green.opacity(0.18))
                 .frame(width: searchSize.width, height: searchSize.height)
-                .position(center)
+                .position(searchCenter)
             // 緑枠 (ROI 本体)
             Rectangle()
                 .stroke(Color.green, lineWidth: 2)
@@ -295,10 +300,12 @@ struct CalibrationView: View {
                 newScores.append(0)
                 continue
             }
+            // パーティ選択は実行時判定 (scanForPartySelect) と同じ非対称窓でテストする
+            let scrollAllowance = (screen == .partySelect) ? CalibrationDefaults.partyScrollAllowanceVRatio : 0
             let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * roi.centerYRatio)
+            let cy = Int32(h * (roi.centerYRatio - scrollAllowance / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
-            let vMargin = Int32(h * roi.searchVMarginRatio)
+            let vMargin = Int32(h * (roi.searchVMarginRatio + scrollAllowance / 2))
             let s = NakamonWrapper.performMatch(withScene: scene,
                                               templateImg: tpl,
                                               centerX: cx,

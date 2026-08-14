@@ -71,6 +71,13 @@ public enum CalibrationDefaults {
         )
     }
 
+    /// パーティ選択の実行時判定に加える上方向スクロール吸収分 (@1080×2364-ref で 100px)。
+    /// リストのスクロールでハイライト枠は上方向にしか動かないため、探索窓は
+    /// 「上 = searchVMargin + この値 / 下 = searchVMargin」の非対称 (上200/下100) になる。
+    /// 対称窓 API では「中心を上へ半分ずらした ±(margin+半分) 窓」として扱う。
+    /// 実行時判定 (NakamonCaptureEngine)・校正画面の薄緑表示/スコアテストで共用。
+    public static let partyScrollAllowanceVRatio = 100.0 / 2364.0
+
     // 対戦じゅんびの VS ロゴ (VS_FM 242×148 を Pixel 10 Pro 1080 基準)
     public static let battlePrepVSROI = CalibrationROI(
         centerXRatio: 0.5,
