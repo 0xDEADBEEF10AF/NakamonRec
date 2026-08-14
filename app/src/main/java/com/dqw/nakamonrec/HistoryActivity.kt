@@ -920,6 +920,21 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         val totalCount = filteredRecords.size
+        // 同率タイも決定的に並ぶよう、副キー → 名前/構成キーまで含めた比較器で順序付ける
+        // (iOS MonsterStatsView.sortedRows / sortedPartyRows と同一規則)
+        val monsterOrderByCount = compareByDescending<MonsterRankData> { it.count }
+            .thenByDescending { it.winRate }.thenBy { it.name }
+        val monsterOrderByRateAsc = compareBy<MonsterRankData> { it.winRate }
+            .thenByDescending { it.count }.thenBy { it.name }
+        val monsterOrderByRateDesc = compareByDescending<MonsterRankData> { it.winRate }
+            .thenByDescending { it.count }.thenBy { it.name }
+        val partyOrderByCount = compareByDescending<PartyRankData> { it.count }
+            .thenByDescending { it.winRate }.thenBy { it.key.joinToString("_") }
+        val partyOrderByRateAsc = compareBy<PartyRankData> { it.winRate }
+            .thenByDescending { it.count }.thenBy { it.key.joinToString("_") }
+        val partyOrderByRateDesc = compareByDescending<PartyRankData> { it.winRate }
+            .thenByDescending { it.count }.thenBy { it.key.joinToString("_") }
+
         val monsterRankingList = appearanceCount.map { (name, count) ->
             val wins = winAgainstCount.getOrDefault(name, 0)
             val winRate = if (count > 0) (wins.toDouble() / count * 100) else 0.0
@@ -944,7 +959,7 @@ class HistoryActivity : AppCompatActivity() {
             }
 
             MonsterRankData(name, count, appearanceRate, winRate, historyData)
-        }.sortedByDescending { it.count }.toMutableList()
+        }.sortedWith(monsterOrderByCount).toMutableList()
 
         // ===== 敵パーティ構成ランキング (順序無視・4体識別必須) =====
         var qualifiedPartyBattles = 0
@@ -965,7 +980,7 @@ class HistoryActivity : AppCompatActivity() {
             val winRate = if (count > 0) (wins.toDouble() / count * 100) else 0.0
             val appearanceRate = (count.toDouble() / partyTotalDenominator * 100)
             PartyRankData(key, count, appearanceRate, winRate)
-        }.sortedByDescending { it.count }.toMutableList()
+        }.sortedWith(partyOrderByCount).toMutableList()
 
         val listView = ListView(this).apply {
             divider = null
@@ -1241,15 +1256,15 @@ class HistoryActivity : AppCompatActivity() {
         fun applySort() {
             if (currentMode == 0) {
                 when (sortMode) {
-                    0 -> monsterRankingList.sortByDescending { it.count }
-                    1 -> monsterRankingList.sortBy { it.winRate }
-                    2 -> monsterRankingList.sortByDescending { it.winRate }
+                    0 -> monsterRankingList.sortWith(monsterOrderByCount)
+                    1 -> monsterRankingList.sortWith(monsterOrderByRateAsc)
+                    2 -> monsterRankingList.sortWith(monsterOrderByRateDesc)
                 }
             } else {
                 when (sortMode) {
-                    0 -> partyRankingList.sortByDescending { it.count }
-                    1 -> partyRankingList.sortBy { it.winRate }
-                    2 -> partyRankingList.sortByDescending { it.winRate }
+                    0 -> partyRankingList.sortWith(partyOrderByCount)
+                    1 -> partyRankingList.sortWith(partyOrderByRateAsc)
+                    2 -> partyRankingList.sortWith(partyOrderByRateDesc)
                 }
             }
         }
