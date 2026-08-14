@@ -67,6 +67,9 @@ struct MonsterStatsView: View {
                         LazyVStack(spacing: 3) {
                             switch statsMode {
                             case .monster:
+                                if !showTrendGraphs {
+                                    simpleHeaderRow
+                                }
                                 ForEach(Array(sortedRows.enumerated()), id: \.element.id) { index, row in
                                     monsterRow(rank: index + 1, row: row)
                                 }
@@ -150,27 +153,23 @@ struct MonsterStatsView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: rowContentHeight)
             } else {
-                // シンプルビュー: 右の空きスペースに出現率/勝率を大きめ2列で配置し視認性を上げる
+                // シンプルビュー: 右の空きスペースに出現率/勝率を大きめ2列で配置し視認性を上げる。
+                // 列タイトルは simpleHeaderRow に1回だけ表示し、% の下には実数 (回数/W-L) を併記
                 Text("\(rank)")
                     .font(.caption.bold().monospacedDigit())
                     .foregroundStyle(.gray)
                     .frame(width: 28, alignment: .trailing)
                 MonsterThumb(name: row.id, size: 40)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(MonsterCatalog.name(for: row.id))
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text("\(row.encounters)回")
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.gray)
-                }
+                Text(MonsterCatalog.name(for: row.id))
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer(minLength: 4)
                 simpleMetric(value: RateFormat.percent(row.encounterRate),
-                             caption: "出現率", valueColor: .white)
+                             sub: "\(row.encounters)回", valueColor: .white)
                 simpleMetric(value: RateFormat.percent(row.winRate),
-                             caption: "勝率", valueColor: rateColor(row.winRate))
+                             sub: "\(row.wins)W-\(row.losses)L", valueColor: rateColor(row.winRate))
             }
         }
         .padding(.horizontal, 8)
@@ -217,17 +216,35 @@ struct MonsterStatsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    /// シンプルビューの右側メトリクス列 (値 17pt + キャプション 9pt、固定幅で行間の縦揃え)
-    private func simpleMetric(value: String, caption: String, valueColor: Color) -> some View {
+    /// シンプルビューの右側メトリクス列 (値 17pt + 実数の小併記 9pt、固定幅で行間の縦揃え)
+    private func simpleMetric(value: String, sub: String, valueColor: Color) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             Text(value)
                 .font(.system(size: 17, weight: .bold).monospacedDigit())
                 .foregroundStyle(valueColor)
-            Text(caption)
-                .font(.system(size: 9))
+            Text(sub)
+                .font(.system(size: 9).monospacedDigit())
                 .foregroundStyle(.gray)
         }
         .frame(width: 62, alignment: .trailing)
+    }
+
+    /// シンプルビューの列タイトル行。1位カードの上に1回だけ表示し、
+    /// 各行でのキャプション繰り返しをなくす (メトリクス列と同じ幅/間隔で縦を揃える)。
+    private var simpleHeaderRow: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            Text("出現率")
+                .font(.system(size: 10))
+                .foregroundStyle(.gray)
+                .frame(width: 62, alignment: .trailing)
+            Text("勝率")
+                .font(.system(size: 10))
+                .foregroundStyle(.gray)
+                .frame(width: 62, alignment: .trailing)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 2)
     }
 
     /// パーティ表示用に壁モンスターを左側へ並べ替える。集計キー (順序無視) は変更しない。

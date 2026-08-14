@@ -1123,25 +1123,16 @@ class HistoryActivity : AppCompatActivity() {
                     }
                     root.addView(graphContainer)
                 } else {
-                    // シンプルビュー: 名前+回数を左に、右の空きスペースへ「出現率」「勝率」を
-                    // 大きめ数字 (17sp)+キャプションの2列で配置し視認性を上げる
+                    // シンプルビュー: 名前を左に、右の空きスペースへ「出現率」「勝率」を
+                    // 大きめ数字 (17sp) の2列で配置。列タイトルは simpleHeaderRow に1回だけ
+                    // 表示し、% の下には実数 (回数 / W-L) を併記する
                     // (iOS MonsterStatsView.simpleMetric と同一構成)
-                    val infoLayout = LinearLayout(context).apply {
-                        orientation = LinearLayout.VERTICAL
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                            marginStart = (8 * density).toInt()
-                        }
+                    nameText.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = (8 * density).toInt()
                     }
-                    val countText = TextView(context).apply {
-                        text = "${data.count}回"
-                        setTextColor(Color.LTGRAY)
-                        textSize = 11f
-                    }
-                    infoLayout.addView(nameText)
-                    infoLayout.addView(countText)
-                    root.addView(infoLayout)
+                    root.addView(nameText)
 
-                    fun metricColumn(value: String, caption: String, valueColor: Int) = LinearLayout(context).apply {
+                    fun metricColumn(value: String, sub: String, valueColor: Int) = LinearLayout(context).apply {
                         orientation = LinearLayout.VERTICAL
                         layoutParams = LinearLayout.LayoutParams((62 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                             marginStart = (6 * density).toInt()
@@ -1155,15 +1146,18 @@ class HistoryActivity : AppCompatActivity() {
                             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                         })
                         addView(TextView(context).apply {
-                            text = caption
+                            text = sub
                             setTextColor(Color.GRAY)
                             textSize = 9f
                             gravity = Gravity.END
                             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                         })
                     }
-                    root.addView(metricColumn(RateFormat.percent(data.appearanceRate), "出現率", Color.WHITE))
-                    root.addView(metricColumn(RateFormat.percent(data.winRate), "勝率", winRateColor))
+                    // winRate = wins/count*100 なので実数を逆算 (丸め誤差なし)
+                    val wins = Math.round(data.winRate * data.count / 100.0).toInt()
+                    val losses = data.count - wins
+                    root.addView(metricColumn(RateFormat.percent(data.appearanceRate), "${data.count}回", Color.WHITE))
+                    root.addView(metricColumn(RateFormat.percent(data.winRate), "${wins}W-${losses}L", winRateColor))
                 }
 
                 addView(root)
@@ -1313,9 +1307,36 @@ class HistoryActivity : AppCompatActivity() {
             addView(partyTab)
         }
 
+        // シンプルビューの列タイトル行 (モンスタータブのみ、1位カードの上に1回だけ表示)。
+        // カード内右端のメトリクス列 (62dp ×2、間隔 6dp) と横位置を揃える:
+        // 右余白 = listView の padding 16px + カード内 padding 10dp
+        fun makeHeaderLabel(label: String, marginStartDp: Int) = TextView(this).apply {
+            text = label
+            setTextColor(Color.GRAY)
+            textSize = 10f
+            gravity = Gravity.END
+            layoutParams = LinearLayout.LayoutParams((62 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = (marginStartDp * density).toInt()
+            }
+        }
+        val simpleHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, (6 * density).toInt(), 16 + (10 * density).toInt(), 0)
+            addView(makeHeaderLabel("出現率", 0))
+            addView(makeHeaderLabel("勝率", 6))
+        }
+
+        fun updateSimpleHeader() {
+            simpleHeaderRow.visibility =
+                if (currentMode == 0 && !showTrendGraphs) View.VISIBLE else View.GONE
+        }
+        updateSimpleHeader()
+
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(tabBar)
+            addView(simpleHeaderRow)
             addView(listView)
             addView(emptyPartyView)
         }
@@ -1372,6 +1393,7 @@ class HistoryActivity : AppCompatActivity() {
             applySort()
             refreshList()
             updateTitle()
+            updateSimpleHeader()
         }
 
         monsterTab.setOnClickListener { selectTab(0) }
@@ -1397,6 +1419,7 @@ class HistoryActivity : AppCompatActivity() {
                 prefsStats.edit().putBoolean("show_stats_trend_graphs", showTrendGraphs).apply()
                 graphButton.text = if (showTrendGraphs) "グラフ非表示" else "グラフ表示"
                 refreshList()
+                updateSimpleHeader()
             }
         }
         dialog.show()
