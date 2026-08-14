@@ -12,6 +12,8 @@ struct CalibrationActionMenu: View {
     @State private var pickerItem: PhotosPickerItem? = nil
     @State private var showCalibration = false
     @State private var errorMessage: String? = nil
+    @State private var showPartyImportNotice = false
+    @State private var showPartyPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -24,8 +26,19 @@ struct CalibrationActionMenu: View {
 
             Divider().background(Color.gray.opacity(0.3))
 
-            PhotosPicker(selection: $pickerItem, matching: .images) {
-                actionLabel("画像をインポート", systemImage: "square.and.arrow.down")
+            // パーティ選択画面のみ、ピッカーを開く前に注意ダイアログを必ず挟む。
+            // フォーカスなしスクショのインポートが「パーティ選択が認識しない」問い合わせの
+            // 最頻出原因で、README の注意書きだけでは読まれないため (2026-08-14)。
+            if screen == .partySelect {
+                Button {
+                    showPartyImportNotice = true
+                } label: {
+                    actionLabel("画像をインポート", systemImage: "square.and.arrow.down")
+                }
+            } else {
+                PhotosPicker(selection: $pickerItem, matching: .images) {
+                    actionLabel("画像をインポート", systemImage: "square.and.arrow.down")
+                }
             }
 
             Button {
@@ -64,6 +77,13 @@ struct CalibrationActionMenu: View {
         }
         .fullScreenCover(isPresented: $showCalibration) {
             CalibrationView(screen: screen)
+        }
+        .photosPicker(isPresented: $showPartyPicker, selection: $pickerItem, matching: .images)
+        .alert("インポート前の確認", isPresented: $showPartyImportNotice) {
+            Button("画像を選ぶ") { showPartyPicker = true }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
         }
         .alert("エラー", isPresented: Binding(
             get: { errorMessage != nil },
