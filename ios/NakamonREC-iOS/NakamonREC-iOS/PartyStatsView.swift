@@ -17,6 +17,8 @@ import NakamonREC_Shared
 struct PartyStatsView: View {
     let records: [BattleRecord]
     @Environment(\.dismiss) private var dismiss
+    // 日次グラフの表示/非表示 (シンプルビュー)。モンスター集計と共通のキーで永続化
+    @AppStorage("showStatsTrendGraphs") private var showTrendGraphs = true
 
     var body: some View {
         NavigationStack {
@@ -40,7 +42,14 @@ struct PartyStatsView: View {
             .navigationTitle("パーティ集計")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showTrendGraphs.toggle()
+                    } label: {
+                        Image(systemName: "chart.xyaxis.line")
+                            .foregroundStyle(showTrendGraphs ? Color.recCoral : .gray)
+                    }
+                    .accessibilityLabel(showTrendGraphs ? "グラフを非表示" : "グラフを表示")
                     Button("閉じる") { dismiss() }
                 }
             }
@@ -61,10 +70,14 @@ struct PartyStatsView: View {
             // 左: ラベル + 数字 + サムネ (縦並び)
             leftColumn(kind)
                 .frame(width: 160, alignment: .leading)
-            // 右: 1 日ごとの勝率グラフ
-            chartArea(kind)
-                .frame(maxWidth: .infinity)
-                .frame(height: 88)
+            // 右: 1 日ごとの勝率グラフ (シンプルビュー時は非表示)
+            if showTrendGraphs {
+                chartArea(kind)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 88)
+            } else {
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

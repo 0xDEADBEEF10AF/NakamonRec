@@ -12,6 +12,8 @@ struct MonsterStatsView: View {
     let records: [BattleRecord]
     let partyFilter: Int?     // 0/1/2 = P1/P2/P3、nil = TOTAL
     @Environment(\.dismiss) private var dismiss
+    // 日別推移グラフの表示/非表示 (シンプルビュー)。パーティ集計と共通のキーで永続化
+    @AppStorage("showStatsTrendGraphs") private var showTrendGraphs = true
 
     enum SortKey: String, CaseIterable, Identifiable {
         case encountersDesc, winRateAsc, winRateDesc
@@ -99,7 +101,14 @@ struct MonsterStatsView: View {
                             .foregroundStyle(Color.recCoral)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showTrendGraphs.toggle()
+                    } label: {
+                        Image(systemName: "chart.xyaxis.line")
+                            .foregroundStyle(showTrendGraphs ? Color.recCoral : .gray)
+                    }
+                    .accessibilityLabel(showTrendGraphs ? "グラフを非表示" : "グラフを表示")
                     Button("閉じる") { dismiss() }
                 }
             }
@@ -135,9 +144,14 @@ struct MonsterStatsView: View {
             }
             .frame(width: 180, height: rowContentHeight, alignment: .leading)
 
-            MonsterDailyTrendChart(filteredRecords: records, monsterID: row.id)
-                .frame(maxWidth: .infinity)
-                .frame(height: rowContentHeight)
+            // シンプルビュー時は日別推移グラフを非表示
+            if showTrendGraphs {
+                MonsterDailyTrendChart(filteredRecords: records, monsterID: row.id)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: rowContentHeight)
+            } else {
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
