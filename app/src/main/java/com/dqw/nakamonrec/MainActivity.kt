@@ -518,7 +518,22 @@ class MainActivity : AppCompatActivity() {
             row.setOnClickListener {
                 AlertDialog.Builder(this@MainActivity, R.style.Theme_NakamonRec_Dialog).setTitle(titles[i]).setItems(arrayOf("画像をインポート", "画像を削除", "校正を開始")) { _, idx ->
                     when (idx) {
-                        0 -> { pendingCalibrationFileName = fileNames[i]; pickImageLauncher.launch("image/*") }
+                        0 -> {
+                            pendingCalibrationFileName = fileNames[i]
+                            if (modes[i] == "party") {
+                                // パーティ選択のみ、ピッカーを開く前に注意ダイアログを必ず挟む。
+                                // フォーカスなしスクショのインポートが「パーティ選択が認識しない」
+                                // 問い合わせの最頻出原因で、README の注意書きだけでは読まれないため (2026-08-14)。
+                                AlertDialog.Builder(this@MainActivity, R.style.Theme_NakamonRec_Dialog)
+                                    .setTitle("インポート前の確認")
+                                    .setMessage("パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
+                                    .setPositiveButton("画像を選ぶ") { _, _ -> pickImageLauncher.launch("image/*") }
+                                    .setNegativeButton("キャンセル", null)
+                                    .show()
+                            } else {
+                                pickImageLauncher.launch("image/*")
+                            }
+                        }
                         1 -> { if (File(filesDir, fileNames[i]).exists()) showDeleteImageConfirmDialog(fileNames[i]) }
                         2 -> { if (File(filesDir, fileNames[i]).exists()) startActivity(Intent(this@MainActivity, CalibrationActivity::class.java).apply { putExtra("EXTRA_MODE", modes[i]); putExtra("EXTRA_FILE_NAME", fileNames[i]) }) else showTopToast("先に画像をインポートしてください") }
                     }
