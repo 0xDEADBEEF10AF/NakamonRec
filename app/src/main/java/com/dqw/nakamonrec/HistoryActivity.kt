@@ -648,6 +648,11 @@ class HistoryActivity : AppCompatActivity() {
         val allRecords = dataManager.history.records
         if (allRecords.isEmpty()) return
 
+        // 日次グラフの表示/非表示 (シンプルビュー)。モンスター集計と共通キーで永続化
+        // (iOS の @AppStorage "showStatsTrendGraphs" と対応する設定)
+        val prefsStats = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
+        val showTrendGraphs = prefsStats.getBoolean("show_stats_trend_graphs", true)
+
         val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val sdfDisplay = SimpleDateFormat("MM/dd", Locale.US)
@@ -851,18 +856,20 @@ class HistoryActivity : AppCompatActivity() {
                     }
                     horizontalRoot.addView(leftContent)
 
-                    // 右側：勝率推移グラフ
-                    val graphContainer = FrameLayout(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, (80 * resources.displayMetrics.density).toInt(), 1f).apply {
-                            marginStart = 16
+                    // 右側：勝率推移グラフ (シンプルビュー時は非表示)
+                    if (showTrendGraphs) {
+                        val graphContainer = FrameLayout(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(0, (80 * resources.displayMetrics.density).toInt(), 1f).apply {
+                                marginStart = 16
+                            }
+                            val graph = WinRateGraphView(context).apply {
+                                visibleCount = 7 // 日別データは1週間分程度を表示
+                                setData(stats.historyRates)
+                            }
+                            addView(graph)
                         }
-                        val graph = WinRateGraphView(context).apply {
-                            visibleCount = 7 // 日別データは1週間分程度を表示
-                            setData(stats.historyRates)
-                        }
-                        addView(graph)
+                        horizontalRoot.addView(graphContainer)
                     }
-                    horizontalRoot.addView(graphContainer)
                     
                     addView(horizontalRoot)
                 }
@@ -874,6 +881,11 @@ class HistoryActivity : AppCompatActivity() {
             .setTitle("パーティ集計")
             .setView(listView)
             .setPositiveButton("閉じる", null)
+            .setNegativeButton(if (showTrendGraphs) "グラフ非表示" else "グラフ表示") { _, _ ->
+                // 設定を反転して開き直す (カードは構築済みのため再生成が必要)
+                prefsStats.edit().putBoolean("show_stats_trend_graphs", !showTrendGraphs).apply()
+                showPartyAnalysisDialog()
+            }
             .show()
     }
 
@@ -883,6 +895,11 @@ class HistoryActivity : AppCompatActivity() {
         if (filteredRecords.isEmpty()) return
 
         val density = resources.displayMetrics.density
+
+        // 日別推移グラフの表示/非表示 (シンプルビュー)。パーティ集計と共通キーで永続化。
+        // グラフボタンで切替時は refreshList() で再構築するため var で持つ
+        val prefsStats = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
+        var showTrendGraphs = prefsStats.getBoolean("show_stats_trend_graphs", true)
 
         val sdfInput = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -1032,16 +1049,19 @@ class HistoryActivity : AppCompatActivity() {
                 infoLayout.addView(winRateText)
                 root.addView(infoLayout)
 
-                val graphContainer = FrameLayout(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, (60 * density).toInt(), 1f).apply {
-                        marginStart = (4 * density).toInt()
+                // シンプルビュー時は日別推移グラフを非表示
+                if (showTrendGraphs) {
+                    val graphContainer = FrameLayout(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, (60 * density).toInt(), 1f).apply {
+                            marginStart = (4 * density).toInt()
+                        }
+                        val graph = MonsterStatsGraphView(context).apply {
+                            setData(data.historyData)
+                        }
+                        addView(graph)
                     }
-                    val graph = MonsterStatsGraphView(context).apply {
-                        setData(data.historyData)
-                    }
-                    addView(graph)
+                    root.addView(graphContainer)
                 }
-                root.addView(graphContainer)
 
                 addView(root)
             }
@@ -1204,6 +1224,7 @@ class HistoryActivity : AppCompatActivity() {
             .setView(container)
             .setPositiveButton(R.string.btn_close, null)
             .setNeutralButton("勝率の低い順", null)
+            .setNegativeButton(if (showTrendGraphs) "グラフ非表示" else "グラフ表示", null)
             .create()
 
         fun titleSubject(): String = if (currentMode == 0) "敵モンスター" else "敵パーティ"
@@ -1265,6 +1286,14 @@ class HistoryActivity : AppCompatActivity() {
                 applySort()
                 refreshList()
                 updateTitle()
+            }
+            // グラフ表示/非表示の切替 (ソートと同じく dismiss せずリスト再構築)
+            val graphButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+            graphButton.setOnClickListener {
+                showTrendGraphs = !showTrendGraphs
+                prefsStats.edit().putBoolean("show_stats_trend_graphs", showTrendGraphs).apply()
+                graphButton.text = if (showTrendGraphs) "グラフ非表示" else "グラフ表示"
+                refreshList()
             }
         }
         dialog.show()
