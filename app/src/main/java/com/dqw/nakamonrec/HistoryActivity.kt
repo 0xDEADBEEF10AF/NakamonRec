@@ -1225,30 +1225,39 @@ class HistoryActivity : AppCompatActivity() {
                 }
                 root.addView(spacer)
 
-                val infoLayout = LinearLayout(context).apply {
+                // モンスタータブと同じメトリクス2列 (列タイトルは simpleHeaderRow が担う)。
+                // パーティ行にはグラフがないためレイアウトは常時この形
+                val winRateColor = when {
+                    data.winRate >= 80.0 -> "#F09199".toColorInt()
+                    data.winRate >= 50.0 -> Color.WHITE
+                    else -> "#90D7EC".toColorInt()
+                }
+                fun metricColumn(value: String, sub: String, valueColor: Int) = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.END
-                }
-                val appearText = TextView(context).apply {
-                    text = String.format(Locale.US, "出現:%d回(%s)", data.count, RateFormat.percent(data.appearanceRate))
-                    setTextColor(Color.LTGRAY)
-                    textSize = 11f
-                    gravity = Gravity.END
-                }
-                val winRateText = TextView(context).apply {
-                    text = "勝率:" + RateFormat.percent(data.winRate)
-                    setTextColor(when {
-                        data.winRate >= 80.0 -> "#F09199".toColorInt()
-                        data.winRate >= 50.0 -> Color.WHITE
-                        else -> "#90D7EC".toColorInt()
+                    layoutParams = LinearLayout.LayoutParams((62 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = (6 * density).toInt()
+                    }
+                    addView(TextView(context).apply {
+                        text = value
+                        setTextColor(valueColor)
+                        textSize = 17f
+                        setTypeface(null, Typeface.BOLD)
+                        gravity = Gravity.END
+                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                     })
-                    textSize = 11f
-                    setTypeface(null, Typeface.BOLD)
-                    gravity = Gravity.END
+                    addView(TextView(context).apply {
+                        text = sub
+                        setTextColor(Color.GRAY)
+                        textSize = 9f
+                        gravity = Gravity.END
+                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    })
                 }
-                infoLayout.addView(appearText)
-                infoLayout.addView(winRateText)
-                root.addView(infoLayout)
+                // winRate = wins/count*100 なので実数を逆算 (丸め誤差なし)
+                val wins = Math.round(data.winRate * data.count / 100.0).toInt()
+                val losses = data.count - wins
+                root.addView(metricColumn(RateFormat.percent(data.appearanceRate), "${data.count}回", Color.WHITE))
+                root.addView(metricColumn(RateFormat.percent(data.winRate), "${wins}W-${losses}L", winRateColor))
 
                 addView(root)
             }
@@ -1328,8 +1337,10 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         fun updateSimpleHeader() {
-            simpleHeaderRow.visibility =
-                if (currentMode == 0 && !showTrendGraphs) View.VISIBLE else View.GONE
+            // モンスタータブはシンプルビュー時のみ、パーティタブ (グラフなし) は常時表示。
+            // ただしパーティタブが空 (emptyPartyView 表示中) のときは出さない
+            val visible = if (currentMode == 1) partyRankingList.isNotEmpty() else !showTrendGraphs
+            simpleHeaderRow.visibility = if (visible) View.VISIBLE else View.GONE
         }
         updateSimpleHeader()
 

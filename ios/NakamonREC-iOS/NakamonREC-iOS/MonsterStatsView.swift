@@ -77,6 +77,8 @@ struct MonsterStatsView: View {
                                 if sortedPartyRows.isEmpty {
                                     emptyPartyState
                                 } else {
+                                    // パーティ行にはグラフがないため、列タイトル行は常時表示
+                                    simpleHeaderRow
                                     ForEach(Array(sortedPartyRows.enumerated()), id: \.element.id) { index, row in
                                         partyRow(rank: index + 1, row: row)
                                     }
@@ -201,14 +203,11 @@ struct MonsterStatsView: View {
 
             Spacer(minLength: 4)
 
-            VStack(alignment: .trailing, spacing: 1) {
-                Text("出現:\(row.encounters)回(\(RateFormat.percent(row.encounterRate)))")
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(.gray)
-                Text("勝率:\(RateFormat.percent(row.winRate))")
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(rateColor(row.winRate))
-            }
+            // モンスタータブと同じメトリクス2列 (列タイトルは simpleHeaderRow が担う)
+            simpleMetric(value: RateFormat.percent(row.encounterRate),
+                         sub: "\(row.encounters)回", valueColor: .white)
+            simpleMetric(value: RateFormat.percent(row.winRate),
+                         sub: "\(row.wins)W-\(row.encounters - row.wins)L", valueColor: rateColor(row.winRate))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
