@@ -27,6 +27,9 @@ struct PartyStatsView: View {
                 Color.black.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 8) {
+                        if !showTrendGraphs {
+                            simpleHeaderRow
+                        }
                         rowCard(.total(buildTotal()))
                         ForEach(0..<3, id: \.self) { p in
                             rowCard(.latestSlot(p, buildLatestSlot(partyIndex: p)))
@@ -88,67 +91,79 @@ struct PartyStatsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: - Simple view (グラフ非表示時の1行凝縮レイアウト)
+    // MARK: - Simple view (モンスター集計と同じメトリクス2列+列ヘッダの形式)
 
-    /// 上段「ラベル+サムネ+勝率(大)」、下段に数値まとめ。カード高さを最小化して一覧性を重視する。
     @ViewBuilder
     private func simpleRow(_ kind: RowKind) -> some View {
         switch kind {
         case .total(let stats):
-            simpleRowContent(label: "TOTAL", labelColor: .white, stats: stats, showUse: false, ids: nil)
+            // TOTAL の使用率は定義上 100%
+            simpleRowContent(label: "TOTAL", labelColor: .white, stats: stats, useRateOverride: 100)
         case .latestSlot(let p, let stats):
             if let s = stats {
-                simpleRowContent(label: "P\(p + 1)(最新)", labelColor: .white, stats: s, showUse: true, ids: s.partyIDs)
+                simpleRowContent(label: "P\(p + 1)(最新)", labelColor: .white, stats: s, useRateOverride: nil)
             } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text("P\(p + 1)(未使用)")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.gray)
-                        Spacer()
-                        Text("—")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(.gray)
-                    }
-                    Text("0Matches")
-                        .font(.caption.monospacedDigit())
+                HStack(alignment: .center, spacing: 8) {
+                    Text("P\(p + 1)(未使用)")
+                        .font(.footnote.bold())
                         .foregroundStyle(.gray)
+                    Spacer(minLength: 4)
+                    simpleMetric(value: "—", sub: "0回", valueColor: .gray)
+                    simpleMetric(value: "—", sub: "—", valueColor: .gray)
                 }
             }
         case .past(let row):
-            simpleRowContent(label: row.label, labelColor: .gray, stats: row.stats, showUse: true, ids: row.stats.partyIDs)
+            simpleRowContent(label: row.label, labelColor: .gray, stats: row.stats, useRateOverride: nil)
         }
     }
 
     private func simpleRowContent(label: String, labelColor: Color,
-                                  stats: StatsBundle, showUse: Bool, ids: [String]?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
+                                  stats: StatsBundle, useRateOverride: Double?) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            // 左: ラベルの下にサムネ (TOTAL はサムネなし)。横幅は可変で小画面でも収まる
+            VStack(alignment: .leading, spacing: 3) {
                 Text(label)
-                    .font(.subheadline.bold())
+                    .font(.footnote.bold())
                     .foregroundStyle(labelColor)
-                if let ids {
-                    HStack(spacing: 3) {
-                        ForEach(0..<4, id: \.self) { i in
-                            MonsterThumb(name: ids[safe: i] ?? "?", size: 40)
-                        }
-                    }
+                if !stats.partyIDs.isEmpty {
+                    thumbsRow(stats.partyIDs)
                 }
-                Spacer()
-                Text(RateFormat.percent(stats.winRate))
-                    .font(.system(size: 28, weight: .bold).monospacedDigit())
-                    .foregroundStyle(rateColor(stats.winRate))
             }
-            Text(simpleInfoLine(stats: stats, showUse: showUse))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.gray)
+            Spacer(minLength: 4)
+            simpleMetric(value: RateFormat.percent(useRateOverride ?? stats.usageRate),
+                         sub: "\(stats.matches)回", valueColor: .white)
+            simpleMetric(value: RateFormat.percent(stats.winRate),
+                         sub: "\(stats.wins)W-\(stats.losses)L", valueColor: rateColor(stats.winRate))
         }
     }
 
-    private func simpleInfoLine(stats: StatsBundle, showUse: Bool) -> String {
-        var line = "\(stats.matches)Matches・\(stats.wins)W-\(stats.losses)L"
-        if showUse { line += "・Use:\(RateFormat.percent(stats.usageRate))" }
-        return line
+    /// モンスター集計 (MonsterStatsView.simpleMetric) と同一のメトリクス列
+    private func simpleMetric(value: String, sub: String, valueColor: Color) -> some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(value)
+                .font(.system(size: 17, weight: .bold).monospacedDigit())
+                .foregroundStyle(valueColor)
+            Text(sub)
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.gray)
+        }
+        .frame(width: 62, alignment: .trailing)
+    }
+
+    /// 列タイトル行 (TOTAL カードの上に1回だけ表示)
+    private var simpleHeaderRow: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            Text("使用率")
+                .font(.system(size: 10))
+                .foregroundStyle(.gray)
+                .frame(width: 62, alignment: .trailing)
+            Text("勝率")
+                .font(.system(size: 10))
+                .foregroundStyle(.gray)
+                .frame(width: 62, alignment: .trailing)
+        }
+        .padding(.horizontal, 10)
     }
 
     @ViewBuilder

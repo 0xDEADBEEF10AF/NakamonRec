@@ -876,44 +876,51 @@ class HistoryActivity : AppCompatActivity() {
 
                         addView(horizontalRoot)
                     } else {
-                        // シンプルビュー: 上段「ラベル+サムネ(40dp)+勝率(大)」、下段に数値1行。
-                        // カード高さを最小化して一覧性を重視する (iOS PartyStatsView.simpleRow と同一構成)
+                        // シンプルビュー: モンスター集計と同じメトリクス2列+列ヘッダの形式。
+                        // 左はラベルの下にサムネ (TOTAL はサムネなし)、右に使用率/勝率の2列
+                        // (iOS PartyStatsView.simpleRowContent と同一構成)
                         val simpleRoot = LinearLayout(context).apply {
-                            orientation = LinearLayout.VERTICAL
-                            setPadding(contentPad, contentPad, contentPad, contentPad)
-                        }
-                        val topRow = LinearLayout(context).apply {
                             orientation = LinearLayout.HORIZONTAL
+                            setPadding(contentPad, contentPad, contentPad, contentPad)
                             gravity = Gravity.CENTER_VERTICAL
                         }
-                        topRow.addView(title)
+                        val leftCol = LinearLayout(context).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        }
+                        title.textSize = 13f
+                        leftCol.addView(title)
                         if (!stats.partyIndices.contains(-1)) {
-                            val icons = buildIconsLayout(40, 0)
-                            icons.layoutParams = LinearLayout.LayoutParams(
-                                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply { marginStart = (8 * density).toInt() }
-                            topRow.addView(icons)
+                            leftCol.addView(buildIconsLayout(36, 4))
                         }
-                        val spacer = View(context).apply {
-                            layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
-                        }
-                        val bigRate = TextView(context).apply {
-                            text = RateFormat.percent(stats.winRate)
-                            setTextColor(rateColor)
-                            textSize = 28f
-                            setTypeface(null, android.graphics.Typeface.BOLD)
-                        }
-                        topRow.addView(spacer)
-                        topRow.addView(bigRate)
-                        simpleRoot.addView(topRow)
+                        simpleRoot.addView(leftCol)
 
-                        val infoLine = TextView(context).apply {
-                            text = listOfNotNull(matchesStr, wlStr, useStr).joinToString("・")
-                            setTextColor(Color.LTGRAY)
-                            textSize = 12f
-                            setPadding(0, 2, 0, 0)
+                        fun metricColumn(value: String, sub: String, valueColor: Int) = LinearLayout(context).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams((62 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                                marginStart = (6 * density).toInt()
+                            }
+                            addView(TextView(context).apply {
+                                text = value
+                                setTextColor(valueColor)
+                                textSize = 17f
+                                setTypeface(null, android.graphics.Typeface.BOLD)
+                                gravity = Gravity.END
+                                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                            })
+                            addView(TextView(context).apply {
+                                text = sub
+                                setTextColor(Color.GRAY)
+                                textSize = 9f
+                                gravity = Gravity.END
+                                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                            })
                         }
-                        simpleRoot.addView(infoLine)
+                        // TOTAL の使用率は定義上 100%
+                        val useValue = if (stats.isTotal) RateFormat.percent(100.0)
+                                       else RateFormat.percent(stats.total.toDouble() / allRecords.size * 100.0)
+                        simpleRoot.addView(metricColumn(useValue, "${stats.total}回", Color.WHITE))
+                        simpleRoot.addView(metricColumn(RateFormat.percent(stats.winRate), "${stats.wins}W-${stats.losses}L", rateColor))
 
                         addView(simpleRoot)
                     }
@@ -922,9 +929,36 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
+        // 列タイトル行 (シンプルビュー時のみ、TOTAL カードの上に1回だけ表示)。
+        // カード内右端のメトリクス列 (62dp ×2、間隔 6dp) と横位置を揃える:
+        // 右余白 = listView の padding 16px + カード内 padding 12dp
+        val dialogContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            if (!showTrendGraphs) {
+                val d = resources.displayMetrics.density
+                fun headerLabel(label: String, marginStartDp: Int) = TextView(this@HistoryActivity).apply {
+                    text = label
+                    setTextColor(Color.GRAY)
+                    textSize = 10f
+                    gravity = Gravity.END
+                    layoutParams = LinearLayout.LayoutParams((62 * d).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = (marginStartDp * d).toInt()
+                    }
+                }
+                addView(LinearLayout(this@HistoryActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.END
+                    setPadding(0, (6 * d).toInt(), 16 + (12 * d).toInt(), 0)
+                    addView(headerLabel("使用率", 0))
+                    addView(headerLabel("勝率", 6))
+                })
+            }
+            addView(listView)
+        }
+
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("パーティ集計")
-            .setView(listView)
+            .setView(dialogContent)
             .setPositiveButton("閉じる", null)
             .setNegativeButton(if (showTrendGraphs) "グラフ非表示" else "グラフ表示") { _, _ ->
                 // 設定を反転して開き直す (カードは構築済みのため再生成が必要)
