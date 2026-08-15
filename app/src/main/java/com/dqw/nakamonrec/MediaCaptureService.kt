@@ -235,13 +235,27 @@ class MediaCaptureService : Service() {
     }
 
     private fun setupVirtualDisplay() {
-        val metrics = resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
-        
+        // 仮想ディスプレイは「実画面寸法」で作る。resources.displayMetrics は
+        // 3ボタンナビゲーション等でシステムバーを除いた高さを返すことがあり、
+        // その場合 MediaProjection が実画面をアスペクト維持で縮小ミラーして
+        // 左右に黒帯を付けるため、校正座標 (実画面スクショ基準) と本番フレームの
+        // 水平座標が一致しなくなる (Galaxy 3ボタンナビ実例 2026-08-15: 縮小率 0.94、
+        // 中央付近を不動点に外側スロットほど ROI が放射状にズレて識別失敗)。
+        // ジェスチャーナビ端末では displayMetrics ≒ 実画面のため挙動は変わらない。
+        val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+        val (width, height) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.maximumWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            val dm = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(dm)
+            dm.widthPixels to dm.heightPixels
+        }
+        val density = resources.displayMetrics.densityDpi
+
         val scale = width.toFloat() / 1080f
-        dataManager.appendFlightLog(String.format(Locale.US, "校正完了 frame幅=%d scale=%.3f", width, scale))
+        dataManager.appendFlightLog(String.format(Locale.US, "校正完了 frame寸法=%dx%d scale=%.3f", width, height, scale))
 
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { stopSelf() }
