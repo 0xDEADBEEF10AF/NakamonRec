@@ -144,7 +144,7 @@
     <string name="ver_unknown">Ver Unknown</string>
     <string name="msg_checking_update">最新バージョンを確認中…</string>
     <string name="msg_update_available">新しいバージョンがあります</string>
-    <string name="msg_update_desc">Ver %1$s が利用可能です。更新しますか？</string>
+    <string name="msg_update_desc">新しいバージョンが Google Play で利用可能です。更新しますか？</string>
     <string name="btn_update">更新する</string>
     <string name="btn_later">後で</string>
     <string name="msg_latest_version">現在最新バージョンです</string>

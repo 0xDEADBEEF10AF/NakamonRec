@@ -142,5 +142,6 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation("com.google.code.gson:gson:2.13.2")
+    implementation("com.google.android.play:app-update:2.1.0")
     implementation(project(":opencv"))
 }

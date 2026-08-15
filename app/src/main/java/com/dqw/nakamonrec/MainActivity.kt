@@ -35,12 +35,11 @@ import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import com.dqw.nakamonrec.databinding.ActivityMainBinding
 import com.google.gson.Gson
-import com.google.gson.annotations.SerializedName
-import com.google.gson.reflect.TypeToken
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.install.model.UpdateAvailability
 import org.opencv.android.OpenCVLoader
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,13 +52,6 @@ class MainActivity : AppCompatActivity() {
     private var pendingCalibrationFileName: String? = null
     private var calibrationSelectorDialog: AlertDialog? = null
     private val dataManager by lazy { BattleDataManager(this) }
-
-    // GitHub API応答用
-    data class GithubRelease(
-        @SerializedName("tag_name") val tagName: String,
-        val name: String,
-        @SerializedName("html_url") val htmlUrl: String
-    )
 
     private val serviceStopReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -162,7 +154,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnCalibrate.setOnClickListener { showCalibrationSelectorDialog() }
 
         updateUI(MediaCaptureService.isRunning)
-        if (currentVersionName.isNotEmpty()) checkForUpdates(currentVersionName, isManual = false)
+        checkForUpdates(isManual = false)
 
         startTitleAnimation()
     }
@@ -199,49 +191,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkForUpdates(currentName: String, isManual: Boolean) {
-        thread {
-            try {
-                val url = "https://api.github.com/repos/0xDEADBEEF10AF/NakamonRec/releases"
-                val connection = URL(url).openConnection()
-                connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                val json = connection.getInputStream().bufferedReader().use { it.readText() }
-                val listType = object : TypeToken<List<GithubRelease>>() {}.type
-                val releases: List<GithubRelease> = Gson().fromJson(json, listType)
-                if (releases.isNotEmpty()) {
-                    val latest = releases[0]
-                    val latestName = latest.tagName.replace("v", "").trim()
-                    val cleanCurrentName = currentName.replace("v", "").trim()
-                    Handler(Looper.getMainLooper()).post {
-                        if (isNewerVersion(latestName, cleanCurrentName)) {
-                            // 自動チェック時のみ「このバージョンを抑止」フラグを尊重する。
-                            // 手動 (デバッグメニューから) のときは常にダイアログを出す。
-                            val suppressed = getSuppressedUpdateVersion()
-                            if (!isManual && suppressed == latest.tagName) {
-                                // 抑止対象なのでスキップ
-                            } else {
-                                showUpdateDialog(latest.name, latest.htmlUrl, latest.tagName)
-                            }
-                        } else if (isManual) showTopToast(getString(R.string.msg_latest_version))
+    private fun checkForUpdates(isManual: Boolean) {
+        // Play In-App Update API で更新有無を確認する。GitHub Releases チェックは
+        // ストア一本化 (2026-08-15, 案B: GitHub APK 配布は廃止) に伴い撤去した。
+        // Play 外インストール (旧 GitHub APK 等) では更新なし/失敗扱いになるため、
+        // 手動チェック時のみ結果をトーストで通知する。
+        val manager = AppUpdateManagerFactory.create(this)
+        manager.appUpdateInfo
+            .addOnSuccessListener { info ->
+                if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE) {
+                    // Play からは versionCode しか取れない (versionName は不可)。
+                    // 抑止キーも versionCode 文字列で持つ
+                    val availableVersion = info.availableVersionCode().toString()
+                    // 自動チェック時のみ「このバージョンを抑止」フラグを尊重する。
+                    // 手動 (デバッグメニューから) のときは常にダイアログを出す。
+                    if (isManual || getSuppressedUpdateVersion() != availableVersion) {
+                        showUpdateDialog(availableVersion)
                     }
+                } else if (isManual) {
+                    showTopToast(getString(R.string.msg_latest_version))
                 }
-            } catch (_: Exception) {
-                if (isManual) Handler(Looper.getMainLooper()).post { showTopToast(getString(R.string.msg_update_failed)) }
             }
-        }
+            .addOnFailureListener {
+                if (isManual) showTopToast(getString(R.string.msg_update_failed))
+            }
     }
 
-    private fun isNewerVersion(latest: String, current: String): Boolean {
-        val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
-        val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
-        for (i in 0 until maxOf(latestParts.size, currentParts.size)) {
-            val l = latestParts.getOrElse(i) { 0 }; val c = currentParts.getOrElse(i) { 0 }
-            if (l > c) return true; if (l < c) return false
-        }
-        return false
-    }
-
-    private fun showUpdateDialog(title: String, updateUrl: String, tagName: String) {
+    private fun showUpdateDialog(suppressKey: String) {
         val density = resources.displayMetrics.density
         val pad = (20 * density).toInt()
         val container = LinearLayout(this).apply {
@@ -249,7 +225,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(pad, 0, pad, 0)
         }
         val messageView = TextView(this).apply {
-            text = getString(R.string.msg_update_desc, title)
+            text = getString(R.string.msg_update_desc)
             textSize = 14f
             setTextColor(android.graphics.Color.WHITE)
         }
@@ -270,13 +246,21 @@ class MainActivity : AppCompatActivity() {
             .setTitle(getString(R.string.msg_update_available))
             .setView(container)
             .setPositiveButton(getString(R.string.btn_update)) { _, _ ->
-                if (checkbox.isChecked) saveSuppressedUpdateVersion(tagName)
-                startActivity(Intent(Intent.ACTION_VIEW, updateUrl.toUri()))
+                if (checkbox.isChecked) saveSuppressedUpdateVersion(suppressKey)
+                openPlayStorePage()
             }
             .setNegativeButton(getString(R.string.btn_later)) { _, _ ->
-                if (checkbox.isChecked) saveSuppressedUpdateVersion(tagName)
+                if (checkbox.isChecked) saveSuppressedUpdateVersion(suppressKey)
             }
             .show()
+    }
+
+    private fun openPlayStorePage() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri()))
+        } catch (_: Exception) {
+            startActivity(Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$packageName".toUri()))
+        }
     }
 
     private fun saveSuppressedUpdateVersion(tagName: String) {
@@ -919,7 +903,7 @@ class MainActivity : AppCompatActivity() {
     private fun showDeveloperMenu(currentVersion: String) {
         val suppressedVersion = getSuppressedUpdateVersion()
         val reEnableLabel = if (suppressedVersion != null) {
-            "アップデート通知を再有効化 ($suppressedVersion を抑止中)"
+            "アップデート通知を再有効化 (build $suppressedVersion を抑止中)"
         } else {
             "アップデート通知を再有効化 (抑止なし)"
         }
@@ -936,7 +920,7 @@ class MainActivity : AppCompatActivity() {
                     0 -> showFlightLog()
                     1 -> {
                         showTopToast(getString(R.string.msg_checking_update))
-                        checkForUpdates(currentVersion, isManual = true)
+                        checkForUpdates(isManual = true)
                     }
                     2 -> {
                         if (suppressedVersion != null) {
