@@ -20,6 +20,12 @@ struct ContentView: View {
     @State private var activeFileName: String = BattleHistoryStore.shared.activeFileName
     @State private var lastSeenRecordTimestamp: String = BroadcastStatus.lastRecordTimestamp
 
+    // App Store 更新通知 (1日1回チェック、バージョン単位で抑止可能)
+    @State private var availableUpdate: AppStoreUpdateInfo? = nil
+    @State private var showUpdateAlert = false
+    @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
+    @AppStorage("lastUpdateCheckDate") private var lastUpdateCheckDate = ""
+
     private var totalWins: Int { history.totalWins }
     private var totalLosses: Int { history.totalLosses }
     private var totalMatches: Int { totalWins + totalLosses }
@@ -29,6 +35,27 @@ struct ContentView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+
+    private static let updateCheckDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// App Store の最新バージョンを1日1回チェックし、新しければダイアログを出す。
+    /// GitHub Releases チェックはストア一本化 (2026-08-15) で廃止。
+    /// チェック失敗時は日付を記録しない (同日中の次回起動で再試行)。
+    private func checkForStoreUpdate() async {
+        let today = Self.updateCheckDayFormatter.string(from: Date())
+        guard lastUpdateCheckDate != today else { return }
+        guard let info = await AppStoreUpdateChecker.fetch() else { return }
+        lastUpdateCheckDate = today
+        guard AppStoreUpdateChecker.isNewer(info.version, than: appVersion),
+              info.version != suppressedUpdateVersion else { return }
+        availableUpdate = info
+        showUpdateAlert = true
     }
 
     var body: some View {
@@ -80,6 +107,20 @@ struct ContentView: View {
                     }
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
+            }
+            .task {
+                await checkForStoreUpdate()
+            }
+            .alert("新しいバージョンがあります", isPresented: $showUpdateAlert, presenting: availableUpdate) { info in
+                Button("App Store を開く") {
+                    UIApplication.shared.open(info.storeURL)
+                }
+                Button("このバージョンは通知しない") {
+                    suppressedUpdateVersion = info.version
+                }
+                Button("後で", role: .cancel) {}
+            } message: { info in
+                Text("Ver \(info.version) が利用可能です。")
             }
         }
         .sheet(isPresented: $showDebugMenu) {
@@ -403,8 +444,8 @@ struct BroadcastButton: UIViewRepresentable {
 
 private struct DebugMenuView: View {
     @Environment(\.dismiss) private var dismiss
-
-    private let releasesURL = URL(string: "https://github.com/0xDEADBEEF10AF/NakamonRec/releases")!
+    @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
+    @State private var updateCheckMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -417,9 +458,36 @@ private struct DebugMenuView: View {
                     }
 
                     Button {
-                        UIApplication.shared.open(releasesURL)
+                        // 手動チェックは抑止設定を無視する (Android のデバッグメニューと同挙動)
+                        Task {
+                            let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+                            if let info = await AppStoreUpdateChecker.fetch() {
+                                if AppStoreUpdateChecker.isNewer(info.version, than: current) {
+                                    await UIApplication.shared.open(info.storeURL)
+                                } else {
+                                    updateCheckMessage = "現在最新バージョンです (Ver \(current))"
+                                }
+                            } else {
+                                updateCheckMessage = "チェックに失敗しました"
+                            }
+                        }
                     } label: {
                         Label("アプリのアップデートを確認", systemImage: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(.white)
+                    }
+
+                    Button {
+                        if suppressedUpdateVersion.isEmpty {
+                            updateCheckMessage = "現在抑止されている通知はありません"
+                        } else {
+                            suppressedUpdateVersion = ""
+                            updateCheckMessage = "アップデート通知を再有効化しました"
+                        }
+                    } label: {
+                        Label(suppressedUpdateVersion.isEmpty
+                              ? "アップデート通知を再有効化 (抑止なし)"
+                              : "アップデート通知を再有効化 (Ver \(suppressedUpdateVersion) を抑止中)",
+                              systemImage: "bell.badge")
                             .foregroundStyle(.white)
                     }
 
@@ -429,6 +497,13 @@ private struct DebugMenuView: View {
                         Label("マッチング閾値を調整", systemImage: "slider.horizontal.3")
                     }
                 }
+            }
+            .alert("アップデート", isPresented: Binding(
+                get: { updateCheckMessage != nil },
+                set: { if !$0 { updateCheckMessage = nil } })) {
+                Button("OK") { updateCheckMessage = nil }
+            } message: {
+                Text(updateCheckMessage ?? "")
             }
             .navigationTitle("デバッグメニュー")
             .navigationBarTitleDisplayMode(.inline)

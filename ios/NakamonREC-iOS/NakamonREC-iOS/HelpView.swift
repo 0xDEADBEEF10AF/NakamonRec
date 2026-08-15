@@ -1,4 +1,5 @@
 import SwiftUI
+import NakamonREC_Shared
 
 /// ヘルプ + バージョン情報 + アップデート確認画面 (Phase 9)
 /// メイン画面の右上「?」アイコンから表示する。Android `readme_content` を iOS 向けに調整した内容
@@ -12,8 +13,8 @@ struct HelpView: View {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
     }
 
-    /// GitHub Releases へのリンク (最新版確認用)
-    private let releasesURL = URL(string: "https://github.com/0xDEADBEEF10AF/NakamonRec/releases")!
+    // App Store のアプリページ URL は iTunes Lookup API から動的に取得する
+    // (GitHub Releases リンクはストア一本化 2026-08-15 で廃止)
 
     var body: some View {
         NavigationStack {
@@ -59,11 +60,15 @@ struct HelpView: View {
                 Spacer()
             }
             Button {
-                UIApplication.shared.open(releasesURL)
+                Task {
+                    if let info = await AppStoreUpdateChecker.fetch() {
+                        await UIApplication.shared.open(info.storeURL)
+                    }
+                }
             } label: {
                 HStack {
                     Image(systemName: "arrow.up.right.square")
-                    Text("GitHub で最新版を確認")
+                    Text("App Store で最新版を確認")
                 }
                 .font(.callout.bold())
                 .foregroundStyle(Color.recCoral)
