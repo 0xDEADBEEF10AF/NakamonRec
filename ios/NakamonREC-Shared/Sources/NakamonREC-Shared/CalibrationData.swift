@@ -78,6 +78,45 @@ public enum CalibrationDefaults {
     /// 実行時判定 (NakamonCaptureEngine)・校正画面の薄緑表示/スコアテストで共用。
     public static let partyScrollAllowanceVRatio = 100.0 / 2364.0
 
+    // MARK: - 16:9 (iPhone SE 系) プロファイル
+    //
+    // SE3 実測 (750×1334, 2026-08-15): ゲーム UI は幅基準スケール+上寄せ配置のため、
+    // パーティ枠は Pixel 基準比率より下方向へ最大 +0.18H ずれる (実測と幅スケール理論が一致)。
+    // 静止位置: P1 0.536 / P2 0.744 / P3 0.953 (P3 は未スクロールでは画面外)。
+    // 行ピッチ 0.2082H (278px)、パーティ一覧の最大スクロール量 0.1687H (225px、
+    // 未スクロール/最下限スクショの相互相関で実測)。可動域 < ピッチ のため、
+    // 「静止位置から上へ可動域ぶんの帯域窓」にすれば各パーティの存在帯域
+    // (P1 0.37-0.54 / P2 0.58-0.75 / P3 0.78-0.95) は互いに素になり、
+    // どのスクロール位置で選んでも位置だけから一意にパーティ特定できる。
+
+    /// 16:9 プロファイル判定。SE3 = h/w 1.78、19.5:9 iPhone = 2.16 で間は大きく空いている。
+    /// スクショ/配信フレーム/画面サイズのどれで判定しても同じ結果になる
+    public static func isWide16x9(width: Double, height: Double) -> Bool {
+        guard width > 0 else { return false }
+        return height / width < 1.85
+    }
+
+    /// 16:9 のパーティ枠静止位置 (未スクロール時)。
+    /// heightRatio はコンテンツ画素で正方形になるよう 16:9 の縦横比で換算
+    public static let partySelectROIs16x9: [CalibrationROI] = (0..<3).map { i in
+        let centersY: [Double] = [0.5362, 0.7444, 0.9526]
+        return CalibrationROI(
+            centerXRatio: 0.787,
+            centerYRatio: centersY[i],
+            widthRatio:  50.0 / 1080.0,
+            heightRatio: (50.0 / 1080.0) * (750.0 / 1334.0),
+            searchHMarginRatio: 30.0 / 1080.0,
+            searchVMarginRatio: 100.0 / 2364.0
+        )
+    }
+
+    /// 16:9 の行ピッチ。P3 は未スクロール校正画像に写らないため P2 + pitch で外挿する
+    public static let partyRowPitch16x9 = 0.2082
+    /// 16:9 の実行時スクロール吸収 (上方向) = 実測の最大スクロール量
+    public static let partyScrollAllowanceVRatio16x9 = 225.0 / 1334.0
+    /// 16:9 の実行時下方向マージン。帯域同士の緩衝 (~0.04H) を保つためバウンス吸収ぶんのみ
+    public static let partyDownMarginVRatio16x9 = 15.0 / 1334.0
+
     // 対戦じゅんびの VS ロゴ (VS_FM 242×148 を Pixel 10 Pro 1080 基準)
     public static let battlePrepVSROI = CalibrationROI(
         centerXRatio: 0.5,
@@ -179,11 +218,13 @@ public enum CalibrationStore {
         save(CalibrationDefaults.defaultConfig)
     }
 
-    /// 単一画面ぶんだけをデフォルトに戻す
-    public static func reset(screen: CalibrationScreen) {
+    /// 単一画面ぶんだけをデフォルトに戻す。
+    /// wide16x9 = true のときパーティ選択は 16:9 プロファイルの既定値に戻す
+    public static func reset(screen: CalibrationScreen, wide16x9: Bool = false) {
         var cfg = load()
         switch screen {
-        case .partySelect: cfg.partySelectROIs = CalibrationDefaults.partySelectROIs
+        case .partySelect: cfg.partySelectROIs = wide16x9 ? CalibrationDefaults.partySelectROIs16x9
+                                                          : CalibrationDefaults.partySelectROIs
         case .battlePrep:
             cfg.battlePrepVSROI = CalibrationDefaults.battlePrepVSROI
             cfg.battlePrepMonsterROIs = CalibrationDefaults.battlePrepMonsterROIs

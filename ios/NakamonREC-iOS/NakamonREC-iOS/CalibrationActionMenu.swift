@@ -44,7 +44,7 @@ struct CalibrationActionMenu: View {
             Button {
                 CalibrationScreenshotStore.remove(screen)
                 CustomTemplateStore.remove(customKind)
-                CalibrationStore.reset(screen: screen)
+                CalibrationStore.reset(screen: screen, wide16x9: Self.is16x9Device)
                 hasScreenshot = false
             } label: {
                 actionLabel("画像を削除", systemImage: "trash", disabled: !hasScreenshot)
@@ -83,7 +83,13 @@ struct CalibrationActionMenu: View {
             Button("画像を選ぶ") { showPartyPicker = true }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
+            if Self.is16x9Device {
+                // 16:9 (iPhone SE 系) は P3 が未スクロールで画面外のため、校正には
+                // 未スクロール + P1/P2 フォーカスの画像が必要 (P3 は自動外挿される)
+                Text("パーティ1か2を選択した状態 (フォーカスの水色枠が付いた状態) で、一覧をスクロールせずに撮ったスクリーンショットを使ってください。\nこの端末ではパーティ3の位置は自動で補完されます。")
+            } else {
+                Text("パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
+            }
         }
         .alert("エラー", isPresented: Binding(
             get: { errorMessage != nil },
@@ -92,6 +98,12 @@ struct CalibrationActionMenu: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    /// 16:9 (iPhone SE 系) 端末かどうか。画面の縦横比で判定 (スクショ/フレームと同じ規則)
+    static var is16x9Device: Bool {
+        let b = UIScreen.main.bounds
+        return CalibrationDefaults.isWide16x9(width: Double(b.width), height: Double(b.height))
     }
 
     private var customKind: CustomTemplateKind {

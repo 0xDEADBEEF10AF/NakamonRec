@@ -142,18 +142,33 @@ struct CalibrationView: View {
 
     // MARK: - ROI overlay (display only, no drag)
 
+    /// パーティ選択の実行時探索窓 (上/下マージン)。NakamonCaptureEngine.scanForPartySelect と
+    /// 同一の定義で、薄緑表示・スコアテストの両方から使う。
+    /// パーティ選択以外の画面では保存マージンの対称窓を返す
+    private func partySearchMargins(roi: CalibrationROI) -> (up: Double, down: Double) {
+        guard screen == .partySelect else {
+            return (roi.searchVMarginRatio, roi.searchVMarginRatio)
+        }
+        if is16x9Screenshot {
+            return (CalibrationDefaults.partyScrollAllowanceVRatio16x9,
+                    CalibrationDefaults.partyDownMarginVRatio16x9)
+        }
+        return (roi.searchVMarginRatio + CalibrationDefaults.partyScrollAllowanceVRatio,
+                roi.searchVMarginRatio)
+    }
+
     private func roiOverlay(idx: Int, layout: Layout) -> some View {
         let roi = rois[idx]
         let center = layout.point(forRatio: CGPoint(x: roi.centerXRatio, y: roi.centerYRatio))
         let templateSize = layout.size(forRatio: CGSize(width: roi.widthRatio, height: roi.heightRatio))
         // パーティ選択は実行時判定の窓が上方向へスクロール吸収分だけ非対称に広がるため、
-        // 薄緑もそれに同期させる (上へ allowance/2 シフト + 高さ +allowance)
-        let scrollAllowance = (screen == .partySelect) ? CalibrationDefaults.partyScrollAllowanceVRatio : 0
+        // 薄緑もそれに同期させる (プロファイルごとの上/下マージンを反映)
+        let (upRatio, downRatio) = partySearchMargins(roi: roi)
         let searchCenter = layout.point(forRatio: CGPoint(x: roi.centerXRatio,
-                                                          y: roi.centerYRatio - scrollAllowance / 2))
+                                                          y: roi.centerYRatio - (upRatio - downRatio) / 2))
         let searchSize = layout.size(forRatio: CGSize(
             width: roi.widthRatio + 2 * roi.searchHMarginRatio,
-            height: roi.heightRatio + 2 * roi.searchVMarginRatio + scrollAllowance
+            height: roi.heightRatio + upRatio + downRatio
         ))
         return ZStack {
             // 薄緑塗り (探索範囲)
@@ -256,7 +271,8 @@ struct CalibrationView: View {
 
     private func resetToDefault() {
         switch screen {
-        case .partySelect: rois = CalibrationDefaults.partySelectROIs
+        case .partySelect: rois = is16x9Screenshot ? CalibrationDefaults.partySelectROIs16x9
+                                                   : CalibrationDefaults.partySelectROIs
         case .battlePrep:  rois = [CalibrationDefaults.battlePrepVSROI] + CalibrationDefaults.battlePrepMonsterROIs
         case .win:         rois = [CalibrationDefaults.winROI]
         case .lose:        rois = [CalibrationDefaults.loseROI]
@@ -296,16 +312,22 @@ struct CalibrationView: View {
                 newScores.append(-1)
                 continue
             }
+            // 16:9 の P3 は外挿位置 (未スクロール画像には写らない) のためスコア計算は無意味。
+            // 「—」表示にして誤解を防ぐ
+            if screen == .partySelect && is16x9Screenshot && idx == 2 {
+                newScores.append(-1)
+                continue
+            }
             guard let tpl = baseTemplateForScore(roiIndex: idx) else {
                 newScores.append(0)
                 continue
             }
             // パーティ選択は実行時判定 (scanForPartySelect) と同じ非対称窓でテストする
-            let scrollAllowance = (screen == .partySelect) ? CalibrationDefaults.partyScrollAllowanceVRatio : 0
+            let (upRatio, downRatio) = partySearchMargins(roi: roi)
             let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * (roi.centerYRatio - scrollAllowance / 2))
+            let cy = Int32(h * (roi.centerYRatio - (upRatio - downRatio) / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
-            let vMargin = Int32(h * (roi.searchVMarginRatio + scrollAllowance / 2))
+            let vMargin = Int32(h * (upRatio + downRatio) / 2)
             let s = NakamonWrapper.performMatch(withScene: scene,
                                               templateImg: tpl,
                                               centerX: cx,
@@ -320,6 +342,13 @@ struct CalibrationView: View {
     /// 対戦じゅんびの VS ロゴだけ "VS_FM" を返す。それ以外は baseTemplate と同じ
     private func baseTemplateForScore(roiIndex: Int) -> UIImage? {
         baseTemplate()
+    }
+
+    /// インポート済みスクショが 16:9 (iPhone SE 系) かどうか
+    private var is16x9Screenshot: Bool {
+        guard let img = screenshotImage else { return false }
+        return CalibrationDefaults.isWide16x9(width: Double(img.size.width),
+                                              height: Double(img.size.height))
     }
 
     private func baseTemplate() -> UIImage? {
@@ -440,26 +469,32 @@ struct CalibrationView: View {
 
         let sceneW = scene.size.width
         let sceneH = scene.size.height
+        let is16x9 = CalibrationDefaults.isWide16x9(width: Double(sceneW), height: Double(sceneH))
 
         // per-ROI 近傍探索の窓幅 (デフォルト中心基準)。
         // X ±0.12 → 0.67〜0.91: 左半分の磁石を窓外に追い出す。
         //
-        // Y は上下非対称 (Android a2b2096 と同値)。ゲーム UI は幅基準スケール +
-        // 上寄せ配置のため、基準端末より縦長の画面では枠が画面比で上方向へシフトする
-        // (21:9 Android 端末の実測で確認: 下の行ほどズレが累積し P3 は ±0.065 窓の外)。
-        // 上 0.125 / 下 0.044 (計 0.169 = 行間隔) — 隣接パーティ窓と重ならない上限まで
-        // 上方向に拡張する。
+        // 標準 (19.5:9 以上): Y は上下非対称 (Android a2b2096 と同値)。ゲーム UI は
+        // 幅基準スケール + 上寄せ配置のため、基準端末より縦長の画面では枠が画面比で
+        // 上方向へシフトする (21:9 実測で P3 は ±0.065 窓の外)。上 0.125 / 下 0.044。
+        //
+        // 16:9 (iPhone SE 系): 静止位置は実測検証済みの専用デフォルトを使うため窓は
+        // ±0.05 に絞る (広げると「あいてのパーティ」領域のゴミが 0.4 超で誤マッチする
+        // ことが SE3 誤校正スクショで実証されている)。P3 は未スクロール画像に写らない
+        // ため探索せず、P2 + 行ピッチで外挿する。
         let searchHalfWRatio: CGFloat = 0.12
-        let searchUpHRatio: CGFloat = 0.125
-        let searchDownHRatio: CGFloat = 0.044
-        let defaults = CalibrationDefaults.partySelectROIs
+        let searchUpHRatio: CGFloat = is16x9 ? 0.05 : 0.125
+        let searchDownHRatio: CGFloat = is16x9 ? 0.05 : 0.044
+        let defaults = is16x9 ? CalibrationDefaults.partySelectROIs16x9
+                              : CalibrationDefaults.partySelectROIs
+        let searchTargets = is16x9 ? Array(defaults.prefix(2)) : defaults
 
         DispatchQueue.global(qos: .userInitiated).async {
             // 各パーティ ROI の近傍窓内で SELECT を探し、その窓の best をそのまま採用する。
             // 全画面 NMS を廃止したことで、左半分の磁石・上下ツールバーへの誤検出を構造的に排除。
             // 窓内マッチングはマルチスケールで最良位置を取る (battlePrep スロット探索と同方式)。
             var locations: [NakamonMatchLocation] = []
-            for def in defaults {
+            for def in searchTargets {
                 let cx = Int32(sceneW * CGFloat(def.centerXRatio))
                 // findSpecificMonsterLocation は中心+サイズ指定 (対称窓) のため、
                 // 非対称窓は「中心を上へずらした対称窓」として渡す
@@ -485,7 +520,8 @@ struct CalibrationView: View {
             }
             DispatchQueue.main.async {
                 handleAutoCalibrationResult(locations: locations,
-                                            scene: scene)
+                                            scene: scene,
+                                            is16x9: is16x9)
             }
         }
     }
@@ -757,11 +793,14 @@ struct CalibrationView: View {
     private static let autoCalMicroScales: [CGFloat] = [0.85, 0.95, 1.0, 1.10, 1.20]
 
     private func handleAutoCalibrationResult(locations: [NakamonMatchLocation],
-                                             scene: UIImage) {
+                                             scene: UIImage,
+                                             is16x9: Bool) {
         defer { isAutoCalibrating = false }
 
-        guard locations.count == 3 else {
-            statusMessage = "SELECT を 3 つ検出できませんでした (検出 \(locations.count) 件)。"
+        // 16:9 は P1/P2 の 2 件のみ探索し P3 を外挿する (P3 は未スクロール画像に写らない)
+        let expectedCount = is16x9 ? 2 : 3
+        guard locations.count == expectedCount else {
+            statusMessage = "SELECT を \(expectedCount) つ検出できませんでした (検出 \(locations.count) 件)。"
             return
         }
         // 最高スコア (= 水色 SELECT) チェック
@@ -771,11 +810,12 @@ struct CalibrationView: View {
             return
         }
 
-        // Y で昇順ソート → P1/P2/P3 の順に割り当て
+        // Y で昇順ソート → P1/P2/(P3) の順に割り当て
         let sorted = locations.sorted { $0.centerY < $1.centerY }
         let sceneW = Double(scene.size.width)
         let sceneH = Double(scene.size.height)
-        let defaults = CalibrationDefaults.partySelectROIs
+        let defaults = is16x9 ? CalibrationDefaults.partySelectROIs16x9
+                              : CalibrationDefaults.partySelectROIs
 
         var newROIs: [CalibrationROI] = []
         for (i, loc) in sorted.enumerated() {
@@ -783,6 +823,13 @@ struct CalibrationView: View {
             copy.centerXRatio = clamp(Double(loc.centerX) / sceneW, 0, 1)
             copy.centerYRatio = clamp(Double(loc.centerY) / sceneH, 0, 1)
             newROIs.append(copy)
+        }
+        if is16x9 {
+            // P3 = P2 + 行ピッチで外挿。ピッチは幅スケールの純粋な幾何なので信頼できる
+            var p3 = defaults[2]
+            p3.centerXRatio = newROIs[1].centerXRatio
+            p3.centerYRatio = clamp(newROIs[1].centerYRatio + CalibrationDefaults.partyRowPitch16x9, 0, 1)
+            newROIs.append(p3)
         }
         rois = newROIs
 
@@ -802,10 +849,11 @@ struct CalibrationView: View {
         }
 
         recomputeScores()
-        let scoreList = locations.sorted { $0.centerY < $1.centerY }
+        var scoreList = locations.sorted { $0.centerY < $1.centerY }
                                  .enumerated()
                                  .map { String(format: "P%d %.3f", $0.offset + 1, $0.element.score) }
                                  .joined(separator: ", ")
+        if is16x9 { scoreList += ", P3 外挿" }
         statusMessage = "自動校正完了\n\(scoreList)\nこの位置で決定 を押すと保存されます。"
     }
 
@@ -830,9 +878,13 @@ struct CalibrationView: View {
             return nil
         }
 
-        // 1080-ref サイズに正規化 (本番マッチング時に他の BASE と同じスケール扱いに)
+        // 1080-ref サイズに正規化 (本番マッチング時に他の BASE と同じスケール扱いに)。
+        // 高さは 2364 基準でなく切り出しのコンテンツ縦横比から導出する:
+        // 実行時のテンプレスケールは幅基準 (frameWidth/1080) のため、高さを 2364 固定で
+        // 正規化すると 19.7:9 以外のアスペクト (特に 16:9) でテンプレが縦に歪む
         let targetW = templateWidthRatio * 1080.0
-        let targetH = templateHeightRatio * 2364.0
+        let targetH = cropRect.width > 0 ? targetW * (cropRect.height / cropRect.width)
+                                         : templateHeightRatio * 2364.0
         let targetSize = CGSize(width: max(1, targetW), height: max(1, targetH))
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: {
             let f = UIGraphicsImageRendererFormat()

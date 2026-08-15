@@ -39,6 +39,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     // 直近検知済みのパーティインデックス (1〜3)。再ログを抑制するため
     private var lastDetectedPartyIndex: Int = -1
+    /// 16:9 プロファイル適用ログの一回限り出力フラグ (サポート時の切り分け用)
+    private var loggedAspectProfile = false
     // 直近のパーティ選択 3 box ぶんスコア (BattleRecord 用)
     private var lastPartySelectScores: [Double] = []
 
@@ -255,18 +257,28 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         var bestScore: Double = 0
         var bestIndex: Int = -1
         var allScores: [Double] = []
-        // スクロール吸収: 探索窓を上方向のみ +100px (@1080×2364-ref) 拡張する (上 200 / 下 100)。
+        // スクロール吸収: 探索窓を上方向のみ拡張する。
         // パーティ選択リストのスクロールは「下を見るため内容が上へ動く」一方向で、
         // iPhone 15 実測では枠高の約半分 (~165px) 上へずれて旧 ±100px 窓を外れた (P? 事象)。
-        // 対称 ±200 では P2/P3 窓が接触し、想定超スクロール時に隣パーティを高スコア
-        // 誤記録するため下側は据え置き、P? で止まる安全バッファを残す。
-        // performMatch は対称窓のみのため「中心を上へ 50px 相当ずらした ±(margin+50px) 窓」で渡す。
-        let scrollAllowanceRatio = CalibrationDefaults.partyScrollAllowanceVRatio
+        // 対称拡張では隣パーティの窓と接触し誤記録リスクがあるため下側は最小限に留める。
+        // - 標準 (19.5:9 以上): 上 = 保存マージン+100px / 下 = 保存マージン (@2364-ref)
+        // - 16:9 (iPhone SE 系): 上 = 実測の最大スクロール量 0.169H / 下 = バウンスぶんのみ。
+        //   可動域 < 行ピッチ のため帯域が互いに素になり、どのスクロール位置でも一意特定できる
+        // performMatch は対称窓のみのため「中心を上へ (上-下)/2 ずらした対称窓」で渡す。
+        let is16x9 = CalibrationDefaults.isWide16x9(width: Double(w), height: Double(h))
+        if is16x9 && !loggedAspectProfile {
+            loggedAspectProfile = true
+            BattleLogger.append("16:9 プロファイル適用 (パーティ判定を帯域窓に切替)")
+        }
         for (i, roi) in rois.enumerated() {
+            let upRatio = is16x9 ? CalibrationDefaults.partyScrollAllowanceVRatio16x9
+                                 : roi.searchVMarginRatio + CalibrationDefaults.partyScrollAllowanceVRatio
+            let downRatio = is16x9 ? CalibrationDefaults.partyDownMarginVRatio16x9
+                                   : roi.searchVMarginRatio
             let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * (roi.centerYRatio - scrollAllowanceRatio / 2))
+            let cy = Int32(h * (roi.centerYRatio - (upRatio - downRatio) / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
-            let vMargin = Int32(h * (roi.searchVMarginRatio + scrollAllowanceRatio / 2))
+            let vMargin = Int32(h * (upRatio + downRatio) / 2)
             let score = NakamonWrapper.performMatch(withScene: scene,
                                                   templateImg: select,
                                                   centerX: cx,
@@ -304,15 +316,19 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                                  scores: [Double]) {
         let w = scene.size.width
         let h = scene.size.height
-        // 切り出し範囲は scanForPartySelect の非対称探索窓 (上200/下100) と同期:
-        // スクロール時のヒット位置もサムネに写るよう「中心を上へ 50px 相当ずらした窓」で保存
-        let scrollAllowanceRatio = CalibrationDefaults.partyScrollAllowanceVRatio
+        // 切り出し範囲は scanForPartySelect の非対称探索窓と同期:
+        // スクロール時のヒット位置もサムネに写るよう、同じ「上方向シフト窓」で保存
+        let is16x9 = CalibrationDefaults.isWide16x9(width: Double(w), height: Double(h))
         for (i, roi) in rois.enumerated() {
+            let upRatio = is16x9 ? CalibrationDefaults.partyScrollAllowanceVRatio16x9
+                                 : roi.searchVMarginRatio + CalibrationDefaults.partyScrollAllowanceVRatio
+            let downRatio = is16x9 ? CalibrationDefaults.partyDownMarginVRatio16x9
+                                   : roi.searchVMarginRatio
             let path = MatchingScoreSnapshot.path(forFile: "p\(i).png")
             let cx = Int32(w * roi.centerXRatio)
-            let cy = Int32(h * (roi.centerYRatio - scrollAllowanceRatio / 2))
+            let cy = Int32(h * (roi.centerYRatio - (upRatio - downRatio) / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
-            let vMargin = Int32(h * (roi.searchVMarginRatio + scrollAllowanceRatio / 2))
+            let vMargin = Int32(h * (upRatio + downRatio) / 2)
             _ = NakamonWrapper.performMatchAndSave(withScene: scene,
                                                    templateImg: select,
                                                    centerX: cx,
