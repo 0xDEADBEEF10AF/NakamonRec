@@ -778,9 +778,11 @@ class HistoryActivity : AppCompatActivity() {
                         sb.append(if (stats.isLatest) "(最新)" else "(過去)")
                         sb.toString()
                     }
+                    // (過去) カードのラベルは iOS 版 (PartyStatsView) と同じくグレー
+                    val labelColor = if (!stats.isTotal && !stats.isLatest) Color.GRAY else Color.WHITE
                     val title = TextView(context).apply {
                         text = titleText
-                        setTextColor(Color.WHITE)
+                        setTextColor(labelColor)
                         textSize = 14f
                         setTypeface(null, android.graphics.Typeface.BOLD)
                     }
@@ -891,14 +893,14 @@ class HistoryActivity : AppCompatActivity() {
                             layoutParams = LinearLayout.LayoutParams((52 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
                             addView(TextView(context).apply {
                                 text = labelParts[0]
-                                setTextColor(Color.WHITE)
+                                setTextColor(labelColor)
                                 textSize = 13f
                                 setTypeface(null, android.graphics.Typeface.BOLD)
                             })
                             if (labelParts.size == 2) {
                                 addView(TextView(context).apply {
                                     text = "(" + labelParts[1]
-                                    setTextColor(Color.WHITE)
+                                    setTextColor(labelColor)
                                     textSize = 10f
                                 })
                             }

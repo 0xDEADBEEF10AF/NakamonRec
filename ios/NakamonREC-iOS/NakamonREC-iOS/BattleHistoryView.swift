@@ -72,10 +72,13 @@ struct BattleHistoryView: View {
 
             VStack(spacing: 0) {
                 // 上部: TOTAL/FILTER WIN RATE + RECENT TREND
+                // fixedSize(vertical) で HStack の高さを子の最大自然高 (= RECENT TREND) に固定し、
+                // maxHeight .infinity の WIN RATE カードをそこまで引き伸ばして縦幅を揃える
                 HStack(spacing: 8) {
                     totalWinRateCard
                     recentTrendCard
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
                 .padding(.top, 8)
 
@@ -209,7 +212,7 @@ struct BattleHistoryView: View {
             .font(.caption)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
