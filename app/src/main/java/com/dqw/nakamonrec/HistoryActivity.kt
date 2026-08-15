@@ -877,23 +877,40 @@ class HistoryActivity : AppCompatActivity() {
                         addView(horizontalRoot)
                     } else {
                         // シンプルビュー: モンスター集計と同じメトリクス2列+列ヘッダの形式。
-                        // 左はラベルの下にサムネ (TOTAL はサムネなし)、右に使用率/勝率の2列
+                        // 1列目 ラベル (番号/状態の2行)、2列目 サムネ、3-4列目 使用率/勝率
                         // (iOS PartyStatsView.simpleRowContent と同一構成)
                         val simpleRoot = LinearLayout(context).apply {
                             orientation = LinearLayout.HORIZONTAL
                             setPadding(contentPad, contentPad, contentPad, contentPad)
                             gravity = Gravity.CENTER_VERTICAL
                         }
-                        val leftCol = LinearLayout(context).apply {
+                        // 「P1,2(過去)」等を「P1,2」+「(過去)」の2行に分割
+                        val labelParts = titleText.split("(", limit = 2)
+                        val labelCol = LinearLayout(context).apply {
                             orientation = LinearLayout.VERTICAL
-                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                            layoutParams = LinearLayout.LayoutParams((52 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+                            addView(TextView(context).apply {
+                                text = labelParts[0]
+                                setTextColor(Color.WHITE)
+                                textSize = 13f
+                                setTypeface(null, android.graphics.Typeface.BOLD)
+                            })
+                            if (labelParts.size == 2) {
+                                addView(TextView(context).apply {
+                                    text = "(" + labelParts[1]
+                                    setTextColor(Color.WHITE)
+                                    textSize = 10f
+                                })
+                            }
                         }
-                        title.textSize = 13f
-                        leftCol.addView(title)
+                        simpleRoot.addView(labelCol)
                         if (!stats.partyIndices.contains(-1)) {
-                            leftCol.addView(buildIconsLayout(36, 4))
+                            simpleRoot.addView(buildIconsLayout(36, 0))
                         }
-                        simpleRoot.addView(leftCol)
+                        val simpleSpacer = View(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+                        }
+                        simpleRoot.addView(simpleSpacer)
 
                         fun metricColumn(value: String, sub: String, valueColor: Int) = LinearLayout(context).apply {
                             orientation = LinearLayout.VERTICAL

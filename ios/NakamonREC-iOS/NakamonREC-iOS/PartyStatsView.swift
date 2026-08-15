@@ -104,9 +104,7 @@ struct PartyStatsView: View {
                 simpleRowContent(label: "P\(p + 1)(最新)", labelColor: .white, stats: s, useRateOverride: nil)
             } else {
                 HStack(alignment: .center, spacing: 8) {
-                    Text("P\(p + 1)(未使用)")
-                        .font(.footnote.bold())
-                        .foregroundStyle(.gray)
+                    labelColumn("P\(p + 1)(未使用)", color: .gray)
                     Spacer(minLength: 4)
                     simpleMetric(value: "—", sub: "0回", valueColor: .gray)
                     simpleMetric(value: "—", sub: "—", valueColor: .gray)
@@ -120,21 +118,38 @@ struct PartyStatsView: View {
     private func simpleRowContent(label: String, labelColor: Color,
                                   stats: StatsBundle, useRateOverride: Double?) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            // 左: ラベルの下にサムネ (TOTAL はサムネなし)。横幅は可変で小画面でも収まる
-            VStack(alignment: .leading, spacing: 3) {
-                Text(label)
-                    .font(.footnote.bold())
-                    .foregroundStyle(labelColor)
-                if !stats.partyIDs.isEmpty {
-                    thumbsRow(stats.partyIDs)
-                }
+            // 1列目: パーティラベル (番号 / 状態 の2行)
+            labelColumn(label, color: labelColor)
+            // 2列目: パーティサムネイル (TOTAL はなし)
+            if !stats.partyIDs.isEmpty {
+                thumbsRow(stats.partyIDs)
             }
             Spacer(minLength: 4)
+            // 3-4列目: 使用率/勝率 (下段に実数)
             simpleMetric(value: RateFormat.percent(useRateOverride ?? stats.usageRate),
                          sub: "\(stats.matches)回", valueColor: .white)
             simpleMetric(value: RateFormat.percent(stats.winRate),
                          sub: "\(stats.wins)W-\(stats.losses)L", valueColor: rateColor(stats.winRate))
         }
+    }
+
+    /// ラベル列: 「P1,2(過去)」等を「P1,2」+「(過去)」の2行に分割して表示。
+    /// 固定幅でサムネ列の縦位置を行間で揃える
+    private func labelColumn(_ label: String, color: Color) -> some View {
+        let parts = label.split(separator: "(", maxSplits: 1)
+        let line1 = String(parts.first ?? "")
+        let line2 = parts.count == 2 ? "(" + String(parts[1]) : nil
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(line1)
+                .font(.footnote.bold())
+                .foregroundStyle(color)
+            if let line2 {
+                Text(line2)
+                    .font(.system(size: 10))
+                    .foregroundStyle(color)
+            }
+        }
+        .frame(width: 52, alignment: .leading)
     }
 
     /// モンスター集計 (MonsterStatsView.simpleMetric) と同一のメトリクス列
