@@ -471,9 +471,10 @@ struct CalibrationView: View {
         let sceneH = scene.size.height
 
         // 16:9 (iPhone SE 系) はテンプレ探索を使わず固定レイアウト校正へ。
-        // 750px 幅ではベース SELECT の照合ピークが不安定 (枠の縁線に引かれて上寄りに
-        // 26〜50px ズレる) ことを 13 mini 再現実験で実証済み。16:9 の iPhone は
-        // SE2/SE3 (750×1334) しか存在せず幾何は決定的なので、固定座標が最も正確。
+        // 16:9 の iPhone は SE2/SE3 (750×1334) しか存在せず幾何は決定的なので、
+        // NCC 実測で確定した固定座標 (CalibrationData の 16:9 プロファイル参照) が最も確実。
+        // 探索式で起きた誤着地は旧定数のズレが原因だったが、探索は磁石テンプレや
+        // 枠アニメーションの影響 (角スコアが 0.60〜0.94 で揺れる) を受けるため採らない。
         if CalibrationDefaults.isWide16x9(width: Double(sceneW), height: Double(sceneH)) {
             runPartySelect16x9FixedCal(scene: scene)
             return
@@ -871,10 +872,13 @@ struct CalibrationView: View {
         return Double(cyan) / Double(w * h)
     }
 
-    /// 16:9 用の固定レイアウト校正。テンプレ探索を行わず、三重検証済みの固定座標
-    /// (P1 0.536 / P2 0.744 / P3 0.953) をそのまま採用する。
+    /// 16:9 用の固定レイアウト校正。テンプレ探索を行わず、NCC 実測済みの固定座標
+    /// (x 0.768、P1 0.4940 / P2 0.6904 / P3 0.8868) をそのまま採用する。
     /// カスタムテンプレは P1/P2 固定位置のうち水色率が高い方 (=フォーカス枠) から切り出す。
-    /// どちらにも水色がなければ校正を成立させない (P3 フォーカスや非選択画像のゲート)。
+    /// ゲート2段: ①どちらにも水色がなければ不成立 (P3 フォーカスや非選択画像)
+    /// ②フォーカス位置の直上1窓にも水色があれば不成立 (スクロール済み画像 —
+    /// 枠の右辺の縦線が固定列を貫くため①だけでは検出できない。コーパス実測:
+    /// 未スクロール 0% / 16px スクロール 16% / 明確なスクロール 30% 前後)。
     private func runPartySelect16x9FixedCal(scene: UIImage) {
         defer { isAutoCalibrating = false }
         let defaults = CalibrationDefaults.partySelectROIs16x9
@@ -885,6 +889,14 @@ struct CalibrationView: View {
         guard focusedCyan >= 0.10 else {
             statusMessage = String(format: "フォーカス枠 (水色) を検出できませんでした (P1 %.0f%% / P2 %.0f%%)。\nパーティ1か2を選択した状態・スクロールなしの全画面スクショを使ってください。",
                                    cyanP1 * 100, cyanP2 * 100)
+            return
+        }
+        var aboveROI = defaults[focusedIdx]
+        aboveROI.centerYRatio -= aboveROI.heightRatio
+        let cyanAbove = cyanRatio(scene: scene, roi: aboveROI)
+        guard cyanAbove < 0.10 else {
+            statusMessage = String(format: "スクロールした状態の画像のようです (P%d 直上に水色 %.0f%%)。\nパーティ一覧をスクロールしていない状態の全画面スクショを使ってください。",
+                                   focusedIdx + 1, cyanAbove * 100)
             return
         }
         rois = defaults
