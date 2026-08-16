@@ -469,25 +469,27 @@ struct CalibrationView: View {
 
         let sceneW = scene.size.width
         let sceneH = scene.size.height
-        let is16x9 = CalibrationDefaults.isWide16x9(width: Double(sceneW), height: Double(sceneH))
+
+        // 16:9 (iPhone SE 系) はテンプレ探索を使わず固定レイアウト校正へ。
+        // 750px 幅ではベース SELECT の照合ピークが不安定 (枠の縁線に引かれて上寄りに
+        // 26〜50px ズレる) ことを 13 mini 再現実験で実証済み。16:9 の iPhone は
+        // SE2/SE3 (750×1334) しか存在せず幾何は決定的なので、固定座標が最も正確。
+        if CalibrationDefaults.isWide16x9(width: Double(sceneW), height: Double(sceneH)) {
+            runPartySelect16x9FixedCal(scene: scene)
+            return
+        }
 
         // per-ROI 近傍探索の窓幅 (デフォルト中心基準)。
         // X ±0.12 → 0.67〜0.91: 左半分の磁石を窓外に追い出す。
         //
-        // 標準 (19.5:9 以上): Y は上下非対称 (Android a2b2096 と同値)。ゲーム UI は
-        // 幅基準スケール + 上寄せ配置のため、基準端末より縦長の画面では枠が画面比で
-        // 上方向へシフトする (21:9 実測で P3 は ±0.065 窓の外)。上 0.125 / 下 0.044。
-        //
-        // 16:9 (iPhone SE 系): 静止位置は実測検証済みの専用デフォルトを使うため窓は
-        // ±0.05 に絞る (広げると「あいてのパーティ」領域のゴミが 0.4 超で誤マッチする
-        // ことが SE3 誤校正スクショで実証されている)。P3 は未スクロール画像に写らない
-        // ため探索せず、P2 + 行ピッチで外挿する。
+        // Y は上下非対称 (Android a2b2096 と同値)。ゲーム UI は幅基準スケール +
+        // 上寄せ配置のため、基準端末より縦長の画面では枠が画面比で上方向へシフトする
+        // (21:9 実測で P3 は ±0.065 窓の外)。上 0.125 / 下 0.044。
         let searchHalfWRatio: CGFloat = 0.12
-        let searchUpHRatio: CGFloat = is16x9 ? 0.05 : 0.125
-        let searchDownHRatio: CGFloat = is16x9 ? 0.05 : 0.044
-        let defaults = is16x9 ? CalibrationDefaults.partySelectROIs16x9
-                              : CalibrationDefaults.partySelectROIs
-        let searchTargets = is16x9 ? Array(defaults.prefix(2)) : defaults
+        let searchUpHRatio: CGFloat = 0.125
+        let searchDownHRatio: CGFloat = 0.044
+        let defaults = CalibrationDefaults.partySelectROIs
+        let searchTargets = defaults
 
         DispatchQueue.global(qos: .userInitiated).async {
             // 各パーティ ROI の近傍窓内で SELECT を探し、その窓の best をそのまま採用する。
@@ -520,8 +522,7 @@ struct CalibrationView: View {
             }
             DispatchQueue.main.async {
                 handleAutoCalibrationResult(locations: locations,
-                                            scene: scene,
-                                            is16x9: is16x9)
+                                            scene: scene)
             }
         }
     }
@@ -793,14 +794,11 @@ struct CalibrationView: View {
     private static let autoCalMicroScales: [CGFloat] = [0.85, 0.95, 1.0, 1.10, 1.20]
 
     private func handleAutoCalibrationResult(locations: [NakamonMatchLocation],
-                                             scene: UIImage,
-                                             is16x9: Bool) {
+                                             scene: UIImage) {
         defer { isAutoCalibrating = false }
 
-        // 16:9 は P1/P2 の 2 件のみ探索し P3 を外挿する (P3 は未スクロール画像に写らない)
-        let expectedCount = is16x9 ? 2 : 3
-        guard locations.count == expectedCount else {
-            statusMessage = "SELECT を \(expectedCount) つ検出できませんでした (検出 \(locations.count) 件)。"
+        guard locations.count == 3 else {
+            statusMessage = "SELECT を 3 つ検出できませんでした (検出 \(locations.count) 件)。"
             return
         }
         // 最高スコア (= 水色 SELECT) チェック
@@ -810,12 +808,11 @@ struct CalibrationView: View {
             return
         }
 
-        // Y で昇順ソート → P1/P2/(P3) の順に割り当て
+        // Y で昇順ソート → P1/P2/P3 の順に割り当て
         let sorted = locations.sorted { $0.centerY < $1.centerY }
         let sceneW = Double(scene.size.width)
         let sceneH = Double(scene.size.height)
-        let defaults = is16x9 ? CalibrationDefaults.partySelectROIs16x9
-                              : CalibrationDefaults.partySelectROIs
+        let defaults = CalibrationDefaults.partySelectROIs
 
         var newROIs: [CalibrationROI] = []
         for (i, loc) in sorted.enumerated() {
@@ -823,13 +820,6 @@ struct CalibrationView: View {
             copy.centerXRatio = clamp(Double(loc.centerX) / sceneW, 0, 1)
             copy.centerYRatio = clamp(Double(loc.centerY) / sceneH, 0, 1)
             newROIs.append(copy)
-        }
-        if is16x9 {
-            // P3 = P2 + 行ピッチで外挿。ピッチは幅スケールの純粋な幾何なので信頼できる
-            var p3 = defaults[2]
-            p3.centerXRatio = newROIs[1].centerXRatio
-            p3.centerYRatio = clamp(newROIs[1].centerYRatio + CalibrationDefaults.partyRowPitch16x9, 0, 1)
-            newROIs.append(p3)
         }
         rois = newROIs
 
@@ -849,12 +839,66 @@ struct CalibrationView: View {
         }
 
         recomputeScores()
-        var scoreList = locations.sorted { $0.centerY < $1.centerY }
+        let scoreList = locations.sorted { $0.centerY < $1.centerY }
                                  .enumerated()
                                  .map { String(format: "P%d %.3f", $0.offset + 1, $0.element.score) }
                                  .joined(separator: ", ")
-        if is16x9 { scoreList += ", P3 外挿" }
         statusMessage = "自動校正完了\n\(scoreList)\nこの位置で決定 を押すと保存されます。"
+    }
+
+    // MARK: - 16:9 (iPhone SE 系) 固定レイアウト校正
+
+    /// フォーカス枠 (水色) の判定用: ROI 中心のテンプレ相当領域における水色ピクセル率。
+    /// SE3 コーパス実測: P1 フォーカス画像の P1 位置 = 28〜34%、非フォーカス位置 = 0.0%
+    private func cyanRatio(scene: UIImage, roi: CalibrationROI) -> Double {
+        guard let cg = scene.cgImage else { return 0 }
+        let sW = Double(cg.width), sH = Double(cg.height)
+        let w = Int(roi.widthRatio * sW), h = Int(roi.heightRatio * sH)
+        let x = Int(roi.centerXRatio * sW) - w / 2
+        let y = Int(roi.centerYRatio * sH) - h / 2
+        guard w > 0, h > 0, x >= 0, y >= 0, x + w <= Int(sW), y + h <= Int(sH),
+              let crop = cg.cropping(to: CGRect(x: x, y: y, width: w, height: h)) else { return 0 }
+        var buf = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &buf, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
+        ctx.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var cyan = 0
+        for p in 0..<(w * h) {
+            let r = Int(buf[p * 4]), g = Int(buf[p * 4 + 1]), b = Int(buf[p * 4 + 2])
+            if b > 140 && b > r + 40 && g > 120 { cyan += 1 }
+        }
+        return Double(cyan) / Double(w * h)
+    }
+
+    /// 16:9 用の固定レイアウト校正。テンプレ探索を行わず、三重検証済みの固定座標
+    /// (P1 0.536 / P2 0.744 / P3 0.953) をそのまま採用する。
+    /// カスタムテンプレは P1/P2 固定位置のうち水色率が高い方 (=フォーカス枠) から切り出す。
+    /// どちらにも水色がなければ校正を成立させない (P3 フォーカスや非選択画像のゲート)。
+    private func runPartySelect16x9FixedCal(scene: UIImage) {
+        defer { isAutoCalibrating = false }
+        let defaults = CalibrationDefaults.partySelectROIs16x9
+        let cyanP1 = cyanRatio(scene: scene, roi: defaults[0])
+        let cyanP2 = cyanRatio(scene: scene, roi: defaults[1])
+        let focusedIdx = cyanP1 >= cyanP2 ? 0 : 1
+        let focusedCyan = max(cyanP1, cyanP2)
+        guard focusedCyan >= 0.10 else {
+            statusMessage = String(format: "フォーカス枠 (水色) を検出できませんでした (P1 %.0f%% / P2 %.0f%%)。\nパーティ1か2を選択した状態・スクロールなしの全画面スクショを使ってください。",
+                                   cyanP1 * 100, cyanP2 * 100)
+            return
+        }
+        rois = defaults
+        if let custom = generateCustomTemplate(scene: scene,
+                                               matchCenterXRatio: defaults[focusedIdx].centerXRatio,
+                                               matchCenterYRatio: defaults[focusedIdx].centerYRatio,
+                                               templateWidthRatio: defaults[focusedIdx].widthRatio,
+                                               templateHeightRatio: defaults[focusedIdx].heightRatio) {
+            CustomTemplateStore.save(custom, as: .select)
+            hasCustomTemplate = true
+        }
+        recomputeScores()
+        statusMessage = String(format: "自動校正完了 (16:9 固定レイアウト)\nフォーカス: P%d (水色率 %.0f%%)、P3 外挿\nこの位置で決定 を押すと保存されます。",
+                               focusedIdx + 1, focusedCyan * 100)
     }
 
     /// scene から指定 ROI を切り出し、1080-ref ピクセルサイズに正規化したカスタムテンプレ PNG データを返す
