@@ -24,6 +24,12 @@
     font-size: 1.2em;
     margin-top: 2em;
     color: #e6534b;
+    border-bottom: 1px solid #f0dedd;
+    padding-bottom: 4px;
+  }
+  h3 {
+    font-size: 1.05em;
+    margin-top: 1.6em;
   }
   .meta {
     color: #777;
@@ -41,15 +47,39 @@
     margin: 0.4em 0;
     padding-left: 1.4em;
   }
-  .slide {
-    margin: 1em 0 2.2em;
+  .note {
+    background: #fdf3f2;
+    border-left: 4px solid #e6534b;
+    border-radius: 4px;
+    padding: 8px 14px;
+    margin: 1em 0;
+    font-size: 0.95em;
   }
-  .slide img {
+  .shots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin: 1em 0 1.6em;
+  }
+  .shots figure {
+    margin: 0;
+    width: min(240px, 46%);
+  }
+  .shots img {
     width: 100%;
     height: auto;
     border: 1px solid #ddd;
     border-radius: 6px;
     display: block;
+  }
+  .shots figcaption {
+    font-size: 0.82em;
+    color: #666;
+    text-align: center;
+    margin-top: 4px;
+  }
+  ol.steps > li {
+    margin-bottom: 0.5em;
   }
   .nav-footer {
     margin-top: 3em;
@@ -65,21 +95,23 @@
 <body>
 
 <h1>なかモンREC ヘルプ</h1>
-<p class="meta">対応バージョン: v26.8.2 / Last updated: 2026-08-16</p>
+<p class="meta">対応バージョン: v26.8.2 / Last updated: 2026-08-17</p>
 
 <p>
-  なかモンREC (NakamonREC) の基本操作・トラブルシューティングをまとめたヘルプページです。
-  ご利用のプラットフォームに合わせて該当セクションをご覧ください。
+  なかモンREC (NakamonREC) は、ドラクエウォーク「なかまモンスターの対戦」の戦績を
+  画面キャプチャから自動記録するアプリです。このページではインストールから
+  初期設定・戦績の見方・トラブル対処までを説明します。
 </p>
 
 <div class="toc">
   <strong>目次</strong>
   <ul>
     <li><a href="#install">アプリのインストール</a></li>
-    <li><a href="#quickstart-android">クイックスタートガイド (Android)</a></li>
-    <li><a href="#quickstart-ios">クイックスタートガイド (iOS)</a></li>
-    <li><a href="#records">戦績チェックガイド</a></li>
-    <li><a href="#troubleshoot">自動記録されず困ったときは</a></li>
+    <li><a href="#calibration">1. 初期設定: 画面の校正 (最初に1度だけ)</a></li>
+    <li><a href="#record">2. 対戦を記録する</a></li>
+    <li><a href="#records">3. 戦績を見る (編集・フィルタ・集計)</a></li>
+    <li><a href="#troubleshoot">4. 自動記録されず困ったときは</a></li>
+    <li><a href="#advanced">5. 上級者向け機能</a></li>
   </ul>
 </div>
 
@@ -92,31 +124,203 @@
   <li>iPhone: <a href="https://apps.apple.com/jp/app/id6771382891">App Store で「なかモンREC」を入手</a></li>
 </ul>
 
-<h2 id="quickstart-android">1. クイックスタートガイド (Android)</h2>
-<div class="slide">
-  <img src="images/help-quickstart-android.png" alt="Android クイックスタートガイド">
+<h2 id="calibration">1. 初期設定: 画面の校正 (最初に1度だけ)</h2>
+<p>
+  なかモンREC はキャプチャした画面を画像認識して対戦を記録します。そのため最初に、
+  お使いの端末での画面の見え方をアプリに覚えさせる「校正」が必要です。
+  <strong>校正は最初の1度だけ行えば OK</strong> です (機種変更や画面解像度の変更をしたときは再校正してください)。
+</p>
+
+<h3>1-1. 校正用のスクリーンショットを準備する</h3>
+<p>アプリを使う前にドラクエウォークで対戦を1回行い、次の4枚のスクリーンショットを撮っておきます。</p>
+<ol class="steps">
+  <li>① パーティ選択画面 — <strong>パーティ1〜3のいずれかを選択した状態</strong> (水色のフォーカス枠が当たっていること)</li>
+  <li>② VS画面 (対戦開始時に両パーティが表示される画面)</li>
+  <li>③ 勝利画面 (「勝利!!」の表示)</li>
+  <li>④ 敗北画面 (「ざんねん…」の表示)</li>
+</ol>
+<div class="note">
+  <strong>iPhone SE (第3世代) をお使いの方へ</strong>:
+  v26.8.2 以降で対応しています。①のスクリーンショットは「パーティ1か2を選択した状態」で
+  「一覧をスクロールせずに」撮影してください (パーティ3の位置は自動で補完されます)。
+  条件を満たさない画像は校正時にメッセージでお知らせします。
 </div>
 
-<h2 id="quickstart-ios">2. クイックスタートガイド (iOS)</h2>
-<div class="slide">
-  <img src="images/help-quickstart-ios.png" alt="iOS クイックスタートガイド">
+<h3>1-2. アプリで校正する</h3>
+<ol class="steps">
+  <li>メイン画面のカメラアイコンから校正メニューを開く</li>
+  <li>「パーティ選択画面」を選択</li>
+  <li>「画像をインポート」で ① の画像を設定 → 「校正を開始」→「自動校正」→ 緑枠の位置を確認して「この位置で決定」</li>
+  <li>② VS画面・③ 勝利画面・④ 敗北画面についても同様に繰り返す</li>
+</ol>
+<div class="shots">
+  <figure>
+    <img src="images/help-01-main.png" alt="メイン画面" loading="lazy">
+    <figcaption>メイン画面 (右上のカメラアイコン)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-02-calib-menu.png" alt="校正メニュー" loading="lazy">
+    <figcaption>校正メニュー (4画面を順に校正)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-03-calib-party.jpg" alt="パーティ選択画面の校正" loading="lazy">
+    <figcaption>パーティ選択画面の校正 (緑枠が各パーティの右上角に付けば成功)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-04-calib-vs.jpg" alt="VS画面の校正" loading="lazy">
+    <figcaption>VS画面の校正 (緑枠がモンスターと VS ロゴに付けば成功)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-06-calib-win.jpg" alt="勝利画面の校正" loading="lazy">
+    <figcaption>勝利画面の校正</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-07-calib-lose.jpg" alt="敗北画面の校正" loading="lazy">
+    <figcaption>敗北画面の校正</figcaption>
+  </figure>
+</div>
+<p>
+  VS画面は「詳細校正」でも校正できます。8体のモンスターを手動で指定する方式で、
+  自動校正がうまくいかない端末でも確実に校正できます。
+</p>
+<div class="shots">
+  <figure>
+    <img src="images/help-05-calib-detail.jpg" alt="詳細校正" loading="lazy">
+    <figcaption>詳細校正 (8体のモンスターを指定)</figcaption>
+  </figure>
 </div>
 
-<h2 id="records">3. 戦績チェックガイド</h2>
-<div class="slide">
-  <img src="images/help-records.png" alt="戦績チェックガイド">
+<h2 id="record">2. 対戦を記録する</h2>
+<h3 id="quickstart-android">Android の場合</h3>
+<ol class="steps">
+  <li>メイン画面の中央にある「REC」ボタンを押す</li>
+  <li>ドラクエウォークの画面を選択する (Android 14 以降の場合)</li>
+  <li>戦闘を開始する — 校正が成功していれば、VS画面で戦闘開始の通知が出ます</li>
+</ol>
+<h3 id="quickstart-ios">iPhone の場合</h3>
+<ol class="steps">
+  <li>メイン画面の中央にある「REC」ボタンを押す</li>
+  <li>「ブロードキャストを開始」を押す</li>
+  <li>ドラクエウォークの画面に切り替えて、戦闘を開始する</li>
+</ol>
+<p>※ iPhone では戦闘開始/終了の通知は表示されません。</p>
+<p>
+  対戦が終わると自動で戦績に記録されます。対戦後の解析には10秒前後かかるため、
+  <strong>連戦しない場合は解析が終わってから REC を停止</strong>してください
+  (解析が終わる前に停止するとモンスターが識別されません)。
+</p>
+
+<h2 id="records">3. 戦績を見る (編集・フィルタ・集計)</h2>
+<p>
+  メイン画面下部の戦績バーから戦績画面を開けます。対戦ごとの勝敗 (WIN/LOSE)・
+  使用パーティ (P1〜P3)・両パーティのモンスター・日時が一覧で確認できます。
+</p>
+
+<h3>レコードの編集 — 画面下部のボタンが編集モード (ペンのアイコン) のとき</h3>
+<ol class="steps">
+  <li>任意のレコードを長押しする</li>
+  <li>勝敗、選択パーティ、使用モンスターの修正が可能</li>
+  <li>その他、レコードの追加/削除、マッチングスコアの確認が可能</li>
+</ol>
+
+<h3>レコードのフィルタ — 画面下部のボタンがフィルタモードのとき</h3>
+<ol class="steps">
+  <li>レコード左端の WIN/LOSE を押すと勝敗でフィルタ</li>
+  <li>レコード中の任意のモンスターを押すと対象モンスターでフィルタ</li>
+  <li>画面上部のフィルタ欄のフィルタ条件/CLEAR ボタンで解除</li>
+</ol>
+
+<h3>集計 — 画面下部右側の虫眼鏡アイコン</h3>
+<ul>
+  <li><strong>パーティ集計</strong>: パーティごとの使用率と勝率。最新の P1〜3 以外に、過去に使っていたパーティの戦績も確認できます</li>
+  <li><strong>モンスター集計 (モンスタータブ)</strong>: 敵モンスターの出現率と勝率。「グラフ表示」に切り替えると24H単位の推移が見られ、環境の変化を把握できます</li>
+  <li><strong>モンスター集計 (パーティタブ)</strong>: モンスターの組み合わせ (敵パーティ) 単位の出現率と勝率</li>
+</ul>
+<div class="shots">
+  <figure>
+    <img src="images/help-09-records.png" alt="戦績画面" loading="lazy">
+    <figcaption>戦績画面</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-10-filter.png" alt="戦績のフィルタ" loading="lazy">
+    <figcaption>フィルタ適用中 (上部の CLEAR で解除)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-11-stats-party.png" alt="パーティ集計" loading="lazy">
+    <figcaption>パーティ集計</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-12-stats-monster.png" alt="モンスター集計" loading="lazy">
+    <figcaption>モンスター集計 (モンスタータブ)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-13-stats-monster-graph.png" alt="モンスター集計のグラフ表示" loading="lazy">
+    <figcaption>グラフ表示 (24H単位の推移)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-14-stats-combo.png" alt="組み合わせ集計" loading="lazy">
+    <figcaption>モンスター集計 (パーティタブ)</figcaption>
+  </figure>
 </div>
 
 <h2 id="troubleshoot">4. 自動記録されず困ったときは</h2>
-<div class="slide">
-  <img src="images/help-troubleshoot.png" alt="自動記録トラブルシューティング">
+<ol class="steps">
+  <li>
+    <strong>画面校正を行っているか確認する</strong><br>
+    とくにパーティ選択画面は、P1〜3 のいずれかにフォーカスを当てた画像で校正できているか確認してください。
+  </li>
+  <li>
+    <strong>スマホの解像度を確認する</strong><br>
+    スマホによっては省エネモードとして低解像度に設定できたり、逆に高解像度に設定できたりしますが、
+    本アプリは解像度 1080×2364 で開発しています。お手数ですが上記解像度に近い設定で
+    お使いいただくと自動記録の精度があがります (設定変更後は再校正してください)。
+  </li>
+  <li>
+    <strong>モンスター識別の解析モードを確認する</strong><br>
+    古めのスマホをお使いの方で処理負荷が高いと感じた方は「軽負荷モード」をお試しください。
+    通常モードでは全モンスターをマッチング対象としていますが、軽負荷モードでは
+    マッチング対象を絞ることで動作を軽くできます (校正メニュー内の「モンスター識別の解析モード設定」)。
+  </li>
+  <li>
+    <strong>解析時間を確認する</strong><br>
+    解析は10秒前後かかります。解析が終わる前に REC を停止するとモンスターが識別されません。
+    解析時間は<a href="#advanced">デバッグメニュー</a>の「直近の解析ログ」から確認できます。
+  </li>
+  <li>
+    <strong>それでも記録されない場合</strong><br>
+    お問い合わせください。その際、マッチングスコア詳細画面を共有いただけると原因究明に役立ちます。
+  </li>
+</ol>
+<div class="shots">
+  <figure>
+    <img src="images/help-08-lightload.jpg" alt="軽負荷モードの対象モンスター選択" loading="lazy">
+    <figcaption>軽負荷モード: 解析対象のモンスターを選択</figcaption>
+  </figure>
 </div>
+
+<h2 id="advanced">5. 上級者向け機能</h2>
 <p>
-  <strong>iPhone SE (第3世代) をお使いの方へ</strong>:
-  v26.8.2 以降で対応しています。校正用スクリーンショットは「パーティ1か2を選択した状態」で
-  「一覧をスクロールせずに」撮影してください (パーティ3の位置は自動で補完されます)。
-  条件を満たさない画像は校正時にメッセージでお知らせします。
+  メイン画面左上のバージョン番号 (Ver xx.x.x) を長押しすると、デバッグメニューが開きます。
 </p>
+<ul>
+  <li><strong>直近の解析ログ</strong>: 直近2戦ぶんの解析の流れ (パーティ検知 → VS検知 → モンスター識別のスコア → 勝敗検知) と解析時間を確認できます。自動記録がうまくいかないときの原因確認に便利です</li>
+  <li><strong>アプリのアップデートを確認</strong>: ストアに新しいバージョンがあるか手動で確認できます</li>
+  <li><strong>マッチング閾値を調整</strong>: VS / WIN / LOSE 検知の閾値 (0.4〜0.8) を調整できます。値を上げると誤検知が減りますが、本来の検知も逃しやすくなります。通常はデフォルトのままで問題ありません</li>
+</ul>
+<div class="shots">
+  <figure>
+    <img src="images/help-15-debug-menu.png" alt="デバッグメニュー" loading="lazy">
+    <figcaption>デバッグメニュー (バージョン番号を長押し)</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-16-analysis-log.png" alt="解析ログ" loading="lazy">
+    <figcaption>直近の解析ログ</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-17-threshold.png" alt="マッチング閾値の調整" loading="lazy">
+    <figcaption>マッチング閾値の調整</figcaption>
+  </figure>
+</div>
 
 <div class="nav-footer">
   <p>
