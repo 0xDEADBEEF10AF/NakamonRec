@@ -646,8 +646,9 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     /**
-     * グランプリ集計: 読込中ファイルの grandPrixRecords を要約+一覧で表示。
-     * 「1 ファイル = 1 グランプリ」前提。レーティング推移グラフは iOS 先行 (Android は追って対応)。
+     * グランプリ集計: 読込中ファイルの grandPrixRecords を、最高レーティング (目立つ) +
+     * レーティング推移グラフ (自分=赤/ボーダー=青の2本線、タップでツールチップ) で表示。
+     * 「1 ファイル = 1 グランプリ」前提。
      */
     private fun showGrandPrixDialog() {
         val records = dataManager.loadGrandPrixRecords().sortedBy { it.timestamp }
@@ -659,29 +660,58 @@ class HistoryActivity : AppCompatActivity() {
                 .show()
             return
         }
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+
         val maxRating = records.maxOf { it.currentRating }
-        val wins = records.count { it.result == "WIN" }
-        val losses = records.count { it.result == "LOSE" }
         val sdfIn = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        val sdfOut = SimpleDateFormat("MM/dd HH:mm", Locale.US)
-
-        // 変動 = 前戦との差 (読まず導出)
-        val deltas = HashMap<String, Double>()
-        for (i in 1 until records.size) {
-            deltas[records[i].timestamp] = records[i].currentRating - records[i - 1].currentRating
+        val sdfOut = SimpleDateFormat("MM/dd", Locale.US)
+        val points = records.map { r ->
+            val label = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp.takeLast(5) }
+            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label)
         }
 
-        val sb = StringBuilder()
-        sb.append(String.format(Locale.US, "最高レーティング: %.1f\n記録数: %d戦  %dW-%dL\n\n", maxRating, records.size, wins, losses))
-        for (r in records.reversed()) {
-            val t = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp }
-            val border = r.borderRating?.let { String.format(Locale.US, "  ボーダー%.1f", it) } ?: ""
-            val delta = deltas[r.timestamp]?.let { String.format(Locale.US, "  %+.1f", it) } ?: ""
-            sb.append(String.format(Locale.US, "%s  %s  %.1f%s%s\n", t, r.result, r.currentRating, delta, border))
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
         }
+        // 最高レーティング (目立つ)
+        container.addView(android.widget.TextView(this).apply {
+            text = "最高レーティング"
+            setTextColor("#888888".toColorInt())
+            textSize = 12f
+        })
+        container.addView(android.widget.TextView(this).apply {
+            text = String.format(Locale.US, "%.1f", maxRating)
+            setTextColor("#F09199".toColorInt())
+            textSize = 30f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        // 凡例 (自分=赤 / ボーダー=青)
+        container.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setPadding(0, dp(6), 0, dp(6))
+            addView(android.widget.TextView(this@HistoryActivity).apply {
+                text = "● 自分"
+                textSize = 12f
+                setTextColor("#F09199".toColorInt())
+            })
+            addView(android.widget.TextView(this@HistoryActivity).apply {
+                text = "   ● ボーダー"
+                textSize = 12f
+                setTextColor("#90D7EC".toColorInt())
+            })
+        })
+        // グラフ (大きめ)
+        container.addView(GrandPrixGraphView(this).apply {
+            setData(points)
+        }, android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(340)
+        ))
+
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("グランプリ集計")
-            .setMessage(sb.toString())
+            .setView(container)
             .setPositiveButton("閉じる", null)
             .show()
     }
