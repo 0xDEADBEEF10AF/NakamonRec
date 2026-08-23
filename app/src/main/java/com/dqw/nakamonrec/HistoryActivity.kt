@@ -655,6 +655,9 @@ class HistoryActivity : AppCompatActivity() {
                 .setTitle("グランプリ集計")
                 .setMessage("グランプリの記録がありません。\n\n大会用VS画面で校正 (右上に GRAND PRIX MODE と表示) し、大会中に記録すると、ここにレーティング推移が表示されます。")
                 .setPositiveButton("閉じる", null)
+                .setNeutralButton("手動で追加") { _, _ ->
+                    showGrandPrixEditDialog(null) { showGrandPrixDialog() }
+                }
                 .show()
             return
         }
@@ -678,9 +681,16 @@ class HistoryActivity : AppCompatActivity() {
         })
         root.addView(maxRatingView)
 
-        // グラフ/テキスト 切替ボタン
+        // グラフ/テキスト 切替 + 追加 ボタン (横並び)
         val toggleButton = android.widget.Button(this)
-        root.addView(toggleButton)
+        val addButton = android.widget.Button(this).apply { text = "＋追加" }
+        root.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            addView(toggleButton, android.widget.LinearLayout.LayoutParams(0,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(addButton, android.widget.LinearLayout.LayoutParams(0,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        })
 
         // 差し替えるコンテンツ領域
         val contentFrame = android.widget.FrameLayout(this)
@@ -704,6 +714,7 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         toggleButton.setOnClickListener { showList = !showList; rebuild() }
+        addButton.setOnClickListener { showGrandPrixEditDialog(null) { rebuild() } }
         rebuild()
 
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
@@ -798,45 +809,45 @@ class HistoryActivity : AppCompatActivity() {
         return android.widget.ScrollView(this).apply { addView(list) }
     }
 
-    /** グランプリ記録の手動編集 (レーティング/ボーダー/勝敗の訂正、削除)。onDone で再描画。 */
-    private fun showGrandPrixEditDialog(record: GrandPrixRecord, onDone: () -> Unit) {
+    /**
+     * グランプリ記録の手動編集/新規追加。record==null で追加モード。
+     * レーティング/ボーダーのみ編集 (勝敗はメイン戦績側で編集できるためここでは扱わない)。onDone で再描画。
+     */
+    private fun showGrandPrixEditDialog(record: GrandPrixRecord?, onDone: () -> Unit) {
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
+        val isNew = record == null
+        val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
         val col = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(4))
         }
-        col.addView(android.widget.TextView(this).apply {
-            text = "日時: ${record.timestamp}"; setTextColor("#AAAAAA".toColorInt()); textSize = 12f
-        })
-        // 勝敗
-        val resultGroup = android.widget.RadioGroup(this).apply {
-            orientation = android.widget.RadioGroup.HORIZONTAL
+        // 日時: 編集時は表示のみ、新規時は入力 (既定=現在時刻)
+        col.addView(android.widget.TextView(this).apply { text = "日時"; setTextColor("#888888".toColorInt()); textSize = 12f })
+        val tsEdit = android.widget.EditText(this).apply {
+            setText(record?.timestamp ?: tsFormat.format(java.util.Date()))
+            isEnabled = isNew  // 編集時は変更不可 (対応する戦績と揃えるため)
         }
-        val rbWin = android.widget.RadioButton(this).apply { text = "WIN"; id = android.view.View.generateViewId() }
-        val rbLose = android.widget.RadioButton(this).apply { text = "LOSE"; id = android.view.View.generateViewId() }
-        resultGroup.addView(rbWin); resultGroup.addView(rbLose)
-        (if (record.result == "LOSE") rbLose else rbWin).isChecked = true
-        col.addView(android.widget.TextView(this).apply { text = "勝敗"; setTextColor("#888888".toColorInt()); textSize = 12f })
-        col.addView(resultGroup)
+        col.addView(tsEdit)
         // レーティング
         col.addView(android.widget.TextView(this).apply { text = "レーティング"; setTextColor("#888888".toColorInt()); textSize = 12f })
         val ratingEdit = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(String.format(Locale.US, "%.1f", record.currentRating))
+            setText(record?.let { String.format(Locale.US, "%.1f", it.currentRating) } ?: "")
+            hint = "例 2208.1"
         }
         col.addView(ratingEdit)
         // ボーダー (空欄=なし)
         col.addView(android.widget.TextView(this).apply { text = "ボーダー (空欄=なし)"; setTextColor("#888888".toColorInt()); textSize = 12f })
         val borderEdit = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(record.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "")
+            setText(record?.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "")
         }
         col.addView(borderEdit)
 
-        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
-            .setTitle("グランプリ記録の編集")
+        val builder = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle(if (isNew) "グランプリ記録の追加" else "グランプリ記録の編集")
             .setView(col)
             .setPositiveButton("保存") { _, _ ->
                 val rating = ratingEdit.text.toString().toDoubleOrNull()
@@ -846,19 +857,34 @@ class HistoryActivity : AppCompatActivity() {
                 }
                 val border = borderEdit.text.toString().toDoubleOrNull()
                 val needed = border?.let { it - rating }  // ボーダー = 現在 + 必要あと
-                val result = if (rbLose.isChecked) "LOSE" else "WIN"
-                dataManager.updateGrandPrix(record.copy(currentRating = rating, neededRating = needed, result = result))
+                if (isNew) {
+                    val ts = tsEdit.text.toString().trim()
+                    // 形式チェック
+                    val parsed = try { tsFormat.parse(ts) } catch (_: Exception) { null }
+                    if (parsed == null) {
+                        Toast.makeText(this, "日時の形式が不正です (yyyy-MM-dd HH:mm:ss)", Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    // 勝敗は WIN 既定 (GP 一覧では勝敗を表示しない)
+                    dataManager.appendGrandPrix(GrandPrixRecord(timestamp = ts, result = "WIN",
+                        currentRating = rating, neededRating = needed))
+                } else {
+                    // 編集: 勝敗は維持
+                    dataManager.updateGrandPrix(record!!.copy(currentRating = rating, neededRating = needed))
+                }
                 onDone()
             }
             .setNegativeButton("キャンセル", null)
-            .setNeutralButton("削除") { _, _ ->
+        if (!isNew) {
+            builder.setNeutralButton("削除") { _, _ ->
                 AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
                     .setMessage("この記録を削除しますか?")
-                    .setPositiveButton("削除") { _, _ -> dataManager.deleteGrandPrix(record.timestamp); onDone() }
+                    .setPositiveButton("削除") { _, _ -> dataManager.deleteGrandPrix(record!!.timestamp); onDone() }
                     .setNegativeButton("キャンセル", null)
                     .show()
             }
-            .show()
+        }
+        builder.show()
     }
 
     private fun showPartyAnalysisDialog() {

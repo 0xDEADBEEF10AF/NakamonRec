@@ -11,6 +11,7 @@ struct GrandPrixStatsView: View {
     @State private var records: [GrandPrixRecord] = []
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
     @State private var editing: GrandPrixRecord? = nil
+    @State private var showAdd = false             // 記録漏れの手動追加
     @Environment(\.dismiss) private var dismiss
 
     /// 時刻昇順に整列
@@ -58,6 +59,14 @@ struct GrandPrixStatsView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showAdd = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .foregroundStyle(Color.recCoral)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("閉じる") { dismiss() }
                         .foregroundStyle(Color.recCoral)
                 }
@@ -74,6 +83,16 @@ struct GrandPrixStatsView: View {
                         BattleHistoryStore.shared.deleteGrandPrix(id: rec.id)
                         reload()
                     }
+                )
+            }
+            .sheet(isPresented: $showAdd) {
+                GrandPrixEditSheet(
+                    record: nil,
+                    onSave: { new in
+                        BattleHistoryStore.shared.appendGrandPrix(new)
+                        reload()
+                    },
+                    onDelete: nil
                 )
             }
         }
@@ -253,29 +272,33 @@ struct GrandPrixStatsView: View {
     }
 }
 
-/// グランプリ記録の手動編集シート (OCR 誤認の訂正用)。
+/// グランプリ記録の手動編集/新規追加シート (OCR 誤認の訂正・記録漏れの補完用)。
 /// レーティング (現在) とボーダーを直接編集し、必要レーティングは border - current で保持する。
+/// 勝敗 (WIN/LOSE) はメイン戦績側で編集できるためここでは扱わない (既存値を維持)。
+/// record == nil のとき新規追加モード (日時をピッカーで指定、result は WIN 既定)。
 private struct GrandPrixEditSheet: View {
-    let record: GrandPrixRecord
+    let record: GrandPrixRecord?            // nil = 新規追加
     let onSave: (GrandPrixRecord) -> Void
-    let onDelete: () -> Void
+    let onDelete: (() -> Void)?             // 新規時は nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var ratingText: String = ""
     @State private var borderText: String = ""
-    @State private var result: String = "WIN"
+    @State private var date: Date = Date()
     @State private var showDeleteConfirm = false
+
+    private var isNew: Bool { record == nil }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("記録の訂正") {
-                    LabeledContent("日時") {
-                        Text(record.timestamp).foregroundStyle(.secondary)
-                    }
-                    Picker("勝敗", selection: $result) {
-                        Text("WIN").tag("WIN")
-                        Text("LOSE").tag("LOSE")
+                Section(isNew ? "記録の追加" : "記録の訂正") {
+                    if isNew {
+                        DatePicker("日時", selection: $date)
+                    } else {
+                        LabeledContent("日時") {
+                            Text(record!.timestamp).foregroundStyle(.secondary)
+                        }
                     }
                     HStack {
                         Text("レーティング")
@@ -294,13 +317,15 @@ private struct GrandPrixEditSheet: View {
                             .frame(width: 120)
                     }
                 }
-                Section {
-                    Button("この記録を削除", role: .destructive) {
-                        showDeleteConfirm = true
+                if onDelete != nil {
+                    Section {
+                        Button("この記録を削除", role: .destructive) {
+                            showDeleteConfirm = true
+                        }
                     }
                 }
             }
-            .navigationTitle("グランプリ記録の編集")
+            .navigationTitle(isNew ? "グランプリ記録の追加" : "グランプリ記録の編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -312,12 +337,13 @@ private struct GrandPrixEditSheet: View {
                 }
             }
             .onAppear {
-                ratingText = String(format: "%.1f", record.currentRating)
-                borderText = record.borderRating.map { String(format: "%.1f", $0) } ?? ""
-                result = record.result
+                if let record {
+                    ratingText = String(format: "%.1f", record.currentRating)
+                    borderText = record.borderRating.map { String(format: "%.1f", $0) } ?? ""
+                }
             }
             .confirmationDialog("この記録を削除しますか?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                Button("削除", role: .destructive) { onDelete(); dismiss() }
+                Button("削除", role: .destructive) { onDelete?(); dismiss() }
                 Button("キャンセル", role: .cancel) {}
             }
         }
@@ -326,17 +352,20 @@ private struct GrandPrixEditSheet: View {
     private func save() {
         guard let rating = Double(ratingText) else { return }
         // ボーダーが入力されていれば 必要あと = ボーダー − 現在。空欄なら nil。
-        let needed: Double?
-        if let border = Double(borderText) {
-            needed = border - rating
+        let needed: Double? = Double(borderText).map { $0 - rating }
+        if let record {
+            // 編集: 勝敗は維持
+            var updated = record
+            updated.currentRating = rating
+            updated.neededRating = needed
+            onSave(updated)
         } else {
-            needed = nil
+            // 新規: 勝敗は WIN 既定 (GP 一覧では勝敗を表示しないため)
+            let ts = BattleTimestampFormatter.formatter.string(from: date)
+            let new = GrandPrixRecord(timestamp: ts, result: "WIN",
+                                      currentRating: rating, neededRating: needed)
+            onSave(new)
         }
-        var updated = record
-        updated.currentRating = rating
-        updated.neededRating = needed
-        updated.result = result
-        onSave(updated)
         dismiss()
     }
 }
