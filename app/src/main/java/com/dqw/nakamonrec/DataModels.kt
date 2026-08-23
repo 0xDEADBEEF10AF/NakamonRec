@@ -43,11 +43,24 @@ data class GrandPrixRecord(
     val nationalRank: String? = null,   // 全国ランキング表示テキスト (数値化しない)
     val isRankUp: Boolean = false,
     val lowConfidence: Boolean = false,
-    val screenshotFile: String? = null
+    val screenshotFile: String? = null,
+    val rankTier: String? = null        // ランク帯 (手動設定。rankTiers のいずれか)。将来エンブレム表示に使う
 ) {
     /** ボーダー (次ランク到達ライン) = 現在 + 必要あと。必要が無ければ null */
     val borderRating: Double?
         get() = neededRating?.let { currentRating + it }
+
+    companion object {
+        /** ランク帯の選択肢 (低い順)。ランク帯修正メニューで使う。iOS と同一。 */
+        val rankTiers: List<String> = listOf(
+            "ルーキー1", "ルーキー2", "ルーキー3",
+            "ベテラン1", "ベテラン2", "ベテラン3",
+            "エリート1", "エリート2", "エリート3",
+            "エキスパート1", "エキスパート2", "エキスパート3",
+            "マスター1", "マスター2", "マスター3",
+            "グランドマスター"
+        )
+    }
 }
 
 /**
