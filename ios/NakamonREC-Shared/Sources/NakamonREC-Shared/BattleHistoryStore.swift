@@ -146,6 +146,41 @@ public final class BattleHistoryStore: @unchecked Sendable {
         saveActive(history)
     }
 
+    // MARK: - Grand Prix records
+
+    /// アクティブなファイルのグランプリ記録一覧 (未記録なら空)
+    public func loadGrandPrixRecords() -> [GrandPrixRecord] {
+        loadActive().grandPrixRecords ?? []
+    }
+
+    /// グランプリ記録を 1 件追記 (通常戦績とは別系列。totals には影響しない)
+    public func appendGrandPrix(_ record: GrandPrixRecord) {
+        var history = loadActive()
+        var gp = history.grandPrixRecords ?? []
+        gp.append(record)
+        history.grandPrixRecords = gp
+        saveActive(history)
+    }
+
+    /// id (timestamp) でグランプリ記録を 1 件更新 (手入力での訂正用)
+    public func updateGrandPrix(_ updated: GrandPrixRecord) {
+        var history = loadActive()
+        guard var gp = history.grandPrixRecords,
+              let idx = gp.firstIndex(where: { $0.id == updated.id }) else { return }
+        gp[idx] = updated
+        history.grandPrixRecords = gp
+        saveActive(history)
+    }
+
+    /// id (timestamp) でグランプリ記録を 1 件削除
+    public func deleteGrandPrix(id: String) {
+        var history = loadActive()
+        guard var gp = history.grandPrixRecords else { return }
+        gp.removeAll { $0.id == id }
+        history.grandPrixRecords = gp
+        saveActive(history)
+    }
+
     // MARK: - File management
 
     /// 新しい空の JSON ファイルを作成する。重複名は失敗 (false)

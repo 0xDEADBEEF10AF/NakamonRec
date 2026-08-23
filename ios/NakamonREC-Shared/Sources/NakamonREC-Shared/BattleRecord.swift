@@ -46,13 +46,23 @@ public struct BattleHistory: Codable {
     public var totalLosses: Int
     public var records: [BattleRecord]
 
-    public init(totalWins: Int = 0, totalLosses: Int = 0, records: [BattleRecord] = []) {
+    /// グランプリのレーティング記録 (別系列)。
+    /// 「1 ファイル = 1 グランプリ」運用のため戦績と同じファイルに同梱し、ファイル切替で一緒に切り替わる。
+    /// Optional なので旧ファイル (キー無し) は nil としてデコードされ後方互換。
+    /// Android も同一スキーマを持つこと。
+    public var grandPrixRecords: [GrandPrixRecord]?
+
+    public init(totalWins: Int = 0,
+                totalLosses: Int = 0,
+                records: [BattleRecord] = [],
+                grandPrixRecords: [GrandPrixRecord]? = nil) {
         self.totalWins = totalWins
         self.totalLosses = totalLosses
         self.records = records
+        self.grandPrixRecords = grandPrixRecords
     }
 
-    /// records から totalWins/Losses を再計算
+    /// records から totalWins/Losses を再計算 (grandPrixRecords は勝敗集計に含めない)
     public mutating func recomputeTotals() {
         totalWins = records.filter { $0.result == "WIN" }.count
         totalLosses = records.filter { $0.result == "LOSE" }.count
