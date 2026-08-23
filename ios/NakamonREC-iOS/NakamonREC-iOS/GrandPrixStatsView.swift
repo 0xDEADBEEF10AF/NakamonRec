@@ -39,6 +39,16 @@ struct GrandPrixStatsView: View {
                         VStack(spacing: 16) {
                             maxRatingHeader
                             if showAsList { listView } else { chartCard }
+                            // グラフ/テキスト 切替 (コンテンツの下に控えめに配置)
+                            Button {
+                                showAsList.toggle()
+                            } label: {
+                                Label(showAsList ? "グラフ表示" : "テキスト表示",
+                                      systemImage: showAsList ? "chart.xyaxis.line" : "list.bullet")
+                                    .font(.subheadline)
+                            }
+                            .foregroundStyle(Color.recCoral)
+                            .padding(.top, 4)
                         }
                         .padding(16)
                     }
@@ -47,17 +57,6 @@ struct GrandPrixStatsView: View {
             .navigationTitle("グランプリ集計")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if !sorted.isEmpty {
-                        Button {
-                            showAsList.toggle()
-                        } label: {
-                            Label(showAsList ? "グラフ" : "テキスト",
-                                  systemImage: showAsList ? "chart.xyaxis.line" : "list.bullet")
-                        }
-                        .foregroundStyle(Color.recCoral)
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showAdd = true

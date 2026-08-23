@@ -681,22 +681,15 @@ class HistoryActivity : AppCompatActivity() {
         })
         root.addView(maxRatingView)
 
-        // グラフ/テキスト 切替 + 追加 ボタン (横並び)
-        val toggleButton = android.widget.Button(this)
-        val addButton = android.widget.Button(this).apply { text = "＋追加" }
-        root.addView(android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            addView(toggleButton, android.widget.LinearLayout.LayoutParams(0,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(addButton, android.widget.LinearLayout.LayoutParams(0,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        })
-
-        // 差し替えるコンテンツ領域
+        // 差し替えるコンテンツ領域 (グラフ or テキスト)
         val contentFrame = android.widget.FrameLayout(this)
         root.addView(contentFrame, android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(360)
         ))
+
+        // グラフ/テキスト 切替はコンテンツの下に控えめに配置
+        val toggleButton = android.widget.Button(this, null, android.R.attr.borderlessButtonStyle)
+        root.addView(toggleButton)
 
         var showList = false
         fun rebuild() {
@@ -714,14 +707,22 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         toggleButton.setOnClickListener { showList = !showList; rebuild() }
-        addButton.setOnClickListener { showGrandPrixEditDialog(null) { rebuild() } }
         rebuild()
 
-        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+        // 「追加」はダイアログのボタン列 (削除と同じ控えめな見た目)。
+        // 主ダイアログを閉じずに編集ダイアログを開くため、show() 後にリスナーを差し替える。
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("グランプリ集計")
             .setView(root)
             .setPositiveButton("閉じる", null)
-            .show()
+            .setNeutralButton("追加", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                showGrandPrixEditDialog(null) { rebuild() }  // dismiss せず追加ダイアログを開く
+            }
+        }
+        dialog.show()
     }
 
     /** グラフ表示 (凡例 + レーティング推移グラフ)。全記録=最大5日ぶんを一度に表示。 */
