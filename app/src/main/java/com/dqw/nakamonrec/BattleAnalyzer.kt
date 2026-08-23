@@ -314,6 +314,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return res?.let { it.config to it.score }
     }
 
+    /** 直近の VS 自動校正で大会用 VS (MG) が採用されたか。CalibrationActivity が読む。 */
+    var lastVsCalibrationWasTournament: Boolean = false
+        private set
+
     fun autoCalibrateBattleScene(sceneBitmap: Bitmap): CalibrationData? {
         val fullMat = Mat()
         Utils.bitmapToMat(sceneBitmap, fullMat)
@@ -326,11 +330,15 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         // 最もスコアの高い結果を位置基準として採用
         val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
-        
+
         if (bestRes == null || bestRes.score < 0.4) {
             fullMat.release()
             return null
         }
+
+        // 大会用 (MG) が通常 (FM) より高スコアなら「大会用 VS をインポートした」と判定
+        // (グランプリモード判定。CalibrationActivity が読んで GrandPrixMode を設定する)。
+        lastVsCalibrationWasTournament = (mgRes?.score ?: -1.0) > (fmRes?.score ?: -1.0)
         
         // 標準アセット幅を取得（1080p基準）
         val standardVsWidth = (vsFmTemplate ?: vsMgTemplate)?.cols()?.toDouble() ?: return null
