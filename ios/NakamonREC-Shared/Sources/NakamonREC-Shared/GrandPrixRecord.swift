@@ -19,14 +19,9 @@ public struct GrandPrixRecord: Codable, Identifiable, Hashable {
     public var screenshotFile: String?  // 低信頼度時に保存した確認用スクショのファイル名
     public var rankTier: String?        // ランク帯 (手動設定。GrandPrixRecord.rankTiers のいずれか)。将来エンブレム表示に使う
 
-    /// ランク帯の選択肢 (低い順)。ランク帯修正メニューで使う。
+    /// ランク帯の選択肢 (低い順)。レーティングを記録する区間のみ (マスター3〜GM)。
     public static let rankTiers: [String] = [
-        "ルーキー1", "ルーキー2", "ルーキー3",
-        "ベテラン1", "ベテラン2", "ベテラン3",
-        "エリート1", "エリート2", "エリート3",
-        "エキスパート1", "エキスパート2", "エキスパート3",
-        "マスター1", "マスター2", "マスター3",
-        "グランドマスター"
+        "マスター3", "マスター2", "マスター1", "グランドマスター"
     ]
 
     /// id は timestamp ベース (対応する BattleRecord と揃える)
