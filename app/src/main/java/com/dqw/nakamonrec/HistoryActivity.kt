@@ -632,15 +632,57 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showAnalysisDialog() {
-        val items = arrayOf("パーティ集計", "モンスター集計")
+        val items = arrayOf("パーティ集計", "モンスター集計", "グランプリ集計")
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("集計メニュー")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showPartyAnalysisDialog()
                     1 -> showMonsterRankingDialog()
+                    2 -> showGrandPrixDialog()
                 }
             }
+            .show()
+    }
+
+    /**
+     * グランプリ集計: 読込中ファイルの grandPrixRecords を要約+一覧で表示。
+     * 「1 ファイル = 1 グランプリ」前提。レーティング推移グラフは iOS 先行 (Android は追って対応)。
+     */
+    private fun showGrandPrixDialog() {
+        val records = dataManager.loadGrandPrixRecords().sortedBy { it.timestamp }
+        if (records.isEmpty()) {
+            AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+                .setTitle("グランプリ集計")
+                .setMessage("グランプリの記録がありません。\n\n大会用VS画面で校正 (右上に GRAND PRIX MODE と表示) し、大会中に記録すると、ここにレーティング推移が表示されます。")
+                .setPositiveButton("閉じる", null)
+                .show()
+            return
+        }
+        val maxRating = records.maxOf { it.currentRating }
+        val wins = records.count { it.result == "WIN" }
+        val losses = records.count { it.result == "LOSE" }
+        val sdfIn = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        val sdfOut = SimpleDateFormat("MM/dd HH:mm", Locale.US)
+
+        // 変動 = 前戦との差 (読まず導出)
+        val deltas = HashMap<String, Double>()
+        for (i in 1 until records.size) {
+            deltas[records[i].timestamp] = records[i].currentRating - records[i - 1].currentRating
+        }
+
+        val sb = StringBuilder()
+        sb.append(String.format(Locale.US, "最高レーティング: %.1f\n記録数: %d戦  %dW-%dL\n\n", maxRating, records.size, wins, losses))
+        for (r in records.reversed()) {
+            val t = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp }
+            val border = r.borderRating?.let { String.format(Locale.US, "  ボーダー%.1f", it) } ?: ""
+            val delta = deltas[r.timestamp]?.let { String.format(Locale.US, "  %+.1f", it) } ?: ""
+            sb.append(String.format(Locale.US, "%s  %s  %.1f%s%s\n", t, r.result, r.currentRating, delta, border))
+        }
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle("グランプリ集計")
+            .setMessage(sb.toString())
+            .setPositiveButton("閉じる", null)
             .show()
     }
 
