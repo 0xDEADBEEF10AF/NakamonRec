@@ -134,8 +134,19 @@ struct GrandPrixStatsView: View {
                 "自分": Color.recCoral,
                 "ボーダー": Color.cyan
             ])
+            // 横軸は日付+時刻 (例 8/23 18:00)。グランプリ最大5日ぶんを日時比例で表示。
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                    AxisGridLine()
+                    if let d = value.as(Date.self) {
+                        AxisValueLabel {
+                            Text(d, format: .dateTime.month(.defaultDigits).day().hour().minute())
+                        }
+                    }
+                }
+            }
             .chartLegend(position: .top, alignment: .leading)
-            .frame(height: 220)
+            .frame(height: 300)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

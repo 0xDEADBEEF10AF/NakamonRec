@@ -121,6 +121,9 @@ class GrandPrixGraphView @JvmOverloads constructor(
         val pathRating = Path()
         val pathBorder = Path()
         var borderStarted = false
+        // X軸ラベルの重なり防止: 直前に描いたラベルの右端を追跡し、日付+時刻 (幅可変) でも重ならないようにする
+        var lastLabelRight = Float.NEGATIVE_INFINITY
+        val labelGap = 16f
 
         dataPoints.forEachIndexed { i, data ->
             val x = paddingLeft + i * stepX - scrollOffset
@@ -140,11 +143,12 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 borderStarted = false // 欠損点でボーダー線を途切れさせる
             }
 
-            // X軸ラベル（間引き）
-            val labelInterval = (dataPoints.size / 4).coerceAtLeast(1)
-            if (i % labelInterval == 0 || i == dataPoints.size - 1) {
-                val textW = textPaint.measureText(data.dateLabel)
-                canvas.drawText(data.dateLabel, x - textW / 2, h - 10f, textPaint)
+            // X軸ラベル（前ラベルと重ならない範囲で描画）
+            val textW = textPaint.measureText(data.dateLabel)
+            val left = x - textW / 2
+            if (left > lastLabelRight + labelGap && x + textW / 2 <= w - paddingRight) {
+                canvas.drawText(data.dateLabel, left, h - 10f, textPaint)
+                lastLabelRight = x + textW / 2
             }
         }
 

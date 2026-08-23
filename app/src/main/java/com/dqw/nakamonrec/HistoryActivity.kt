@@ -665,7 +665,7 @@ class HistoryActivity : AppCompatActivity() {
 
         val maxRating = records.maxOf { it.currentRating }
         val sdfIn = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        val sdfOut = SimpleDateFormat("MM/dd", Locale.US)
+        val sdfOut = SimpleDateFormat("M/d HH:mm", Locale.US)  // 例: 8/23 18:00
         val points = records.map { r ->
             val label = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp.takeLast(5) }
             GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label)
@@ -702,8 +702,10 @@ class HistoryActivity : AppCompatActivity() {
                 setTextColor("#90D7EC".toColorInt())
             })
         })
-        // グラフ (大きめ)
+        // グラフ (大きめ)。グランプリは最大5日ぶん = 1ファイル分を全て一度に表示する
+        // (1 ファイル = 1 グランプリ前提。全記録が収まるよう visibleCount を件数に合わせる)。
         container.addView(GrandPrixGraphView(this).apply {
+            visibleCount = points.size.coerceAtLeast(2)
             setData(points)
         }, android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(340)
