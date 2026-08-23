@@ -73,7 +73,7 @@ android {
             // デバッグ版を別パッケージ (com.dqw.nakamonrec.debug) にして Play 公開版と共存させる。
             // リリース版をアンインストールせずに機能テストでき、戦績データも無傷。
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+            versionNameSuffix = "-GP-test"
         }
         release {
             isMinifyEnabled = false
