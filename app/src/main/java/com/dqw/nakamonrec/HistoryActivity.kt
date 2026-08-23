@@ -688,16 +688,11 @@ class HistoryActivity : AppCompatActivity() {
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(360)
         ))
 
-        // グラフ/テキスト 切替はコンテンツの下に控えめに配置
-        val toggleButton = android.widget.Button(this, null, android.R.attr.borderlessButtonStyle)
-        root.addView(toggleButton)
-
         var showList = false
         fun rebuild() {
             val records = currentRecords()
             val max = records.maxOfOrNull { it.currentRating }
             maxRatingView.text = max?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
-            toggleButton.text = if (showList) "グラフ表示" else "テキスト表示"
             contentFrame.removeAllViews()
             if (showList) {
                 // 行を長押しで編集メニュー (メイン戦績の長押し編集と同じ作法)
@@ -708,14 +703,25 @@ class HistoryActivity : AppCompatActivity() {
                 contentFrame.addView(buildGrandPrixGraph(records))
             }
         }
-        toggleButton.setOnClickListener { showList = !showList; rebuild() }
         rebuild()
 
-        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+        // グラフ/テキスト 切替は「閉じる」と同じボタン列 (neutral) に置く。
+        // dismiss させず切り替えるため show() 後にリスナーを差し替える。
+        val dialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("グランプリ集計")
             .setView(root)
             .setPositiveButton("閉じる", null)
-            .show()
+            .setNeutralButton("テキスト表示", null)
+            .create()
+        dialog.setOnShowListener {
+            val nb = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+            nb.setOnClickListener {
+                showList = !showList
+                nb.text = if (showList) "グラフ表示" else "テキスト表示"
+                rebuild()
+            }
+        }
+        dialog.show()
     }
 
     /** グラフ表示 (凡例 + レーティング推移グラフ)。全記録=最大5日ぶんを一度に表示。 */
@@ -804,7 +810,6 @@ class HistoryActivity : AppCompatActivity() {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 setPadding(dp(4), dp(8), dp(4), dp(8))
                 isLongClickable = true
-                setBackgroundResource(android.R.drawable.list_selector_background)
                 addView(timeCell)
                 addView(cell("$battleNo", "#888888".toColorInt(), 12f, 0.7f, true))
                 addView(cell(String.format(Locale.US, "%.1f", r.currentRating), android.graphics.Color.WHITE, 14f, 1.8f, true, bold = true))
