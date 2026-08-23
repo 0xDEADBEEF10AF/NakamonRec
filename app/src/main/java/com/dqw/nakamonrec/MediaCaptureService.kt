@@ -36,8 +36,16 @@ class MediaCaptureService : Service() {
     
     private lateinit var dataManager: BattleDataManager
     private lateinit var analyzer: BattleAnalyzer
-    private enum class State { IDLE, IN_BATTLE }
+    private enum class State { IDLE, IN_BATTLE, AWAITING_RATING }
     private var currentState = State.IDLE
+
+    // グランプリ: 大会 VS で始まった戦闘か (二段ゲート1段目)、および WIN/LOSE 後の
+    // レーティング画面待ちの情報。GrandPrixMode OFF ではこれらは使われず挙動不変。
+    private var sessionStartedTournament = false
+    private var grandPrixDeadline = 0L
+    private var grandPrixTimestamp = ""
+    private var grandPrixResult = ""
+    private val grandPrixWaitTimeoutMs = 20_000L
     private var lastAnalysisTime = 0L
     private var lastBitmapUpdateTime = 0L
     private var latestBitmap: Bitmap? = null
@@ -303,6 +311,7 @@ class MediaCaptureService : Service() {
                                     when (currentState) {
                                         State.IDLE -> handleIdleState(bmp)
                                         State.IN_BATTLE -> handleBattleState(bmp)
+                                        State.AWAITING_RATING -> handleAwaitingRating(bmp)
                                     }
                                 } finally {
                                     bmp.recycle()
@@ -442,9 +451,17 @@ class MediaCaptureService : Service() {
             lastDetectedPartyScores = scores
         }
         
-        if (analyzer.isVsDetected(bitmap)) {
+        val vsKind = analyzer.detectVsTemplate(bitmap)
+        if (vsKind != null) {
             dataManager.rotateFlightLog()
-            
+
+            // 大会 VS で始まったか (二段ゲート1段目)。custom は大会用校正時のみ大会扱い。
+            sessionStartedTournament = when (vsKind) {
+                BattleAnalyzer.VsTemplateKind.MG -> true
+                BattleAnalyzer.VsTemplateKind.CUSTOM -> GrandPrixMode.isEnabled(this)
+                BattleAnalyzer.VsTemplateKind.FM -> false
+            }
+
             // 現在の検知情報をセッションに固定する
             sessionPartyIndex = lastDetectedPartyIndex
             sessionPartyScores = lastDetectedPartyScores
@@ -508,11 +525,26 @@ class MediaCaptureService : Service() {
             dataManager.appendFlightLog(String.format(Locale.US, "📝 戦績記録: %s P[%d] 味方=%s vs 敵=%s",
                 result, sessionPartyIndex + 1, myParty.joinToString(","), enemyParty.joinToString(",")))
 
-            currentState = State.IDLE
+            // グランプリ二段ゲート: モード ON かつ大会 VS で始まった戦闘なら
+            // レーティング画面待ちへ。それ以外は従来どおり IDLE に戻る。
+            val startTournament = sessionStartedTournament
+            val recordTs = lastActiveRecord?.timestamp
+
             // 次回識別のためにセッション情報をクリア
             sessionPartyIndex = -1
             sessionPartyScores = emptyList()
             sessionVsScore = 0.0
+            sessionStartedTournament = false
+
+            if (GrandPrixMode.isEnabled(this) && startTournament && recordTs != null) {
+                grandPrixTimestamp = recordTs
+                grandPrixResult = result
+                grandPrixDeadline = System.currentTimeMillis() + grandPrixWaitTimeoutMs
+                currentState = State.AWAITING_RATING
+                dataManager.appendFlightLog("グランプリ: レーティング画面を待機中…")
+            } else {
+                currentState = State.IDLE
+            }
 
             // REC 放置タイマーのリセット (確定があった時点で「最近活動あり」とみなす)
             lastConfirmedAt = System.currentTimeMillis()
@@ -520,6 +552,41 @@ class MediaCaptureService : Service() {
 
             updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "戦闘終了")
         }
+    }
+
+    /**
+     * グランプリ: WIN/LOSE 後に呼ぶ。レーティング画面 (勝敗ロゴの下にタップで出現) を
+     * RatingPanelReader で読み、成功したら GrandPrixRecord を保存して IDLE に戻る。
+     * タイムアウトで諦める。GrandPrixMode OFF / 通常戦ではこの状態に入らない。
+     */
+    private fun handleAwaitingRating(bitmap: Bitmap) {
+        if (System.currentTimeMillis() > grandPrixDeadline) {
+            currentState = State.IDLE
+            dataManager.appendFlightLog("グランプリ: レーティング画面の検出タイムアウト (記録なし)")
+            return
+        }
+        val reading = RatingPanelReader.read(this, bitmap) ?: return
+        // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
+        if (reading.currentRating < 100 || reading.currentRating > 99_999) return
+        synchronized(this) {
+            if (currentState != State.AWAITING_RATING) return
+            dataManager.appendGrandPrix(
+                GrandPrixRecord(
+                    timestamp = grandPrixTimestamp,
+                    result = grandPrixResult,
+                    currentRating = reading.currentRating,
+                    neededRating = reading.neededRating
+                )
+            )
+            currentState = State.IDLE
+        }
+        val borderStr = reading.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
+        val neededStr = reading.neededRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
+        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s",
+            reading.currentRating, neededStr, borderStr))
+        // A 方針: レーティング値のみの記録確認通知
+        updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses,
+            String.format(Locale.US, "🎖 GP記録 %.1f", reading.currentRating))
     }
 
     private fun createNotificationChannel() {

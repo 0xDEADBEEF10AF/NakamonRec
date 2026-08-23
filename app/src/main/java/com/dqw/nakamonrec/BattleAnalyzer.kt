@@ -768,6 +768,33 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return detected
     }
 
+    /** VS 検知で勝ったテンプレ種別 (グランプリ二段ゲート用)。未検知は null */
+    enum class VsTemplateKind { CUSTOM, FM, MG }
+
+    fun detectVsTemplate(bitmap: Bitmap): VsTemplateKind? {
+        val vMargin = (bitmap.height * 0.1).toInt()
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+        var bestKind: VsTemplateKind? = null
+        var bestScore = 0.0
+        vsCustomTemplateScaled?.let {
+            val s = performColorMatchCached(bitmap, calibrationData.vsBox, it, vMargin, hMargin)
+            if (s > bestScore) { bestScore = s; bestKind = VsTemplateKind.CUSTOM }
+        }
+        run {
+            val s = performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin)
+            if (s > bestScore) { bestScore = s; bestKind = VsTemplateKind.FM }
+        }
+        run {
+            val s = performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin)
+            if (s > bestScore) { bestScore = s; bestKind = VsTemplateKind.MG }
+        }
+        if (bestScore > vsThreshold && bestKind != null) {
+            saveRoi(bitmap, calibrationData.vsBox, "vs", vMargin, hMargin)
+            return bestKind
+        }
+        return null
+    }
+
     fun checkBattleResult(bitmap: Bitmap): String? {
         val vMargin = (bitmap.height * 0.05).toInt() // 勝敗ロゴは5%程度のマージン
         val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
