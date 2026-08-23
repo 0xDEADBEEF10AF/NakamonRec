@@ -751,8 +751,10 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     /** ランク帯のオリジナル色バッジ (角丸 + 略称)。未設定/対象外なら null。 */
-    private fun rankBadgeView(tier: String?, dp: (Int) -> Int): android.view.View? {
+    private fun rankBadgeView(tier: String?): android.view.View? {
         val info = GrandPrixRecord.rankBadge(tier) ?: return null
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
         return android.widget.TextView(this).apply {
             text = info.first
             setTextColor(android.graphics.Color.parseColor("#D9000000")) // 黒 85%
@@ -821,7 +823,7 @@ class HistoryActivity : AppCompatActivity() {
                 addView(android.widget.TextView(this@HistoryActivity).apply {
                     text = time; setTextColor(android.graphics.Color.WHITE); textSize = 12f
                 })
-                rankBadgeView(r.rankTier, dp)?.let { addView(it) }
+                rankBadgeView(r.rankTier)?.let { addView(it) }
             }
             list.addView(android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
