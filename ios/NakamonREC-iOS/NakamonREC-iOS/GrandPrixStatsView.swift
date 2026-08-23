@@ -172,12 +172,13 @@ struct GrandPrixStatsView: View {
     }
 
     private var listHeader: some View {
-        HStack(spacing: 8) {
-            Text("日時").frame(width: 88, alignment: .leading)
-            Text("戦").frame(width: 28, alignment: .trailing)
+        HStack(spacing: 6) {
+            Text("日時").frame(width: 66, alignment: .leading)
+            Text("ランク").frame(width: 40, alignment: .leading)
+            Text("戦").frame(width: 22, alignment: .trailing)
             Text("レーティング").frame(maxWidth: .infinity, alignment: .trailing)
-            Text("変動").frame(width: 56, alignment: .trailing)
-            Text("ボーダー").frame(width: 64, alignment: .trailing)
+            Text("変動").frame(width: 52, alignment: .trailing)
+            Text("ボーダー").frame(width: 60, alignment: .trailing)
         }
         .font(.caption2).foregroundStyle(.gray)
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -189,22 +190,22 @@ struct GrandPrixStatsView: View {
     }
 
     private func recordRow(_ r: GrandPrixRecord, battleNo: Int, delta: Double?) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(shortTime(r.timestamp)).font(.caption2).foregroundStyle(.white)
-                if r.rankTier != nil {
-                    RankBadge(tier: r.rankTier, height: 15)
-                }
+        HStack(spacing: 6) {
+            Text(shortTime(r.timestamp)).font(.caption2).foregroundStyle(.white)
+                .frame(width: 66, alignment: .leading)
+            // ランク列
+            HStack(spacing: 0) {
+                if r.rankTier != nil { RankBadge(tier: r.rankTier, height: 15) }
             }
-            .frame(width: 88, alignment: .leading)
-            Text("\(battleNo)").font(.caption2).foregroundStyle(.gray).frame(width: 28, alignment: .trailing)
+            .frame(width: 40, alignment: .leading)
+            Text("\(battleNo)").font(.caption2).foregroundStyle(.gray).frame(width: 22, alignment: .trailing)
             Text(String(format: "%.1f", r.currentRating)).font(.subheadline.bold()).foregroundStyle(.white)
                 .frame(maxWidth: .infinity, alignment: .trailing)
             Text(delta.map { String(format: "%@%.1f", $0 >= 0 ? "+" : "", $0) } ?? "—")
                 .font(.caption2).foregroundStyle(delta.map { $0 >= 0 ? Color.recCoral : Color.cyan } ?? .gray)
-                .frame(width: 56, alignment: .trailing)
+                .frame(width: 52, alignment: .trailing)
             Text(r.borderRating.map { String(format: "%.1f", $0) } ?? "—")
-                .font(.caption2).foregroundStyle(.cyan.opacity(0.9)).frame(width: 64, alignment: .trailing)
+                .font(.caption2).foregroundStyle(.cyan.opacity(0.9)).frame(width: 60, alignment: .trailing)
         }
         .padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
     }
@@ -226,12 +227,19 @@ struct RankBadge: View {
 
     var body: some View {
         if let info = GrandPrixRecord.rankBadge(tier) {
+            let colors = info.colors.map { Color(hex: $0) }
             Text(info.abbrev)
                 .font(.system(size: height * 0.62, weight: .heavy))
                 .foregroundStyle(.black.opacity(0.85))
                 .padding(.horizontal, height * 0.32)
                 .frame(height: height)
-                .background(Color(hex: info.hex))
+                .background {
+                    if colors.count == 1 {
+                        colors[0]
+                    } else {
+                        LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+                    }
+                }
                 .clipShape(Capsule())
         }
     }

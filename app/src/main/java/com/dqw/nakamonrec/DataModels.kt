@@ -57,15 +57,16 @@ data class GrandPrixRecord(
         )
 
         /**
-         * ランク帯のオリジナル色付きバッジ情報 (略称 to 16進カラー #なし)。
+         * ランク帯のオリジナル色付きバッジ情報 (略称 to 16進カラー配列 #なし)。
          * ゲームの紋章 (著作物) は使わず自前の色バッジで表現。iOS と同一。
-         * マスター3=銅 / マスター2=銀 / マスター1=金 / グランドマスター=紫。
+         * 色配列が 1 色なら単色、複数色なら左→右のグラデーション。
+         * マスター3=銅 / マスター2=銀 / マスター1=金 / グランドマスター=虹。
          */
-        fun rankBadge(tier: String?): Pair<String, String>? = when (tier) {
-            "マスター3" -> "M3" to "CD7F32"
-            "マスター2" -> "M2" to "AAB2BD"
-            "マスター1" -> "M1" to "F4C430"
-            "グランドマスター" -> "GM" to "9B59B6"
+        fun rankBadge(tier: String?): Pair<String, List<String>>? = when (tier) {
+            "マスター3" -> "M3" to listOf("CD7F32")
+            "マスター2" -> "M2" to listOf("AAB2BD")
+            "マスター1" -> "M1" to listOf("F4C430")
+            "グランドマスター" -> "GM" to listOf("E74C3C", "E67E22", "F1C40F", "2ECC71", "3498DB", "9B59B6")
             else -> null
         }
     }

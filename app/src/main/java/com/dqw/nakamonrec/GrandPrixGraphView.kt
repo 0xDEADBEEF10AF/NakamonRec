@@ -202,21 +202,26 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 rTextY = rTextY.coerceIn(topLimit, bottomLimit)
                 bTextY = bTextY.coerceIn(topLimit, bottomLimit)
 
-                // ランク色バッジを R:xxxx の左に描く
+                // ランク色バッジを R:xxxx の左に描く (単色 or 虹グラデーション)
                 GrandPrixRecord.rankBadge(data.rankTier)?.let { badge ->
+                    val (abbrev, hexList) = badge
                     val labelLeftX = if (tooltipPaint.textAlign == Paint.Align.LEFT) drawX
                                      else drawX - tooltipPaint.measureText(labelR)
                     val bh = tooltipPaint.textSize * 0.95f
                     badgeTextPaint.textSize = bh * 0.62f
-                    val bw = badgeTextPaint.measureText(badge.first) + bh * 0.6f
+                    val bw = badgeTextPaint.measureText(abbrev) + bh * 0.6f
                     val right = labelLeftX - 6f
                     val left = right - bw
                     val cy = rTextY - tooltipPaint.textSize * 0.34f
-                    badgeFillPaint.color = ("#" + badge.second).toColorInt()
+                    val colors = hexList.map { ("#" + it).toColorInt() }.toIntArray()
+                    badgeFillPaint.shader = if (colors.size == 1) null
+                        else android.graphics.LinearGradient(left, cy, right, cy, colors, null, Shader.TileMode.CLAMP)
+                    if (colors.size == 1) badgeFillPaint.color = colors[0]
                     canvas.drawRoundRect(left, cy - bh / 2f, right, cy + bh / 2f, bh / 2f, bh / 2f, badgeFillPaint)
+                    badgeFillPaint.shader = null
                     badgeTextPaint.color = "#D9000000".toColorInt()
                     val fm = badgeTextPaint.fontMetrics
-                    canvas.drawText(badge.first, (left + right) / 2f, cy - (fm.ascent + fm.descent) / 2f, badgeTextPaint)
+                    canvas.drawText(abbrev, (left + right) / 2f, cy - (fm.ascent + fm.descent) / 2f, badgeTextPaint)
                 }
 
                 tooltipPaint.color = ratingLinePaint.color

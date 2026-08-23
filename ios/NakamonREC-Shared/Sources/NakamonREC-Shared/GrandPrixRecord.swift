@@ -24,15 +24,16 @@ public struct GrandPrixRecord: Codable, Identifiable, Hashable {
         "マスター3", "マスター2", "マスター1", "グランドマスター"
     ]
 
-    /// ランク帯のオリジナル色付きバッジ情報 (略称, 16進カラー #なし)。
+    /// ランク帯のオリジナル色付きバッジ情報 (略称, 16進カラー配列 #なし)。
     /// ゲームの紋章 (著作物) は使わず、自前の色バッジで表現する。
-    /// マスター3=銅 / マスター2=銀 / マスター1=金 / グランドマスター=紫。
-    public static func rankBadge(_ tier: String?) -> (abbrev: String, hex: String)? {
+    /// 色配列が 1 色なら単色、複数色なら左→右のグラデーション。
+    /// マスター3=銅 / マスター2=銀 / マスター1=金 / グランドマスター=虹。
+    public static func rankBadge(_ tier: String?) -> (abbrev: String, colors: [String])? {
         switch tier {
-        case "マスター3":       return ("M3", "CD7F32")
-        case "マスター2":       return ("M2", "AAB2BD")
-        case "マスター1":       return ("M1", "F4C430")
-        case "グランドマスター": return ("GM", "9B59B6")
+        case "マスター3":       return ("M3", ["CD7F32"])
+        case "マスター2":       return ("M2", ["AAB2BD"])
+        case "マスター1":       return ("M1", ["F4C430"])
+        case "グランドマスター": return ("GM", ["E74C3C", "E67E22", "F1C40F", "2ECC71", "3498DB", "9B59B6"])
         default:               return nil
         }
     }

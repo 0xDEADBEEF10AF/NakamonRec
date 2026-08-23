@@ -750,26 +750,30 @@ class HistoryActivity : AppCompatActivity() {
         return col
     }
 
-    /** ランク帯のオリジナル色バッジ (角丸 + 略称)。未設定/対象外なら null。 */
+    /** ランク帯のオリジナル色バッジ (角丸 + 略称、単色 or 虹グラデーション)。未設定/対象外なら null。 */
     private fun rankBadgeView(tier: String?): android.view.View? {
         val info = GrandPrixRecord.rankBadge(tier) ?: return null
+        val (abbrev, hexList) = info
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
+        val colors = hexList.map { ("#" + it).toColorInt() }.toIntArray()
+        val bg = if (colors.size == 1) {
+            android.graphics.drawable.GradientDrawable().apply { setColor(colors[0]) }
+        } else {
+            android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, colors)
+        }.apply { cornerRadius = dp(8).toFloat() }
         return android.widget.TextView(this).apply {
-            text = info.first
+            text = abbrev
             setTextColor(android.graphics.Color.parseColor("#D9000000")) // 黒 85%
             textSize = 9f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(dp(5), dp(1), dp(5), dp(1))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(("#" + info.second).toColorInt())
-            }
-            // 左寄せの小さいバッジにするため wrap_content
+            background = bg
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
+            )
         }
     }
 
@@ -798,11 +802,12 @@ class HistoryActivity : AppCompatActivity() {
         list.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             setPadding(dp(4), dp(6), dp(4), dp(6))
-            addView(cell("日時", "#888888".toColorInt(), 11f, 2.4f, false))
-            addView(cell("戦", "#888888".toColorInt(), 11f, 0.7f, true))
+            addView(cell("日時", "#888888".toColorInt(), 11f, 2.0f, false))
+            addView(cell("ランク", "#888888".toColorInt(), 11f, 1.0f, false))
+            addView(cell("戦", "#888888".toColorInt(), 11f, 0.6f, true))
             addView(cell("レーティング", "#888888".toColorInt(), 11f, 1.8f, true))
-            addView(cell("変動", "#888888".toColorInt(), 11f, 1.2f, true))
-            addView(cell("ボーダー", "#888888".toColorInt(), 11f, 1.4f, true))
+            addView(cell("変動", "#888888".toColorInt(), 11f, 1.1f, true))
+            addView(cell("ボーダー", "#888888".toColorInt(), 11f, 1.3f, true))
         })
 
         // 新しい順に行を作る。戦闘数は時系列の連番。
@@ -815,25 +820,24 @@ class HistoryActivity : AppCompatActivity() {
             val deltaColor = if (delta == null) "#888888".toColorInt() else if (delta >= 0) "#F09199".toColorInt() else "#90D7EC".toColorInt()
             val borderStr = r.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
 
-            // 日時セル: ランク帯が設定されていれば下に色バッジを表示
-            val timeCell = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
+            // ランク列: 色バッジを左寄せで表示 (未設定なら空)
+            val rankCell = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START
                 layoutParams = android.widget.LinearLayout.LayoutParams(0,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 2.4f)
-                addView(android.widget.TextView(this@HistoryActivity).apply {
-                    text = time; setTextColor(android.graphics.Color.WHITE); textSize = 12f
-                })
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 1.0f)
                 rankBadgeView(r.rankTier)?.let { addView(it) }
             }
             list.addView(android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 setPadding(dp(4), dp(8), dp(4), dp(8))
                 isLongClickable = true
-                addView(timeCell)
-                addView(cell("$battleNo", "#888888".toColorInt(), 12f, 0.7f, true))
+                addView(cell(time, android.graphics.Color.WHITE, 12f, 2.0f, false))
+                addView(rankCell)
+                addView(cell("$battleNo", "#888888".toColorInt(), 12f, 0.6f, true))
                 addView(cell(String.format(Locale.US, "%.1f", r.currentRating), android.graphics.Color.WHITE, 14f, 1.8f, true, bold = true))
-                addView(cell(deltaStr, deltaColor, 12f, 1.2f, true))
-                addView(cell(borderStr, "#90D7EC".toColorInt(), 12f, 1.4f, true))
+                addView(cell(deltaStr, deltaColor, 12f, 1.1f, true))
+                addView(cell(borderStr, "#90D7EC".toColorInt(), 12f, 1.3f, true))
                 setOnLongClickListener { onRowLongClick(r); true }
             })
         }
