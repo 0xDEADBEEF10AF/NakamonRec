@@ -732,7 +732,7 @@ class HistoryActivity : AppCompatActivity() {
         val sdfOut = SimpleDateFormat("M/d HH:mm", Locale.US)  // 例: 8/23 18:00
         val points = records.map { r ->
             val label = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp.takeLast(5) }
-            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label)
+            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier)
         }
         val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
         col.addView(android.widget.LinearLayout(this).apply {
@@ -748,6 +748,27 @@ class HistoryActivity : AppCompatActivity() {
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(320)
         ))
         return col
+    }
+
+    /** ランク帯のオリジナル色バッジ (角丸 + 略称)。未設定/対象外なら null。 */
+    private fun rankBadgeView(tier: String?, dp: (Int) -> Int): android.view.View? {
+        val info = GrandPrixRecord.rankBadge(tier) ?: return null
+        return android.widget.TextView(this).apply {
+            text = info.first
+            setTextColor(android.graphics.Color.parseColor("#D9000000")) // 黒 85%
+            textSize = 9f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(5), dp(1), dp(5), dp(1))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(("#" + info.second).toColorInt())
+            }
+            // 左寄せの小さいバッジにするため wrap_content
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+        }
     }
 
     /** テキスト一覧: 日時 / 戦 / レーティング / 変動 / ボーダー。行を長押しで onRowLongClick。 */
@@ -792,7 +813,7 @@ class HistoryActivity : AppCompatActivity() {
             val deltaColor = if (delta == null) "#888888".toColorInt() else if (delta >= 0) "#F09199".toColorInt() else "#90D7EC".toColorInt()
             val borderStr = r.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
 
-            // 日時セル: ランク帯が設定されていれば下に小さく表示 (将来エンブレム)
+            // 日時セル: ランク帯が設定されていれば下に色バッジを表示
             val timeCell = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
                 layoutParams = android.widget.LinearLayout.LayoutParams(0,
@@ -800,11 +821,7 @@ class HistoryActivity : AppCompatActivity() {
                 addView(android.widget.TextView(this@HistoryActivity).apply {
                     text = time; setTextColor(android.graphics.Color.WHITE); textSize = 12f
                 })
-                r.rankTier?.let { tier ->
-                    addView(android.widget.TextView(this@HistoryActivity).apply {
-                        text = tier; setTextColor("#888888".toColorInt()); textSize = 9f
-                    })
-                }
+                rankBadgeView(r.rankTier, dp)?.let { addView(it) }
             }
             list.addView(android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL

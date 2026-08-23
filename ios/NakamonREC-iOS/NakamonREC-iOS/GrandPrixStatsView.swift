@@ -190,10 +190,10 @@ struct GrandPrixStatsView: View {
 
     private func recordRow(_ r: GrandPrixRecord, battleNo: Int, delta: Double?) -> some View {
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(shortTime(r.timestamp)).font(.caption2).foregroundStyle(.white)
-                if let tier = r.rankTier {
-                    Text(tier).font(.system(size: 9)).foregroundStyle(.gray)  // 将来ここにエンブレム
+                if r.rankTier != nil {
+                    RankBadge(tier: r.rankTier, height: 15)
                 }
             }
             .frame(width: 88, alignment: .leading)
@@ -218,6 +218,36 @@ struct GrandPrixStatsView: View {
 
 /// Identifiable ラッパ (pendingAddDate を .sheet(item:) に載せる用)
 private struct DateBox: Identifiable { let date: Date; var id: TimeInterval { date.timeIntervalSince1970 } }
+
+/// ランク帯のオリジナル色バッジ (略称 + 色)。tier が未設定/対象外なら何も描かない。
+struct RankBadge: View {
+    let tier: String?
+    var height: CGFloat = 16
+
+    var body: some View {
+        if let info = GrandPrixRecord.rankBadge(tier) {
+            Text(info.abbrev)
+                .font(.system(size: height * 0.62, weight: .heavy))
+                .foregroundStyle(.black.opacity(0.85))
+                .padding(.horizontal, height * 0.32)
+                .frame(height: height)
+                .background(Color(hex: info.hex))
+                .clipShape(Capsule())
+        }
+    }
+}
+
+private extension Color {
+    /// "RRGGBB" (# なし) から生成
+    init(hex: String) {
+        var v: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&v)
+        self.init(.sRGB,
+                  red: Double((v >> 16) & 0xFF) / 255.0,
+                  green: Double((v >> 8) & 0xFF) / 255.0,
+                  blue: Double(v & 0xFF) / 255.0)
+    }
+}
 
 /// グランプリ記録の編集メニュー (メイン戦績の RecordEditMenu と同じ作法)。
 /// タップした 1 レコードに対する操作一覧を出す。onApply(nil) = 削除。

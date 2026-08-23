@@ -19,7 +19,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    data class RatingPoint(val rating: Double, val border: Double?, val dateLabel: String)
+    data class RatingPoint(val rating: Double, val border: Double?, val dateLabel: String, val rankTier: String? = null)
 
     private var dataPoints: List<RatingPoint> = emptyList()
     private var scrollOffset: Float = 0f
@@ -56,6 +56,10 @@ class GrandPrixGraphView @JvmOverloads constructor(
         typeface = Typeface.DEFAULT_BOLD
     }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val badgeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+    }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, dy: Float): Boolean {
@@ -197,6 +201,23 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 val topLimit = paddingTop + ts; val bottomLimit = paddingTop + innerH
                 rTextY = rTextY.coerceIn(topLimit, bottomLimit)
                 bTextY = bTextY.coerceIn(topLimit, bottomLimit)
+
+                // ランク色バッジを R:xxxx の左に描く
+                GrandPrixRecord.rankBadge(data.rankTier)?.let { badge ->
+                    val labelLeftX = if (tooltipPaint.textAlign == Paint.Align.LEFT) drawX
+                                     else drawX - tooltipPaint.measureText(labelR)
+                    val bh = tooltipPaint.textSize * 0.95f
+                    badgeTextPaint.textSize = bh * 0.62f
+                    val bw = badgeTextPaint.measureText(badge.first) + bh * 0.6f
+                    val right = labelLeftX - 6f
+                    val left = right - bw
+                    val cy = rTextY - tooltipPaint.textSize * 0.34f
+                    badgeFillPaint.color = ("#" + badge.second).toColorInt()
+                    canvas.drawRoundRect(left, cy - bh / 2f, right, cy + bh / 2f, bh / 2f, bh / 2f, badgeFillPaint)
+                    badgeTextPaint.color = "#D9000000".toColorInt()
+                    val fm = badgeTextPaint.fontMetrics
+                    canvas.drawText(badge.first, (left + right) / 2f, cy - (fm.ascent + fm.descent) / 2f, badgeTextPaint)
+                }
 
                 tooltipPaint.color = ratingLinePaint.color
                 canvas.drawText(labelR, drawX, rTextY, tooltipPaint)
