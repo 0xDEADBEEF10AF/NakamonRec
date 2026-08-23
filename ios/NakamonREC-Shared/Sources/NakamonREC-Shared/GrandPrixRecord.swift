@@ -11,9 +11,8 @@ import Foundation
 public struct GrandPrixRecord: Codable, Identifiable, Hashable {
     public var timestamp: String        // "yyyy-MM-dd HH:mm:ss" 形式 (対応する BattleRecord と一致)
     public var result: String           // "WIN" or "LOSE"
-    public var variationRating: Double  // 変動レーティング (符号つき。負け時マイナス)
-    public var currentRating: Double    // 現在のレーティング
-    public var neededRating: Double?    // 必要レーティング「あと」。次ランクなし(GM)/ランクアップ戦では nil
+    public var currentRating: Double    // 現在のレーティング (画面から読む値①、白・常に正)
+    public var neededRating: Double?    // 必要レーティング「あと」(画面から読む値②、白・常に正)。次ランクなし(GM)/ランクアップ戦では nil
     public var nationalRank: String?    // 全国ランキング表示テキスト (例 "200位以上")。意味が可変なので数値化しない
     public var isRankUp: Bool           // ランクアップ戦 (パネルに必要レーティングが出ない戦)
     public var lowConfidence: Bool      // 読み取り信頼度が低く要確認 (手入力を促す)
@@ -29,9 +28,11 @@ public struct GrandPrixRecord: Codable, Identifiable, Hashable {
         return currentRating + needed
     }
 
+    // 変動レーティングは画面から読まない。連続する currentRating の差分として
+    // 表示時に導出する (前戦がなければ変動なし)。読み取り対象は現在/必要の2値のみ。
+
     public init(timestamp: String,
                 result: String,
-                variationRating: Double,
                 currentRating: Double,
                 neededRating: Double? = nil,
                 nationalRank: String? = nil,
@@ -40,7 +41,6 @@ public struct GrandPrixRecord: Codable, Identifiable, Hashable {
                 screenshotFile: String? = nil) {
         self.timestamp = timestamp
         self.result = result
-        self.variationRating = variationRating
         self.currentRating = currentRating
         self.neededRating = neededRating
         self.nationalRank = nationalRank
