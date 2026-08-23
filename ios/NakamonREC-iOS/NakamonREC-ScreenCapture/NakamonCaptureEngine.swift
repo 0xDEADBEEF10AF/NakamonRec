@@ -19,6 +19,16 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // 戦闘状態
     private var isBattleInProgress = false
 
+    // グランプリ: WIN/LOSE 後にレーティング画面 (ユーザーのタップで出現) を待って読む状態。
+    // GrandPrixMode.isEnabled のときだけ設定される (OFF の通常運用では常に nil = 挙動不変)。
+    private struct GrandPrixWait {
+        let timestamp: String       // 対応する BattleRecord と揃える (pending.startedAt)
+        let result: String          // "WIN" / "LOSE"
+        let deadline: TimeInterval  // これを過ぎたら諦める
+    }
+    private var grandPrixWait: GrandPrixWait?
+    private let grandPrixWaitTimeout: TimeInterval = 20
+
     // テンプレートキャッシュ
     // VS は BASE 2 種 (FM=フレンドマッチング, MG=大会用) + カスタムテンプレ対応。
     // カスタムが存在すれば BASE を完全に置き換える。
@@ -235,12 +245,46 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             calibrateTemplates(forFrameWidth: uiImage.size.width)
         }
 
+        // グランプリ: WIN/LOSE 後のレーティング画面待ち (大会モード時のみ発生)。
+        // 待機中は新規 VS/パーティ探索を止め、パネル読み取りに専念する。
+        if grandPrixWait != nil {
+            handleGrandPrixWait(uiImage, now: currentTime)
+            return
+        }
+
         if !isBattleInProgress {
             scanForPartySelect(uiImage)
             scanForVS(uiImage)
         } else {
             checkBattleEnd(uiImage)
         }
+    }
+
+    // MARK: - Grand Prix レーティング画面待ち
+
+    /// 大会モードで WIN/LOSE 検知後に呼ぶ。レーティング画面 (勝敗ロゴの下にタップで出現) を
+    /// RatingPanelReader で読み、成功したら GrandPrixRecord を保存して待機終了。
+    /// タイムアウトで諦める。GrandPrixMode OFF ではそもそも grandPrixWait が設定されないため走らない。
+    private func handleGrandPrixWait(_ scene: UIImage, now: TimeInterval) {
+        guard let wait = grandPrixWait else { return }
+        if now > wait.deadline {
+            grandPrixWait = nil
+            BattleLogger.append("グランプリ: レーティング画面の検出タイムアウト (記録なし)")
+            return
+        }
+        guard let cg = scene.cgImage, let reading = RatingPanelReader.read(cg) else { return }
+        // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
+        guard reading.currentRating >= 100, reading.currentRating <= 99_999 else { return }
+        let record = GrandPrixRecord(timestamp: wait.timestamp,
+                                     result: wait.result,
+                                     currentRating: reading.currentRating,
+                                     neededRating: reading.neededRating)
+        BattleHistoryStore.shared.appendGrandPrix(record)
+        grandPrixWait = nil
+        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@",
+                                   reading.currentRating,
+                                   reading.neededRating.map { String(format: "%.1f", $0) } ?? "—",
+                                   reading.borderRating.map { String(format: "%.1f", $0) } ?? "—"))
     }
 
     // MARK: - Party Selection (戦闘開始前のパーティ選択画面)
@@ -605,6 +649,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 isBattleInProgress = false
                 saveResultSnapshot(scene: scene, template: win, label: "WIN", score: score,
                                    cx: cx, cy: cy, hMargin: hMargin, vMargin: vMargin)
+                startGrandPrixWaitIfNeeded(result: "WIN")
                 recordBattleResult(result: "WIN", score: score)
                 return
             }
@@ -628,9 +673,26 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                 isBattleInProgress = false
                 saveResultSnapshot(scene: scene, template: lose, label: "LOSE", score: score,
                                    cx: cx, cy: cy, hMargin: hMargin, vMargin: vMargin)
+                startGrandPrixWaitIfNeeded(result: "LOSE")
                 recordBattleResult(result: "LOSE", score: score)
             }
         }
+    }
+
+    /// 大会モード時のみ、WIN/LOSE 検知直後にレーティング画面待ちを開始する。
+    /// timestamp は対応する BattleRecord と揃えるため pending.startedAt から取得
+    /// (recordBattleResult が pending を finalize/クリアする前に呼ぶこと)。
+    private func startGrandPrixWaitIfNeeded(result: String) {
+        guard GrandPrixMode.isEnabled else { return }
+        pendingLock.lock()
+        let startedAt = pending?.startedAt
+        pendingLock.unlock()
+        guard let startedAt else { return }
+        let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
+        grandPrixWait = GrandPrixWait(timestamp: ts,
+                                      result: result,
+                                      deadline: CACurrentMediaTime() + grandPrixWaitTimeout)
+        BattleLogger.append("グランプリ: レーティング画面を待機中…")
     }
 
     /// マッチングスコア詳細用に WIN/LOSE 検知時の ROI を result.png として保存し metadata 更新
