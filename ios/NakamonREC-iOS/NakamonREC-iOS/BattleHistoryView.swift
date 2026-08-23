@@ -155,7 +155,7 @@ struct BattleHistoryView: View {
             case .party:   PartyStatsView(records: history.records)
             // P1~3 簡易フィルタ・フィルタモードを反映するため filtered を渡す
             case .monster: MonsterStatsView(records: filtered, partyFilter: filter.partyIndex)
-            case .grandPrix: GrandPrixStatsView(records: history.grandPrixRecords ?? [])
+            case .grandPrix: GrandPrixStatsView()
             }
         }
     }

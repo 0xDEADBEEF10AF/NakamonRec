@@ -4,9 +4,13 @@ import NakamonREC_Shared
 
 /// グランプリ集計画面。読込中ファイルの grandPrixRecords を、
 /// 自分のレーティング折れ線 + ボーダー折れ線 (現在+必要あと) で時系列表示する。
+/// グラフ表示がデフォルト。トグルでテキスト(レコード一覧)表示に切替でき、
+/// レコードをタップすると手動編集 (OCR 誤認の訂正) できる。
 /// 「1 ファイル = 1 グランプリ」前提のため、ファイル全体が 1 大会ぶん。
 struct GrandPrixStatsView: View {
-    let records: [GrandPrixRecord]
+    @State private var records: [GrandPrixRecord] = []
+    @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
+    @State private var editing: GrandPrixRecord? = nil
     @Environment(\.dismiss) private var dismiss
 
     /// 時刻昇順に整列
@@ -18,8 +22,10 @@ struct GrandPrixStatsView: View {
     }
 
     private var maxRating: Double? { sorted.map(\.currentRating).max() }
-    private var winCount: Int { sorted.filter { $0.result == "WIN" }.count }
-    private var loseCount: Int { sorted.filter { $0.result == "LOSE" }.count }
+
+    private func reload() {
+        records = BattleHistoryStore.shared.loadGrandPrixRecords()
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,9 +36,8 @@ struct GrandPrixStatsView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
-                            summaryCard
-                            chartCard
-                            recordList
+                            maxRatingHeader
+                            if showAsList { listView } else { chartCard }
                         }
                         .padding(16)
                     }
@@ -41,10 +46,35 @@ struct GrandPrixStatsView: View {
             .navigationTitle("グランプリ集計")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !sorted.isEmpty {
+                        Button {
+                            showAsList.toggle()
+                        } label: {
+                            Label(showAsList ? "グラフ" : "テキスト",
+                                  systemImage: showAsList ? "chart.xyaxis.line" : "list.bullet")
+                        }
+                        .foregroundStyle(Color.recCoral)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("閉じる") { dismiss() }
                         .foregroundStyle(Color.recCoral)
                 }
+            }
+            .onAppear { reload() }
+            .sheet(item: $editing) { rec in
+                GrandPrixEditSheet(
+                    record: rec,
+                    onSave: { updated in
+                        BattleHistoryStore.shared.updateGrandPrix(updated)
+                        reload()
+                    },
+                    onDelete: {
+                        BattleHistoryStore.shared.deleteGrandPrix(id: rec.id)
+                        reload()
+                    }
+                )
             }
         }
     }
@@ -66,34 +96,21 @@ struct GrandPrixStatsView: View {
         .padding(32)
     }
 
-    // MARK: - Summary
+    // MARK: - Max rating header (目立たせる)
 
-    private var summaryCard: some View {
-        HStack(spacing: 0) {
-            summaryItem(title: "最高レーティング",
-                        value: maxRating.map { String(format: "%.1f", $0) } ?? "—",
-                        highlight: true)
-            Divider().frame(height: 40).overlay(Color.gray.opacity(0.3))
-            summaryItem(title: "記録数", value: "\(sorted.count)戦")
-            Divider().frame(height: 40).overlay(Color.gray.opacity(0.3))
-            summaryItem(title: "勝敗", value: "\(winCount)W-\(loseCount)L")
-        }
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity)
-        .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func summaryItem(title: String, value: String, highlight: Bool = false) -> some View {
+    private var maxRatingHeader: some View {
         VStack(spacing: 4) {
-            Text(title)
+            Text("最高レーティング")
                 .font(.caption2)
                 .foregroundStyle(.gray)
-            Text(value)
-                .font(highlight ? .title3.bold() : .body.bold())
-                .foregroundStyle(highlight ? Color.recCoral : .white)
+            Text(maxRating.map { String(format: "%.1f", $0) } ?? "—")
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(Color.recCoral)
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Chart
@@ -154,17 +171,37 @@ struct GrandPrixStatsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - List
+    // MARK: - List (テキスト表示)
 
-    private var recordList: some View {
+    private var listView: some View {
         VStack(spacing: 0) {
+            listHeader
+            Divider().overlay(Color.gray.opacity(0.3))
+            // 新しい順に表示。戦闘数は時系列(古い順)の連番。
             ForEach(Array(sorted.enumerated().reversed()), id: \.element.id) { idx, r in
-                recordRow(r, delta: delta(at: idx))
+                Button { editing = r } label: {
+                    recordRow(r, battleNo: idx + 1, delta: delta(at: idx))
+                }
+                .buttonStyle(.plain)
                 if idx != 0 { Divider().overlay(Color.gray.opacity(0.2)) }
             }
         }
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var listHeader: some View {
+        HStack(spacing: 8) {
+            Text("日時").frame(width: 88, alignment: .leading)
+            Text("戦").frame(width: 28, alignment: .trailing)
+            Text("レーティング").frame(maxWidth: .infinity, alignment: .trailing)
+            Text("変動").frame(width: 56, alignment: .trailing)
+            Text("ボーダー").frame(width: 64, alignment: .trailing)
+        }
+        .font(.caption2)
+        .foregroundStyle(.gray)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     /// その戦の変動 = 現在レーティング − 前戦の現在レーティング (読まず導出)
@@ -173,47 +210,133 @@ struct GrandPrixStatsView: View {
         return sorted[idx].currentRating - sorted[idx - 1].currentRating
     }
 
-    private func recordRow(_ r: GrandPrixRecord, delta: Double?) -> some View {
-        HStack(spacing: 10) {
-            Text(r.result == "WIN" ? "WIN" : "LOSE")
-                .font(.caption.bold())
-                .foregroundStyle(r.result == "WIN" ? Color.recCoral : Color.cyan)
-                .frame(width: 44, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(shortTime(r.timestamp))
-                    .font(.caption2)
-                    .foregroundStyle(.gray)
-                if let border = r.borderRating {
-                    Text("ボーダー \(String(format: "%.1f", border))")
-                        .font(.caption2)
-                        .foregroundStyle(.cyan.opacity(0.9))
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "%.1f", r.currentRating))
-                    .font(.body.bold())
-                    .foregroundStyle(.white)
-                if let d = delta {
-                    Text(String(format: "%@%.1f", d >= 0 ? "+" : "", d))
-                        .font(.caption2)
-                        .foregroundStyle(d >= 0 ? Color.recCoral : Color.cyan)
-                }
-            }
+    private func recordRow(_ r: GrandPrixRecord, battleNo: Int, delta: Double?) -> some View {
+        HStack(spacing: 8) {
+            // 日時 (エンブレムサムネイルは将来ここに追加)
+            Text(shortTime(r.timestamp))
+                .font(.caption2)
+                .foregroundStyle(.white)
+                .frame(width: 88, alignment: .leading)
+            // 戦闘数
+            Text("\(battleNo)")
+                .font(.caption2)
+                .foregroundStyle(.gray)
+                .frame(width: 28, alignment: .trailing)
+            // レーティング
+            Text(String(format: "%.1f", r.currentRating))
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            // 変動
+            Text(delta.map { String(format: "%@%.1f", $0 >= 0 ? "+" : "", $0) } ?? "—")
+                .font(.caption2)
+                .foregroundStyle(delta.map { $0 >= 0 ? Color.recCoral : Color.cyan } ?? .gray)
+                .frame(width: 56, alignment: .trailing)
+            // ボーダー
+            Text(r.borderRating.map { String(format: "%.1f", $0) } ?? "—")
+                .font(.caption2)
+                .foregroundStyle(.cyan.opacity(0.9))
+                .frame(width: 64, alignment: .trailing)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .contentShape(Rectangle())
     }
 
-    /// "yyyy-MM-dd HH:mm:ss" → "MM/dd HH:mm"
+    /// "yyyy-MM-dd HH:mm:ss" → "M/d HH:mm"
     private func shortTime(_ ts: String) -> String {
         guard let d = BattleTimestampFormatter.date(from: ts) else { return ts }
         let f = DateFormatter()
-        f.dateFormat = "MM/dd HH:mm"
+        f.dateFormat = "M/d HH:mm"
         f.locale = Locale(identifier: "en_US_POSIX")
         return f.string(from: d)
+    }
+}
+
+/// グランプリ記録の手動編集シート (OCR 誤認の訂正用)。
+/// レーティング (現在) とボーダーを直接編集し、必要レーティングは border - current で保持する。
+private struct GrandPrixEditSheet: View {
+    let record: GrandPrixRecord
+    let onSave: (GrandPrixRecord) -> Void
+    let onDelete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var ratingText: String = ""
+    @State private var borderText: String = ""
+    @State private var result: String = "WIN"
+    @State private var showDeleteConfirm = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("記録の訂正") {
+                    LabeledContent("日時") {
+                        Text(record.timestamp).foregroundStyle(.secondary)
+                    }
+                    Picker("勝敗", selection: $result) {
+                        Text("WIN").tag("WIN")
+                        Text("LOSE").tag("LOSE")
+                    }
+                    HStack {
+                        Text("レーティング")
+                        Spacer()
+                        TextField("例 2208.1", text: $ratingText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 120)
+                    }
+                    HStack {
+                        Text("ボーダー")
+                        Spacer()
+                        TextField("空欄=なし", text: $borderText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 120)
+                    }
+                }
+                Section {
+                    Button("この記録を削除", role: .destructive) {
+                        showDeleteConfirm = true
+                    }
+                }
+            }
+            .navigationTitle("グランプリ記録の編集")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("キャンセル") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save() }
+                        .disabled(Double(ratingText) == nil)
+                }
+            }
+            .onAppear {
+                ratingText = String(format: "%.1f", record.currentRating)
+                borderText = record.borderRating.map { String(format: "%.1f", $0) } ?? ""
+                result = record.result
+            }
+            .confirmationDialog("この記録を削除しますか?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("削除", role: .destructive) { onDelete(); dismiss() }
+                Button("キャンセル", role: .cancel) {}
+            }
+        }
+    }
+
+    private func save() {
+        guard let rating = Double(ratingText) else { return }
+        // ボーダーが入力されていれば 必要あと = ボーダー − 現在。空欄なら nil。
+        let needed: Double?
+        if let border = Double(borderText) {
+            needed = border - rating
+        } else {
+            needed = nil
+        }
+        var updated = record
+        updated.currentRating = rating
+        updated.neededRating = needed
+        updated.result = result
+        onSave(updated)
+        dismiss()
     }
 }
