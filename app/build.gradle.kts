@@ -70,6 +70,10 @@ android {
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
+            // デバッグ版を別パッケージ (com.dqw.nakamonrec.debug) にして Play 公開版と共存させる。
+            // リリース版をアンインストールせずに機能テストでき、戦績データも無傷。
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
         release {
             isMinifyEnabled = false
