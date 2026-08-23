@@ -33,6 +33,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // VS は BASE 2 種 (FM=フレンドマッチング, MG=大会用) + カスタムテンプレ対応。
     // カスタムが存在すれば BASE を完全に置き換える。
     private var vsLogos: [UIImage] = []
+    /// vsLogos と同じ index で「大会用 VS か」を示す。custom はグランプリモード時のみ大会用、
+    /// VS_FM=通常、VS_MG=大会用。どのテンプレでマッチしたかで戦闘が大会戦かを判定する
+    /// (二段ゲートの1段目。モードを切り忘れても通常戦の勝利画面を誤記録しない)。
+    private var vsIsTournament: [Bool] = []
     private var winLogo: UIImage?
     private var loseLogo: UIImage?
     private var selectLogo: UIImage?
@@ -68,6 +72,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 戦闘終了情報
         var result: String? = nil          // "WIN" / "LOSE"
         var resultScore: Double? = nil
+        // 大会 VS で開始した戦闘か (グランプリ記録の二段ゲート1段目)
+        var startedWithTournamentVS: Bool = false
     }
     private var pending: PendingBattle?
     private let pendingLock = NSLock()
@@ -96,24 +102,30 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 大会用 VS_MG が映ったときに BASE MG にフォールバックして検出できる
         // (Android `BattleAnalyzer.isVsDetected()` と同じ多段検出パターン)。
         var vsList: [UIImage] = []
+        var vsTournamentFlags: [Bool] = []
         if let custom = loadCustomTemplate(.vs) {
             vsList.append(custom)
+            // custom が大会用 VS で校正されている場合のみ大会用扱い (Phase 3 が GrandPrixMode で管理)
+            vsTournamentFlags.append(GrandPrixMode.isEnabled)
             logger.log("✅ VS custom テンプレをロード")
             BattleLogger.append("✅ VS custom テンプレを使用 (FM/MG にもフォールバック)")
         }
         if let fm = loadBaseTemplate("VS_FM") {
             vsList.append(fm)
+            vsTournamentFlags.append(false)
             logger.log("✅ VS_FM.png loaded")
         } else {
             BattleLogger.append("❌ VS_FM.png ロード失敗")
         }
         if let mg = loadBaseTemplate("VS_MG") {
             vsList.append(mg)
+            vsTournamentFlags.append(true)
             logger.log("✅ VS_MG.png loaded")
         } else {
             BattleLogger.append("⚠️ VS_MG.png 未配置 (大会用)")
         }
         vsLogos = vsList
+        vsIsTournament = vsTournamentFlags
 
         // SELECT (カスタム優先)
         if let custom = loadCustomTemplate(.select) {
@@ -395,18 +407,21 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         let cy = Int32(scene.size.height * roi.centerYRatio)
         let hMargin = Int32(scene.size.width * roi.searchHMarginRatio)
         let vMargin = Int32(scene.size.height * roi.searchVMarginRatio)
-        // VS_FM + VS_MG (or 単一カスタム) のうち最高スコアを採用
+        // VS_FM + VS_MG (or 単一カスタム) のうち最高スコアを採用。
+        // どの index が勝ったかで大会戦かを判定する (vsIsTournament)。
         var score: Double = 0
-        var bestVS: UIImage = vsLogos[0]
-        for vs in vsLogos {
+        var bestIdx: Int = 0
+        for (i, vs) in vsLogos.enumerated() {
             let s = NakamonWrapper.performMatch(withScene: scene,
                                               templateImg: vs,
                                               centerX: cx,
                                               centerY: cy,
                                               verticalMargin: vMargin,
                                               horizontalMargin: hMargin)
-            if s > score { score = s; bestVS = vs }
+            if s > score { score = s; bestIdx = i }
         }
+        let bestVS: UIImage = vsLogos[bestIdx]
+        let startedTournament = bestIdx < vsIsTournament.count ? vsIsTournament[bestIdx] : false
         // VS 検知閾値はユーザー可変 (DetectionThresholdsConfig, デフォルト 0.5、範囲 0.4〜0.8)
         if score > DetectionThresholdsConfig.vsThreshold {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
@@ -428,6 +443,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                     vsScore: score,
                                     partyIndex: lastDetectedPartyIndex,
                                     partySelectScores: lastPartySelectScores)
+            pending?.startedWithTournamentVS = startedTournament
             pendingLock.unlock()
 
             // マッチングスコア詳細: 古い vs/slot/result サムネをクリアし、新しい vs.png を保存
@@ -686,8 +702,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         guard GrandPrixMode.isEnabled else { return }
         pendingLock.lock()
         let startedAt = pending?.startedAt
+        let startedTournament = pending?.startedWithTournamentVS ?? false
         pendingLock.unlock()
-        guard let startedAt else { return }
+        // 二段ゲート1段目: 大会 VS で始まった戦闘のみ。通常戦 (VS_FM 一致) は
+        // モードを切り忘れても勝利画面のダメージ数値を誤記録しない。
+        guard startedTournament, let startedAt else { return }
         let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
         grandPrixWait = GrandPrixWait(timestamp: ts,
                                       result: result,
