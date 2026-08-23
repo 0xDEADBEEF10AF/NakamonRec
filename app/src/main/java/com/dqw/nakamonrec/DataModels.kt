@@ -29,12 +29,37 @@ data class BattleRecord(
 )
 
 /**
+ * グランプリ (大会) 1 戦のレーティング記録。
+ * 通常の BattleRecord とは別系列 (BattleHistory.grandPrixRecords) に保存する
+ * (レーティング読み取りの誤りが本体戦績を汚さないための分離)。
+ * 読み取り対象は現在レーティングと必要レーティング(あと)の2値のみ。変動は
+ * 連続する currentRating の差分として表示時に導出する。iOS と同一 JSON スキーマ。
+ */
+data class GrandPrixRecord(
+    val timestamp: String,       // "yyyy-MM-dd HH:mm:ss" (対応する BattleRecord と一致)
+    val result: String,          // "WIN" / "LOSE"
+    val currentRating: Double,   // 現在のレーティング (白・常に正)
+    val neededRating: Double? = null,   // 必要レーティング「あと」。GM/ランクアップ戦では null
+    val nationalRank: String? = null,   // 全国ランキング表示テキスト (数値化しない)
+    val isRankUp: Boolean = false,
+    val lowConfidence: Boolean = false,
+    val screenshotFile: String? = null
+) {
+    /** ボーダー (次ランク到達ライン) = 現在 + 必要あと。必要が無ければ null */
+    val borderRating: Double?
+        get() = neededRating?.let { currentRating + it }
+}
+
+/**
  * 履歴全体のデータ構造
  */
 data class BattleHistory(
     var totalWins: Int = 0,
     var totalLosses: Int = 0,
-    val records: MutableList<BattleRecord> = mutableListOf()
+    val records: MutableList<BattleRecord> = mutableListOf(),
+    // グランプリのレーティング記録 (別系列)。「1 ファイル = 1 グランプリ」運用のため
+    // 戦績と同じファイルに同梱。旧ファイル (キー無し) は null でデコードされ後方互換。
+    var grandPrixRecords: MutableList<GrandPrixRecord>? = null
 )
 
 /**

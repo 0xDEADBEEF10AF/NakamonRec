@@ -77,16 +77,18 @@ class BattleDataManager(private val context: Context) {
         resultScore: Double? = null,
         partySelectScores: List<Double>? = null
     ): BattleRecord {
-        if (result == "WIN") history.totalWins++ else history.totalLosses++
-
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         val record = BattleRecord(
             timestamp, result, partyIndex, myParty, enemyParty,
             vsScore, myPartyScores, enemyPartyScores, resultScore,
             partySelectScores
         )
-        history.records.add(record)
-        saveHistory()
+        // グランプリ追記 (キャプチャスレッド) との read-modify-write 競合を防ぐ
+        synchronized(saveLock) {
+            if (result == "WIN") history.totalWins++ else history.totalLosses++
+            history.records.add(record)
+            saveHistory()
+        }
         return record
     }
 
@@ -94,6 +96,43 @@ class BattleDataManager(private val context: Context) {
         // オブジェクト参照が同じなので history.records 内のデータも更新されているが
         // 明示的に保存を走らせる
         saveHistory()
+    }
+
+    // グランプリ記録 (通常戦績とは別系列 history.grandPrixRecords)。
+    // グランプリ追記 (キャプチャスレッド) と戦績追記が同時に走り得るため saveLock で直列化。
+    private val saveLock = Any()
+
+    fun loadGrandPrixRecords(): List<GrandPrixRecord> =
+        history.grandPrixRecords?.toList() ?: emptyList()
+
+    fun appendGrandPrix(record: GrandPrixRecord) {
+        synchronized(saveLock) {
+            val list = history.grandPrixRecords ?: mutableListOf<GrandPrixRecord>().also {
+                history.grandPrixRecords = it
+            }
+            list.add(record)
+            saveHistory()
+        }
+    }
+
+    fun updateGrandPrix(record: GrandPrixRecord) {
+        synchronized(saveLock) {
+            val list = history.grandPrixRecords ?: return
+            val idx = list.indexOfFirst { it.timestamp == record.timestamp }
+            if (idx >= 0) {
+                list[idx] = record
+                saveHistory()
+            }
+        }
+    }
+
+    fun deleteGrandPrix(timestamp: String) {
+        synchronized(saveLock) {
+            val list = history.grandPrixRecords ?: return
+            if (list.removeAll { it.timestamp == timestamp }) {
+                saveHistory()
+            }
+        }
     }
 
     fun loadHistory(fileName: String) {
