@@ -23,6 +23,9 @@ struct StatsMenuSheet: View {
             menuRow(title: "モンスター集計", icon: "pawprint.fill") {
                 onSelect(.monster)
             }
+            menuRow(title: "グランプリ集計", icon: "trophy.fill") {
+                onSelect(.grandPrix)
+            }
 
             Spacer(minLength: 0)
         }
