@@ -87,8 +87,10 @@ public enum RatingPanelReader {
     // MARK: - セグメンテーション
 
     /// バンド内の数字ボックスを右詰め連続 run で返す (ラベルとの大ギャップで停止)。
+    // gapMax=40: 桁間ギャップ (narrow な "1" が並ぶと ~22px になる) は繋ぎ、ラベルとの
+    // 大ギャップ (~300px) では停止する。18 だと "2115.9" の "11" 間 22px で切れて先頭を落とす。
     private static func numberBoxes(_ px: Pixels, yTop: Int, yBot: Int, xMin: Int, xMax: Int,
-                                    allowColor: Bool, gapMax: Int = 18) -> [(x0: Int, x1: Int)] {
+                                    allowColor: Bool, gapMax: Int = 40) -> [(x0: Int, x1: Int)] {
         guard yTop >= 0, yBot < px.h, xMin >= 0, xMax <= px.w, xMin < xMax, yTop <= yBot else { return [] }
         var colHas = [Bool](repeating: false, count: xMax - xMin)
         for x in xMin..<xMax {

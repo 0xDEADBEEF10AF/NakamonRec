@@ -100,8 +100,10 @@ object RatingPanelReader {
     }
 
     /** バンド内の数字ボックスを右詰め連続 run で返す (ラベルとの大ギャップで停止) */
+    // gapMax=40: 桁間ギャップ (narrow な "1" が並ぶと ~22px) は繋ぎ、ラベルとの大ギャップ
+    // (~300px) では停止する。18 だと "2115.9" の "11" 間 22px で切れて先頭を落とす。
     private fun numberBoxes(pixels: IntArray, w: Int, h: Int, yTop: Int, yBot: Int,
-                            xMin: Int, xMax: Int, gapMax: Int = 18): List<IntArray> {
+                            xMin: Int, xMax: Int, gapMax: Int = 40): List<IntArray> {
         if (yTop < 0 || yBot >= h || xMin < 0 || xMax > w || xMin >= xMax || yTop > yBot) return emptyList()
         val colHas = BooleanArray(xMax - xMin)
         for (x in xMin until xMax) {
