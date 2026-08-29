@@ -287,16 +287,20 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         guard let cg = scene.cgImage, let reading = RatingPanelReader.read(cg) else { return }
         // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
         guard reading.currentRating >= 100, reading.currentRating <= 99_999 else { return }
+        // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は nil = 記録は続行)
+        let rankTier = RankTierReader.read(cg)
         let record = GrandPrixRecord(timestamp: wait.timestamp,
                                      result: wait.result,
                                      currentRating: reading.currentRating,
-                                     neededRating: reading.neededRating)
+                                     neededRating: reading.neededRating,
+                                     rankTier: rankTier)
         BattleHistoryStore.shared.appendGrandPrix(record)
         grandPrixWait = nil
-        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@",
+        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@",
                                    reading.currentRating,
                                    reading.neededRating.map { String(format: "%.1f", $0) } ?? "—",
-                                   reading.borderRating.map { String(format: "%.1f", $0) } ?? "—"))
+                                   reading.borderRating.map { String(format: "%.1f", $0) } ?? "—",
+                                   rankTier ?? "—"))
     }
 
     // MARK: - Party Selection (戦闘開始前のパーティ選択画面)

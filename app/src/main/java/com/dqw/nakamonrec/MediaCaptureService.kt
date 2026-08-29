@@ -568,6 +568,8 @@ class MediaCaptureService : Service() {
         val reading = RatingPanelReader.read(this, bitmap) ?: return
         // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
         if (reading.currentRating < 100 || reading.currentRating > 99_999) return
+        // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は null = 記録は続行)
+        val rankTier = RankTierReader.read(this, bitmap)
         synchronized(this) {
             if (currentState != State.AWAITING_RATING) return
             dataManager.appendGrandPrix(
@@ -575,15 +577,16 @@ class MediaCaptureService : Service() {
                     timestamp = grandPrixTimestamp,
                     result = grandPrixResult,
                     currentRating = reading.currentRating,
-                    neededRating = reading.neededRating
+                    neededRating = reading.neededRating,
+                    rankTier = rankTier
                 )
             )
             currentState = State.IDLE
         }
         val borderStr = reading.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
         val neededStr = reading.neededRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
-        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s",
-            reading.currentRating, neededStr, borderStr))
+        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s ランク%s",
+            reading.currentRating, neededStr, borderStr, rankTier ?: "—"))
         // A 方針: レーティング値のみの記録確認通知
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses,
             String.format(Locale.US, "🎖 GP記録 %.1f", reading.currentRating))

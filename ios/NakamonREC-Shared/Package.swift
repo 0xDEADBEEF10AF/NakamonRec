@@ -17,7 +17,8 @@ let package = Package(
             name: "NakamonREC-Shared",
             resources: [
                 .process("Resources/monsters.json"),
-                .process("Resources/grandprix_glyphs.json")
+                .process("Resources/grandprix_glyphs.json"),
+                .process("Resources/grandprix_rank_anchors.json")
             ]
         ),
     ],
