@@ -672,15 +672,30 @@ class HistoryActivity : AppCompatActivity() {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(8))
         }
-        // 最高レーティング (目立つ)
+        // 現在レーティング | 最高レーティング (2 カラム)
+        val curRatingView = android.widget.TextView(this).apply {
+            setTextColor(android.graphics.Color.WHITE); textSize = 30f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
         val maxRatingView = android.widget.TextView(this).apply {
             setTextColor("#F09199".toColorInt()); textSize = 30f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        root.addView(android.widget.TextView(this).apply {
-            text = "最高レーティング"; setTextColor("#888888".toColorInt()); textSize = 12f
+        fun summaryColumn(label: String, value: android.widget.TextView) =
+            android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(0,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(android.widget.TextView(this@HistoryActivity).apply {
+                    text = label; setTextColor("#888888".toColorInt()); textSize = 12f
+                })
+                addView(value)
+            }
+        root.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            addView(summaryColumn("現在レーティング", curRatingView))
+            addView(summaryColumn("最高レーティング", maxRatingView))
         })
-        root.addView(maxRatingView)
 
         // 差し替えるコンテンツ領域 (グラフ or テキスト)
         val contentFrame = android.widget.FrameLayout(this)
@@ -693,6 +708,8 @@ class HistoryActivity : AppCompatActivity() {
             val records = currentRecords()
             val max = records.maxOfOrNull { it.currentRating }
             maxRatingView.text = max?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
+            val cur = records.lastOrNull()?.currentRating
+            curRatingView.text = cur?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
             contentFrame.removeAllViews()
             if (showList) {
                 // 行を長押しで編集メニュー (メイン戦績の長押し編集と同じ作法)
@@ -750,19 +767,20 @@ class HistoryActivity : AppCompatActivity() {
         return col
     }
 
-    /** ランク帯のオリジナル色バッジ (角丸 + 略称、単色 or 虹グラデーション)。未設定/対象外なら null。 */
+    /** ランク帯のオリジナル色バッジ (角丸 + 略称)。金銀銅は左上→右下のメタリック 3 段
+     *  グラデーション + 影色の縁取りでメダル調、グランドマスターは虹。未設定/対象外なら null。 */
     private fun rankBadgeView(tier: String?): android.view.View? {
         val info = GrandPrixRecord.rankBadge(tier) ?: return null
         val (abbrev, hexList) = info
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val colors = hexList.map { ("#" + it).toColorInt() }.toIntArray()
-        val bg = if (colors.size == 1) {
-            android.graphics.drawable.GradientDrawable().apply { setColor(colors[0]) }
-        } else {
-            android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, colors)
-        }.apply { cornerRadius = dp(8).toFloat() }
+        val bg = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TL_BR, colors
+        ).apply {
+            cornerRadius = dp(8).toFloat()
+            setStroke(dp(1), colors.last())
+        }
         return android.widget.TextView(this).apply {
             text = abbrev
             setTextColor(android.graphics.Color.parseColor("#D9000000")) // 黒 85%

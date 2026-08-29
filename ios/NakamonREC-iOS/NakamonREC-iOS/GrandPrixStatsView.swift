@@ -20,6 +20,7 @@ struct GrandPrixStatsView: View {
         }
     }
     private var maxRating: Double? { sorted.map(\.currentRating).max() }
+    private var currentRating: Double? { sorted.last?.currentRating }
 
     private func reload() { records = BattleHistoryStore.shared.loadGrandPrixRecords() }
 
@@ -32,7 +33,7 @@ struct GrandPrixStatsView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
-                            maxRatingHeader
+                            summaryHeader
                             if showAsList { listView } else { chartCard }
                         }
                         .padding(16)
@@ -102,15 +103,24 @@ struct GrandPrixStatsView: View {
         .padding(32)
     }
 
-    // MARK: - Max rating header
+    // MARK: - Summary header (現在 | 最高)
 
-    private var maxRatingHeader: some View {
-        VStack(spacing: 4) {
-            Text("最高レーティング").font(.caption2).foregroundStyle(.gray)
-            Text(maxRating.map { String(format: "%.1f", $0) } ?? "—")
-                .font(.system(size: 30, weight: .bold)).foregroundStyle(Color.recCoral)
+    private var summaryHeader: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 4) {
+                Text("現在レーティング").font(.caption2).foregroundStyle(.gray)
+                Text(currentRating.map { String(format: "%.1f", $0) } ?? "—")
+                    .font(.system(size: 30, weight: .bold)).foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity)
+            VStack(spacing: 4) {
+                Text("最高レーティング").font(.caption2).foregroundStyle(.gray)
+                Text(maxRating.map { String(format: "%.1f", $0) } ?? "—")
+                    .font(.system(size: 30, weight: .bold)).foregroundStyle(Color.recCoral)
+            }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 12)
+        .padding(.vertical, 12)
         .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -221,6 +231,8 @@ struct GrandPrixStatsView: View {
 private struct DateBox: Identifiable { let date: Date; var id: TimeInterval { date.timeIntervalSince1970 } }
 
 /// ランク帯のオリジナル色バッジ (略称 + 色)。tier が未設定/対象外なら何も描かない。
+/// 金銀銅は左上→右下のメタリック 3 段グラデーション + 影色の縁取りでメダル調に、
+/// グランドマスターは虹グラデーション。
 struct RankBadge: View {
     let tier: String?
     var height: CGFloat = 16
@@ -231,16 +243,17 @@ struct RankBadge: View {
             Text(info.abbrev)
                 .font(.system(size: height * 0.62, weight: .heavy))
                 .foregroundStyle(.black.opacity(0.85))
+                .shadow(color: .white.opacity(0.35), radius: 0, x: 0, y: 0.5)
                 .padding(.horizontal, height * 0.32)
                 .frame(height: height)
                 .background {
-                    if colors.count == 1 {
-                        colors[0]
-                    } else {
-                        LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-                    }
+                    LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
                 .clipShape(Capsule())
+                .overlay {
+                    Capsule().strokeBorder(Color(hex: info.colors.last ?? "000000").opacity(0.9),
+                                           lineWidth: height * 0.06)
+                }
         }
     }
 }

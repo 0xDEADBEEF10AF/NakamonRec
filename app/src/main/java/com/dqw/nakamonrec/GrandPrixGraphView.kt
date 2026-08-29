@@ -57,6 +57,10 @@ class GrandPrixGraphView @JvmOverloads constructor(
     }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val badgeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val badgeStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = resources.displayMetrics.density  // 1dp (影色の縁取り=メダル調)
+    }
     private val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
     }
@@ -202,7 +206,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 rTextY = rTextY.coerceIn(topLimit, bottomLimit)
                 bTextY = bTextY.coerceIn(topLimit, bottomLimit)
 
-                // ランク色バッジを R:xxxx の左に描く (単色 or 虹グラデーション)
+                // ランク色バッジを R:xxxx の左に描く (メタリック斜めグラデーション + 縁取り)
                 GrandPrixRecord.rankBadge(data.rankTier)?.let { badge ->
                     val (abbrev, hexList) = badge
                     val labelLeftX = if (tooltipPaint.textAlign == Paint.Align.LEFT) drawX
@@ -213,12 +217,14 @@ class GrandPrixGraphView @JvmOverloads constructor(
                     val right = labelLeftX - 6f
                     val left = right - bw
                     val cy = rTextY - tooltipPaint.textSize * 0.34f
+                    val top = cy - bh / 2f; val bottom = cy + bh / 2f
                     val colors = hexList.map { ("#" + it).toColorInt() }.toIntArray()
-                    badgeFillPaint.shader = if (colors.size == 1) null
-                        else android.graphics.LinearGradient(left, cy, right, cy, colors, null, Shader.TileMode.CLAMP)
-                    if (colors.size == 1) badgeFillPaint.color = colors[0]
-                    canvas.drawRoundRect(left, cy - bh / 2f, right, cy + bh / 2f, bh / 2f, bh / 2f, badgeFillPaint)
+                    badgeFillPaint.shader = android.graphics.LinearGradient(
+                        left, top, right, bottom, colors, null, Shader.TileMode.CLAMP)
+                    canvas.drawRoundRect(left, top, right, bottom, bh / 2f, bh / 2f, badgeFillPaint)
                     badgeFillPaint.shader = null
+                    badgeStrokePaint.color = colors.last()
+                    canvas.drawRoundRect(left, top, right, bottom, bh / 2f, bh / 2f, badgeStrokePaint)
                     badgeTextPaint.color = "#D9000000".toColorInt()
                     val fm = badgeTextPaint.fontMetrics
                     canvas.drawText(abbrev, (left + right) / 2f, cy - (fm.ascent + fm.descent) / 2f, badgeTextPaint)
