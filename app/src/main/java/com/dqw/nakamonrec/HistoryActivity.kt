@@ -790,7 +790,9 @@ class HistoryActivity : AppCompatActivity() {
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val sdfIn = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        val sdfOut = SimpleDateFormat("M/d HH:mm", Locale.US)
+        // 日時はメイン戦績と同じ 2 行表示 (2026.08.29 / 22:05)
+        val sdfDate = SimpleDateFormat("yyyy.MM.dd", Locale.US)
+        val sdfTime = SimpleDateFormat("HH:mm", Locale.US)
         // 変動 = 前戦との差 (時系列)
         val deltas = HashMap<String, Double>()
         for (i in 1 until records.size) deltas[records[i].timestamp] = records[i].currentRating - records[i - 1].currentRating
@@ -809,9 +811,9 @@ class HistoryActivity : AppCompatActivity() {
         list.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             setPadding(dp(4), dp(6), dp(4), dp(6))
-            addView(cell("日時", "#888888".toColorInt(), 11f, 2.0f, false))
+            addView(cell("日時", "#888888".toColorInt(), 11f, 1.6f, false))
             addView(cell("ランク", "#888888".toColorInt(), 11f, 1.0f, false))
-            addView(cell("戦", "#888888".toColorInt(), 11f, 0.6f, true))
+            addView(cell("戦", "#888888".toColorInt(), 11f, 1.0f, true))  // 大会中は4桁になり得る
             addView(cell("レーティング", "#888888".toColorInt(), 11f, 1.8f, true))
             addView(cell("変動", "#888888".toColorInt(), 11f, 1.1f, true))
             addView(cell("ボーダー", "#888888".toColorInt(), 11f, 1.3f, true))
@@ -821,7 +823,9 @@ class HistoryActivity : AppCompatActivity() {
         records.reversed().forEachIndexed { revIdx, r ->
             val chronoIdx = records.size - 1 - revIdx
             val battleNo = chronoIdx + 1
-            val time = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp.takeLast(5) }
+            val parsed = try { sdfIn.parse(r.timestamp) } catch (_: Exception) { null }
+            val dateStr = parsed?.let { sdfDate.format(it) } ?: r.timestamp.take(10)
+            val timeStr = parsed?.let { sdfTime.format(it) } ?: r.timestamp.takeLast(8).take(5)
             val delta = deltas[r.timestamp]
             val deltaStr = delta?.let { String.format(Locale.US, "%+.1f", it) } ?: "—"
             val deltaColor = if (delta == null) "#888888".toColorInt() else if (delta >= 0) "#F09199".toColorInt() else "#90D7EC".toColorInt()
@@ -835,13 +839,25 @@ class HistoryActivity : AppCompatActivity() {
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 1.0f)
                 rankBadgeView(r.rankTier)?.let { addView(it) }
             }
+            // 日時セル (2行: 日付 / 時刻)
+            val timeCell = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(0,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f)
+                addView(android.widget.TextView(this@HistoryActivity).apply {
+                    text = dateStr; setTextColor(android.graphics.Color.WHITE); textSize = 10f
+                })
+                addView(android.widget.TextView(this@HistoryActivity).apply {
+                    text = timeStr; setTextColor(android.graphics.Color.WHITE); textSize = 10f
+                })
+            }
             list.addView(android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 setPadding(dp(4), dp(8), dp(4), dp(8))
                 isLongClickable = true
-                addView(cell(time, android.graphics.Color.WHITE, 12f, 2.0f, false))
+                addView(timeCell)
                 addView(rankCell)
-                addView(cell("$battleNo", "#888888".toColorInt(), 12f, 0.6f, true))
+                addView(cell("$battleNo", "#888888".toColorInt(), 12f, 1.0f, true))
                 addView(cell(String.format(Locale.US, "%.1f", r.currentRating), android.graphics.Color.WHITE, 14f, 1.8f, true, bold = true))
                 addView(cell(deltaStr, deltaColor, 12f, 1.1f, true))
                 addView(cell(borderStr, "#90D7EC".toColorInt(), 12f, 1.3f, true))

@@ -52,7 +52,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
         color = Color.WHITE; strokeWidth = 2f; style = Paint.Style.STROKE
     }
     private val tooltipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textSize = 22f; textAlign = Paint.Align.CENTER
+        color = Color.WHITE; textSize = 28f; textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }

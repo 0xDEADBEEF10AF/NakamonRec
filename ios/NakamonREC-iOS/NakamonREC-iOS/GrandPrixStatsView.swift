@@ -183,9 +183,9 @@ struct GrandPrixStatsView: View {
 
     private var listHeader: some View {
         HStack(spacing: 6) {
-            Text("日時").frame(width: 66, alignment: .leading)
+            Text("日時").frame(width: 56, alignment: .leading)
             Text("ランク").frame(width: 40, alignment: .leading)
-            Text("戦").frame(width: 22, alignment: .trailing)
+            Text("戦").frame(width: 36, alignment: .trailing)   // 大会中は4桁になり得る
             Text("レーティング").frame(maxWidth: .infinity, alignment: .trailing)
             Text("変動").frame(width: 52, alignment: .trailing)
             Text("ボーダー").frame(width: 60, alignment: .trailing)
@@ -201,14 +201,20 @@ struct GrandPrixStatsView: View {
 
     private func recordRow(_ r: GrandPrixRecord, battleNo: Int, delta: Double?) -> some View {
         HStack(spacing: 6) {
-            Text(shortTime(r.timestamp)).font(.caption2).foregroundStyle(.white)
-                .frame(width: 66, alignment: .leading)
+            // 日時 (メイン戦績と同じ 2 行: 2026.08.29 / 22:05)
+            let ts = splitTimestamp(r.timestamp)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(ts.date).font(.system(size: 9))
+                Text(ts.time).font(.system(size: 9))
+            }
+            .foregroundStyle(.white)
+            .frame(width: 56, alignment: .leading)
             // ランク列 (エンブレムサムネイル)
             HStack(spacing: 0) {
                 if r.rankTier != nil { RankBadge(tier: r.rankTier, height: 24) }
             }
             .frame(width: 40, alignment: .leading)
-            Text("\(battleNo)").font(.caption2).foregroundStyle(.gray).frame(width: 22, alignment: .trailing)
+            Text("\(battleNo)").font(.caption2).foregroundStyle(.gray).frame(width: 36, alignment: .trailing)
             Text(String(format: "%.1f", r.currentRating)).font(.subheadline.bold()).foregroundStyle(.white)
                 .frame(maxWidth: .infinity, alignment: .trailing)
             Text(delta.map { String(format: "%@%.1f", $0 >= 0 ? "+" : "", $0) } ?? "—")
@@ -220,10 +226,15 @@ struct GrandPrixStatsView: View {
         .padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
     }
 
-    private func shortTime(_ ts: String) -> String {
-        guard let d = BattleTimestampFormatter.date(from: ts) else { return ts }
-        let f = DateFormatter(); f.dateFormat = "M/d HH:mm"; f.locale = Locale(identifier: "en_US_POSIX")
-        return f.string(from: d)
+    /// 表示専用の分割 (メイン戦績と同じ作法)。日付はドット区切り、時刻は HH:mm。
+    /// (保存形式は yyyy-MM-dd HH:mm:ss のまま変更しない)
+    private func splitTimestamp(_ ts: String) -> (date: String, time: String) {
+        let parts = ts.split(separator: " ", maxSplits: 1)
+        if parts.count == 2 {
+            return (String(parts[0]).replacingOccurrences(of: "-", with: "."),
+                    String(parts[1].prefix(5)))
+        }
+        return (ts.replacingOccurrences(of: "-", with: "."), "")
     }
 }
 
