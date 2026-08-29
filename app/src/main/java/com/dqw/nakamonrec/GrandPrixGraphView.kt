@@ -57,12 +57,16 @@ class GrandPrixGraphView @JvmOverloads constructor(
     }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val badgeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val badgeStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = resources.displayMetrics.density  // 1dp (影色の縁取り=メダル調)
-    }
-    private val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+
+    // ランク帯エンブレムの Bitmap キャッシュ (tier → drawable、無ければ null を記憶)
+    private val emblemCache = HashMap<String, android.graphics.Bitmap?>()
+    private fun emblemBitmap(tier: String?): android.graphics.Bitmap? {
+        val asset = GrandPrixRecord.rankEmblemAsset(tier) ?: return null
+        return emblemCache.getOrPut(asset) {
+            val resId = resources.getIdentifier(asset, "drawable", context.packageName)
+            if (resId == 0) null
+            else android.graphics.BitmapFactory.decodeResource(resources, resId)
+        }
     }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -206,28 +210,18 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 rTextY = rTextY.coerceIn(topLimit, bottomLimit)
                 bTextY = bTextY.coerceIn(topLimit, bottomLimit)
 
-                // ランク色バッジを R:xxxx の左に描く (メタリック斜めグラデーション + 縁取り)
-                GrandPrixRecord.rankBadge(data.rankTier)?.let { badge ->
-                    val (abbrev, hexList) = badge
+                // ランク帯のエンブレムサムネイルを R:xxxx の左に描く
+                // (色バッジ版は GrandPrixRecord.rankBadge に定義が残っており差し戻し可)
+                emblemBitmap(data.rankTier)?.let { emblem ->
                     val labelLeftX = if (tooltipPaint.textAlign == Paint.Align.LEFT) drawX
                                      else drawX - tooltipPaint.measureText(labelR)
-                    val bh = tooltipPaint.textSize * 0.95f
-                    badgeTextPaint.textSize = bh * 0.62f
-                    val bw = badgeTextPaint.measureText(abbrev) + bh * 0.6f
+                    val bh = tooltipPaint.textSize * 1.5f
+                    val bw = bh * emblem.width / emblem.height
                     val right = labelLeftX - 6f
                     val left = right - bw
                     val cy = rTextY - tooltipPaint.textSize * 0.34f
-                    val top = cy - bh / 2f; val bottom = cy + bh / 2f
-                    val colors = hexList.map { ("#" + it).toColorInt() }.toIntArray()
-                    badgeFillPaint.shader = android.graphics.LinearGradient(
-                        left, top, right, bottom, colors, null, Shader.TileMode.CLAMP)
-                    canvas.drawRoundRect(left, top, right, bottom, bh / 2f, bh / 2f, badgeFillPaint)
-                    badgeFillPaint.shader = null
-                    badgeStrokePaint.color = colors.last()
-                    canvas.drawRoundRect(left, top, right, bottom, bh / 2f, bh / 2f, badgeStrokePaint)
-                    badgeTextPaint.color = "#D9000000".toColorInt()
-                    val fm = badgeTextPaint.fontMetrics
-                    canvas.drawText(abbrev, (left + right) / 2f, cy - (fm.ascent + fm.descent) / 2f, badgeTextPaint)
+                    val dst = android.graphics.RectF(left, cy - bh / 2f, right, cy + bh / 2f)
+                    canvas.drawBitmap(emblem, null, dst, badgeFillPaint)
                 }
 
                 tooltipPaint.color = ratingLinePaint.color

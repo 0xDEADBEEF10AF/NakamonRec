@@ -57,6 +57,18 @@ data class GrandPrixRecord(
         )
 
         /**
+         * ランク帯のエンブレムサムネイル画像名 (drawable / iOS Asset Catalog 共通)。
+         * ゲームのエンブレム画像 (モンスターサムネイルと同じ著作物リスク承知の上で採用)。
+         */
+        fun rankEmblemAsset(tier: String?): String? = when (tier) {
+            "マスター3" -> "rank_master3"
+            "マスター2" -> "rank_master2"
+            "マスター1" -> "rank_master1"
+            "グランドマスター" -> "rank_grandmaster"
+            else -> null
+        }
+
+        /**
          * ランク帯のオリジナル色付きバッジ情報 (略称 to 16進カラー配列 #なし)。
          * ゲームの紋章 (著作物) は使わず自前の色バッジで表現。iOS と同一。
          * 色配列は左上→右下のグラデーション。金銀銅はハイライト→地色→影の

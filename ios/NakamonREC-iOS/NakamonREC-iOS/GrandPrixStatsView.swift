@@ -203,9 +203,9 @@ struct GrandPrixStatsView: View {
         HStack(spacing: 6) {
             Text(shortTime(r.timestamp)).font(.caption2).foregroundStyle(.white)
                 .frame(width: 66, alignment: .leading)
-            // ランク列
+            // ランク列 (エンブレムサムネイル)
             HStack(spacing: 0) {
-                if r.rankTier != nil { RankBadge(tier: r.rankTier, height: 15) }
+                if r.rankTier != nil { RankBadge(tier: r.rankTier, height: 24) }
             }
             .frame(width: 40, alignment: .leading)
             Text("\(battleNo)").font(.caption2).foregroundStyle(.gray).frame(width: 22, alignment: .trailing)
@@ -230,30 +230,18 @@ struct GrandPrixStatsView: View {
 /// Identifiable ラッパ (pendingAddDate を .sheet(item:) に載せる用)
 private struct DateBox: Identifiable { let date: Date; var id: TimeInterval { date.timeIntervalSince1970 } }
 
-/// ランク帯のオリジナル色バッジ (略称 + 色)。tier が未設定/対象外なら何も描かない。
-/// 金銀銅は左上→右下のメタリック 3 段グラデーション + 影色の縁取りでメダル調に、
-/// グランドマスターは虹グラデーション。
+/// ランク帯のエンブレムサムネイル。tier が未設定/対象外なら何も描かない。
+/// (色バッジ版は GrandPrixRecord.rankBadge に定義が残っており差し戻し可)
 struct RankBadge: View {
     let tier: String?
     var height: CGFloat = 16
 
     var body: some View {
-        if let info = GrandPrixRecord.rankBadge(tier) {
-            let colors = info.colors.map { Color(hex: $0) }
-            Text(info.abbrev)
-                .font(.system(size: height * 0.62, weight: .heavy))
-                .foregroundStyle(.black.opacity(0.85))
-                .shadow(color: .white.opacity(0.35), radius: 0, x: 0, y: 0.5)
-                .padding(.horizontal, height * 0.32)
+        if let asset = GrandPrixRecord.rankEmblemAsset(tier) {
+            Image(asset)
+                .resizable()
+                .scaledToFit()
                 .frame(height: height)
-                .background {
-                    LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                }
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule().strokeBorder(Color(hex: info.colors.last ?? "000000").opacity(0.9),
-                                           lineWidth: height * 0.06)
-                }
         }
     }
 }

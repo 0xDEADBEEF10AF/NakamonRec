@@ -767,30 +767,19 @@ class HistoryActivity : AppCompatActivity() {
         return col
     }
 
-    /** ランク帯のオリジナル色バッジ (角丸 + 略称)。金銀銅は左上→右下のメタリック 3 段
-     *  グラデーション + 影色の縁取りでメダル調、グランドマスターは虹。未設定/対象外なら null。 */
+    /** ランク帯のエンブレムサムネイル。未設定/対象外なら null。
+     *  (色バッジ版は GrandPrixRecord.rankBadge に定義が残っており差し戻し可) */
     private fun rankBadgeView(tier: String?): android.view.View? {
-        val info = GrandPrixRecord.rankBadge(tier) ?: return null
-        val (abbrev, hexList) = info
+        val asset = GrandPrixRecord.rankEmblemAsset(tier) ?: return null
+        val resId = resources.getIdentifier(asset, "drawable", packageName)
+        if (resId == 0) return null
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
-        val colors = hexList.map { ("#" + it).toColorInt() }.toIntArray()
-        val bg = android.graphics.drawable.GradientDrawable(
-            android.graphics.drawable.GradientDrawable.Orientation.TL_BR, colors
-        ).apply {
-            cornerRadius = dp(8).toFloat()
-            setStroke(dp(1), colors.last())
-        }
-        return android.widget.TextView(this).apply {
-            text = abbrev
-            setTextColor(android.graphics.Color.parseColor("#D9000000")) // 黒 85%
-            textSize = 9f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(5), dp(1), dp(5), dp(1))
-            background = bg
+        return android.widget.ImageView(this).apply {
+            setImageResource(resId)
+            adjustViewBounds = true
             layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, dp(24)
             )
         }
     }

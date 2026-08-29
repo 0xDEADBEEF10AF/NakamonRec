@@ -24,6 +24,18 @@ public struct GrandPrixRecord: Codable, Identifiable, Hashable {
         "マスター3", "マスター2", "マスター1", "グランドマスター"
     ]
 
+    /// ランク帯のエンブレムサムネイル画像名 (Asset Catalog / Android drawable 共通)。
+    /// ゲームのエンブレム画像 (モンスターサムネイルと同じ著作物リスク承知の上で採用)。
+    public static func rankEmblemAsset(_ tier: String?) -> String? {
+        switch tier {
+        case "マスター3":       return "rank_master3"
+        case "マスター2":       return "rank_master2"
+        case "マスター1":       return "rank_master1"
+        case "グランドマスター": return "rank_grandmaster"
+        default:               return nil
+        }
+    }
+
     /// ランク帯のオリジナル色付きバッジ情報 (略称, 16進カラー配列 #なし)。
     /// ゲームの紋章 (著作物) は使わず、自前の色バッジで表現する。
     /// 色配列は左上→右下のグラデーション。金銀銅はハイライト→地色→影の
