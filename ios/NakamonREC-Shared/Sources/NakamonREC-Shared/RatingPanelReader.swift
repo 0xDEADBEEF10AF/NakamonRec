@@ -29,24 +29,35 @@ public enum RatingPanelReader {
     private static let needXMin = 640.0,  needXMax = 1010.0
     private static let glyphW = 24, glyphH = 36
 
+    /// 桁分類の最低一致率。下回る桁があれば誤読とみなす (現在行→読み取り全体を破棄 /
+    /// 必要行→必要値なしとして継続)。実測: 正しく読める桁 ≥0.85、スケール歪み
+    /// (異アスペクト端末のスクショ紙芝居等) での誤分類 ≤0.74 — もっともらしい偽値
+    /// (例 2208.1→7705.1) が妥当性ゲートを通過するのをここで防ぐ。
+    private static let minAgreement = 0.82
+
     /// 勝敗画面 (レーティングパネル表示中) の CGImage から読み取る。
-    /// パネルが見つからない/数値が妥当でない場合は nil。
+    /// パネルが見つからない/数値が妥当でない/分類の信頼度が低い場合は nil。
     public static func read(_ image: CGImage) -> Reading? {
         guard let px = Pixels(image) else { return nil }
         let s = Double(image.width) / baseWidth        // 幅スケール
         func scaleY(_ v: Double) -> Int { Int(v * s) }
         func scaleX(_ v: Double) -> Int { Int(v * s) }
 
-        // 現在のレーティング (白のみ、右詰め run)
+        // 現在のレーティング (白のみ、右詰め run)。低信頼度の桁があれば読み取り全体を破棄
         let curBoxes = numberBoxes(px, yTop: scaleY(curYTop), yBot: scaleY(curYBot),
                                    xMin: scaleX(curXMin), xMax: scaleX(curXMax), allowColor: false)
-        let curStr = String(curBoxes.map { classify(bitmap(px, box: $0, yTop: scaleY(curYTop), yBot: scaleY(curYBot), allowColor: false)) })
+        let curGlyphs = curBoxes.map { classify(bitmap(px, box: $0, yTop: scaleY(curYTop), yBot: scaleY(curYBot), allowColor: false)) }
+        guard curGlyphs.allSatisfy({ $0.agreement >= minAgreement }) else { return nil }
+        let curStr = String(curGlyphs.map(\.ch))
         guard let current = Double(curStr) else { return nil }
 
-        // 必要レーティング (白、桁幅で「あと」かなを除外、妥当性ゲート)
+        // 必要レーティング (白、桁幅で「あと」かなを除外、妥当性ゲート)。
+        // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する
         let needRun = neededBoxes(px, yTop: scaleY(needYTop), yBot: scaleY(needYBot),
                                   xMin: scaleX(needXMin), xMax: scaleX(needXMax), scale: s)
-        let needStr = String(needRun.map { classify(bitmap(px, box: $0, yTop: scaleY(needYTop), yBot: scaleY(needYBot), allowColor: false)) })
+        let needGlyphs = needRun.map { classify(bitmap(px, box: $0, yTop: scaleY(needYTop), yBot: scaleY(needYBot), allowColor: false)) }
+        let needStr = needGlyphs.allSatisfy({ $0.agreement >= minAgreement })
+            ? String(needGlyphs.map(\.ch)) : ""
         let needed: Double? = (needStr.contains(where: { $0.isNumber }) ? Double(needStr) : nil)
 
         return Reading(currentRating: current, neededRating: needed)
@@ -148,14 +159,14 @@ public enum RatingPanelReader {
 
     // MARK: - 分類 (同梱グリフとの pixel 一致率)
 
-    private static func classify(_ bm: [Bool]) -> Character {
+    private static func classify(_ bm: [Bool]) -> (ch: Character, agreement: Double) {
         var best: Character = "?"; var bestScore = -1
         for (ch, glyph) in glyphTable {
             var agree = 0
             for i in 0..<bm.count where bm[i] == glyph[i] { agree += 1 }
             if agree > bestScore { bestScore = agree; best = ch }
         }
-        return best
+        return (best, bm.isEmpty ? 0 : Double(bestScore) / Double(bm.count))
     }
 
     // MARK: - グリフ辞書 (Resource からロード、char → 24×36 二値)

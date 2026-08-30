@@ -29,6 +29,14 @@ object RatingPanelReader {
     private const val NEED_X_MIN = 640.0;  private const val NEED_X_MAX = 1010.0
     private const val GW = 24; private const val GH = 36
 
+    /**
+     * 桁分類の最低一致率。下回る桁があれば誤読とみなす (現在行→読み取り全体を破棄 /
+     * 必要行→必要値なしとして継続)。実測: 正しく読める桁 >=0.85、スケール歪み
+     * (異アスペクト端末のスクショ紙芝居等) での誤分類 <=0.74 — もっともらしい偽値
+     * (例 2208.1→7705.1) が妥当性ゲートを通過するのをここで防ぐ。iOS と同一。
+     */
+    private const val MIN_AGREEMENT = 0.82
+
     @Volatile private var glyphTable: Map<Char, BooleanArray>? = null
 
     /** assets からグリフ辞書をロード (初回のみ)。char → 24×36 二値 */
@@ -72,18 +80,23 @@ object RatingPanelReader {
         fun sx(v: Double) = (v * s).toInt()
         fun sy(v: Double) = (v * s).toInt()
 
-        // 現在のレーティング
+        // 現在のレーティング。低信頼度の桁があれば読み取り全体を破棄
         val curBoxes = numberBoxes(pixels, w, h, sy(CUR_Y_TOP), sy(CUR_Y_BOT), sx(CUR_X_MIN), sx(CUR_X_MAX))
-        val curStr = curBoxes.joinToString("") {
-            classify(bitmap(pixels, w, h, it, sy(CUR_Y_TOP), sy(CUR_Y_BOT)), table).toString()
+        val curGlyphs = curBoxes.map {
+            classify(bitmap(pixels, w, h, it, sy(CUR_Y_TOP), sy(CUR_Y_BOT)), table)
         }
+        if (curGlyphs.any { it.second < MIN_AGREEMENT }) return null
+        val curStr = curGlyphs.joinToString("") { it.first.toString() }
         val current = curStr.toDoubleOrNull() ?: return null
 
-        // 必要レーティング (桁幅で「あと」かなを除外 + 妥当性ゲート)
+        // 必要レーティング (桁幅で「あと」かなを除外 + 妥当性ゲート)。
+        // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する
         val needRun = neededBoxes(pixels, w, h, sy(NEED_Y_TOP), sy(NEED_Y_BOT), sx(NEED_X_MIN), sx(NEED_X_MAX), s)
-        val needStr = needRun.joinToString("") {
-            classify(bitmap(pixels, w, h, it, sy(NEED_Y_TOP), sy(NEED_Y_BOT)), table).toString()
+        val needGlyphs = needRun.map {
+            classify(bitmap(pixels, w, h, it, sy(NEED_Y_TOP), sy(NEED_Y_BOT)), table)
         }
+        val needStr = if (needGlyphs.all { it.second >= MIN_AGREEMENT })
+            needGlyphs.joinToString("") { it.first.toString() } else ""
         val needed: Double? = if (needStr.any { it.isDigit() }) needStr.toDoubleOrNull() else null
 
         return Reading(current, needed)
@@ -163,13 +176,15 @@ object RatingPanelReader {
         return out
     }
 
-    private fun classify(bm: BooleanArray, table: Map<Char, BooleanArray>): Char {
+    /** 最良一致の文字と一致率 (0..1) を返す */
+    private fun classify(bm: BooleanArray, table: Map<Char, BooleanArray>): Pair<Char, Double> {
         var best = '?'; var bestScore = -1
         for ((ch, glyph) in table) {
             var agree = 0
             for (i in bm.indices) if (bm[i] == glyph[i]) agree++
             if (agree > bestScore) { bestScore = agree; best = ch }
         }
-        return best
+        val rate = if (bm.isEmpty()) 0.0 else bestScore.toDouble() / bm.size
+        return best to rate
     }
 }
