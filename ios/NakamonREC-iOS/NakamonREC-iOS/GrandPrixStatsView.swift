@@ -32,7 +32,8 @@ struct GrandPrixStatsView: View {
                     emptyState
                 } else {
                     ScrollView {
-                        VStack(spacing: 16) {
+                        // pinnedViews: テキスト一覧のタイトル行をスクロール中も上部に固定
+                        LazyVStack(spacing: 16, pinnedViews: [.sectionHeaders]) {
                             summaryHeader
                             if showAsList { listView } else { chartCard }
                         }
@@ -165,18 +166,22 @@ struct GrandPrixStatsView: View {
 
     // MARK: - List
 
-    // メイン戦績と同じ「1 レコード = 1 カード」形式
+    // メイン戦績と同じ「1 レコード = 1 カード」形式。
+    // タイトル行は Section ヘッダーとしてスクロール中も上部に固定される。
     private var listView: some View {
-        VStack(spacing: 6) {
-            listHeader
-            ForEach(Array(sorted.enumerated().reversed()), id: \.element.id) { idx, r in
-                Button { editing = r } label: {
-                    recordRow(r, battleNo: idx + 1, delta: delta(at: idx))
-                        .background(Color.cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+        Section {
+            VStack(spacing: 6) {
+                ForEach(Array(sorted.enumerated().reversed()), id: \.element.id) { idx, r in
+                    Button { editing = r } label: {
+                        recordRow(r, battleNo: idx + 1, delta: delta(at: idx))
+                            .background(Color.cardBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+        } header: {
+            listHeader.background(Color.black)   // 固定時に下のカードが透けないよう黒背景
         }
     }
 

@@ -887,9 +887,17 @@ class HistoryActivity : AppCompatActivity() {
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, weight)
             }
 
+        // タイトル行はスクロール領域の外 (上) に置いて固定表示する
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
         val list = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
-        // ヘッダ
-        list.addView(android.widget.LinearLayout(this).apply {
+        // ヘッダ (固定)
+        container.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             setPadding(dp(8), dp(6), dp(8), dp(6))
             addView(cell("日時", "#888888".toColorInt(), 11f, 1.6f, false))
@@ -956,7 +964,12 @@ class HistoryActivity : AppCompatActivity() {
             })
         }
 
-        return android.widget.ScrollView(this).apply { addView(list) }
+        // レコード部分だけスクロール (ヘッダは container 直下で固定)
+        container.addView(android.widget.ScrollView(this).apply { addView(list) },
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            ))
+        return container
     }
 
     /** 行の長押しで出す編集メニュー (メイン戦績の長押し編集と同じ作法)。onDone で再描画。 */
