@@ -8,7 +8,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private let logger = Logger(subsystem: "com.android.NakamonREC-iOS", category: "CaptureEngine")
 
     private var lastProcessTime: TimeInterval = 0
-    private var lastHeartbeatAt: TimeInterval = 0   // 生存通知の送出間隔制御
+    // 生存通知はタイマー駆動 (フレーム駆動だと ReplayKit が静止画面でフレーム配信を
+    // 止めたときに途絶し、放送中なのに Host が「Extension 死亡」と誤判定してしまう)
+    private var heartbeatTimer: DispatchSourceTimer?
     private let processInterval: TimeInterval = 0.5
 
     // バースト解析用
@@ -91,7 +93,20 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         BattleLogger.rotate()
         BattleLogger.append("Extension起動")
         BroadcastStatus.setActive(true)
+        startHeartbeat()
         loadTemplates()
+    }
+
+    /// 生存通知タイマー (2秒間隔)。broadcastFinished を呼べずに Extension が死んだ場合、
+    /// タイマーも止まる → Host がハートビート途絶を検知して STOP 表示残留を自動修復する。
+    /// フレーム駆動ではなくタイマー駆動なのは、ReplayKit が静止画面でフレーム配信を
+    /// 止めても放送自体は継続しているため (フレーム駆動だと放送中に誤って REC 表示に戻る)。
+    private func startHeartbeat() {
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "nakamon.heartbeat"))
+        timer.schedule(deadline: .now(), repeating: 2.0)
+        timer.setEventHandler { BroadcastStatus.beat() }
+        timer.resume()
+        heartbeatTimer = timer
     }
 
     private func loadTemplates() {
@@ -225,13 +240,6 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     private func handleVideoSample(_ sampleBuffer: CMSampleBuffer) {
         let currentTime = CACurrentMediaTime()
-
-        // 生存通知 (2秒間隔)。broadcastFinished を呼べず死んだ場合の
-        // STOP ボタン残留を Host 側で検知・自動修復できるようにする
-        if currentTime - lastHeartbeatAt >= 2 {
-            lastHeartbeatAt = currentTime
-            BroadcastStatus.beat()
-        }
 
         // バースト撮影中: モンスター解析のために画像蓄積
         if isAnalyzing {
@@ -856,6 +864,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     override func broadcastFinished() {
         logger.log("NakamonREC: Broadcast Finished")
         BattleLogger.append("ブロードキャスト終了")
+        heartbeatTimer?.cancel()
+        heartbeatTimer = nil
         BroadcastStatus.setActive(false)
         // Android 同様、戦闘終了 (WIN/LOSE) を検知していない進行中バトルは破棄
         pendingLock.lock()
