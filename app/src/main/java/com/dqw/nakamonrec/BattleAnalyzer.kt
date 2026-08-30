@@ -558,6 +558,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val customRes = findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)
         val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)
         val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)
+        // 大会用 (MG) が通常 (FM) を上回れば大会 VS と判定 (通常経路と同じ、GP モード連動用)
+        lastVsCalibrationWasTournament = (mgRes?.score ?: -1.0) > (fmRes?.score ?: -1.0)
         val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
 
         if (bestRes == null || bestRes.score < 0.4) {

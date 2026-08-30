@@ -676,6 +676,8 @@ class CalibrationActivity : AppCompatActivity() {
             val autoData = analyzer.autoCalibrateBattleSceneWithSpec(bitmap, specs)
             val results: List<CalibrationView.CalibrationBox>? = if (autoData != null) {
                 analyzer.saveCustomTemplate(bitmap, autoData.vsBox, "vs_custom.png")
+                // 通常経路と同様、大会 VS で校正したらグランプリ記録モードを ON にする
+                GrandPrixMode.setEnabled(this@CalibrationActivity, analyzer.lastVsCalibrationWasTournament)
                 val list = mutableListOf<CalibrationView.CalibrationBox>()
                 val vsScore = analyzer.detectVsScore(bitmap, autoData.vsBox)
                 list.add(CalibrationView.CalibrationBox(0, autoData.vsBox.centerX, autoData.vsBox.centerY, autoData.vsBox.width, autoData.vsBox.height, "VS", vsScore, lastMeasuredRecord?.vsScore ?: -1.0))
