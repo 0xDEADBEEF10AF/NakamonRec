@@ -793,11 +793,11 @@ class HistoryActivity : AppCompatActivity() {
             addView(summaryCard("最高レーティング", maxEmblemView, maxRatingView))
         })
 
-        // 差し替えるコンテンツ領域 (グラフ or テキスト)
+        // 差し替えるコンテンツ領域 (グラフ or テキスト)。サマリカードと密着しないよう上に余白
         val contentFrame = android.widget.FrameLayout(this)
         root.addView(contentFrame, android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(360)
-        ))
+        ).apply { topMargin = dp(8) })
 
         var showList = false
         fun bindEmblem(iv: android.widget.ImageView, tier: String?) {
