@@ -9,8 +9,12 @@ import NakamonREC_Shared
 struct GrandPrixStatsView: View {
     @State private var records: [GrandPrixRecord] = []
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
+    @State private var chartZoomed = false         // true = 直近N戦ズーム+横スクロール
     @State private var editing: GrandPrixRecord? = nil      // 編集メニュー対象
     @State private var pendingAddDate: Date? = nil         // 手動追加(初期日時)
+
+    /// ズーム時に表示する直近の戦闘数 (大会中は4桁になり得るため全体表示だと潰れる)
+    private let zoomBattleCount = 50
     @Environment(\.dismiss) private var dismiss
 
     private var sorted: [GrandPrixRecord] {
@@ -146,26 +150,57 @@ struct GrandPrixStatsView: View {
     }
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("レーティング推移").font(.caption.bold()).foregroundStyle(.gray)
-            Chart(chartPoints) { pt in
-                LineMark(x: .value("日時", pt.date), y: .value("レーティング", pt.rating))
-                    .foregroundStyle(by: .value("系列", pt.series))
-                    .symbol(by: .value("系列", pt.series))
-            }
-            .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
-            .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                    AxisGridLine()
-                    if let d = value.as(Date.self) {
-                        AxisValueLabel { Text(d, format: .dateTime.month(.defaultDigits).day().hour().minute()) }
+            HStack {
+                Text("レーティング推移").font(.caption.bold()).foregroundStyle(.gray)
+                Spacer()
+                // レコードが多いときだけ「直近N戦ズーム+横スクロール」への切替を出す
+                if sorted.count > zoomBattleCount {
+                    Button(chartZoomed ? "全体表示" : "直近\(zoomBattleCount)戦") {
+                        chartZoomed.toggle()
                     }
+                    .font(.caption.bold()).foregroundStyle(Color.recCoral)
                 }
             }
-            .chartLegend(position: .top, alignment: .leading)
-            .frame(height: 300)
+            if chartZoomed, let domain = zoomDomain {
+                ratingChart
+                    .chartScrollableAxes(.horizontal)
+                    .chartXVisibleDomain(length: domain.length)
+                    .chartScrollPosition(initialX: domain.start)
+            } else {
+                ratingChart
+            }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var ratingChart: some View {
+        Chart(chartPoints) { pt in
+            LineMark(x: .value("日時", pt.date), y: .value("レーティング", pt.rating))
+                .foregroundStyle(by: .value("系列", pt.series))
+                .symbol(by: .value("系列", pt.series))
+        }
+        .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine()
+                if let d = value.as(Date.self) {
+                    AxisValueLabel { Text(d, format: .dateTime.month(.defaultDigits).day().hour().minute()) }
+                }
+            }
+        }
+        .chartLegend(position: .top, alignment: .leading)
+        .frame(height: 300)
+    }
+
+    /// ズーム時の可視範囲: 直近 zoomBattleCount 戦ぶんの時間幅 (最低10分)。
+    /// initialX = その先頭日時 (開いた時点で最新側が見える)
+    private var zoomDomain: (start: Date, length: TimeInterval)? {
+        let dates = sorted.compactMap { BattleTimestampFormatter.date(from: $0.timestamp) }
+        guard let last = dates.last, dates.count > zoomBattleCount else { return nil }
+        let start = dates[dates.count - zoomBattleCount]
+        let length = max(last.timeIntervalSince(start), 600)
+        return (start, length)
     }
 
     // MARK: - List

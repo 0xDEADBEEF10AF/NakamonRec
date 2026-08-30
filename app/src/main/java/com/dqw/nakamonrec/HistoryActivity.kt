@@ -855,17 +855,40 @@ class HistoryActivity : AppCompatActivity() {
             val label = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp.takeLast(5) }
             GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier)
         }
+        // 大会中は4桁レコードになり得るため、全体表示 (既定) と
+        // 直近N戦ズーム+横スクロールをトグルで切替できるようにする
+        val zoomCount = 50
+        val graph = GrandPrixGraphView(this)
+        var zoomed = false
+        val toggleBtn = android.widget.TextView(this).apply {
+            textSize = 12f
+            setTextColor("#F09199".toColorInt())
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            visibility = if (points.size > zoomCount) View.VISIBLE else View.GONE
+        }
+        fun applyZoom() {
+            graph.visibleCount = (if (zoomed) minOf(zoomCount, points.size) else points.size).coerceAtLeast(2)
+            graph.setData(points)  // scrollOffset が最新側にリセットされる
+            toggleBtn.text = if (zoomed) "全体表示" else "直近${zoomCount}戦"
+        }
+        toggleBtn.setOnClickListener { zoomed = !zoomed; applyZoom() }
+        applyZoom()
+
         val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
         col.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
             setPadding(0, dp(4), 0, dp(4))
             addView(android.widget.TextView(this@HistoryActivity).apply { text = "● 自分"; textSize = 12f; setTextColor("#F09199".toColorInt()) })
-            addView(android.widget.TextView(this@HistoryActivity).apply { text = "   ● ボーダー"; textSize = 12f; setTextColor("#90D7EC".toColorInt()) })
+            addView(android.widget.TextView(this@HistoryActivity).apply {
+                text = "   ● ボーダー"; textSize = 12f; setTextColor("#90D7EC".toColorInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(0,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(toggleBtn)
         })
-        col.addView(GrandPrixGraphView(this).apply {
-            visibleCount = points.size.coerceAtLeast(2)
-            setData(points)
-        }, android.widget.LinearLayout.LayoutParams(
+        col.addView(graph, android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(320)
         ))
         return col
