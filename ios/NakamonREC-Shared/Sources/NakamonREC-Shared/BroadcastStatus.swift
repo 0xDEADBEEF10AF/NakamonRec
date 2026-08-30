@@ -26,18 +26,22 @@ public enum BroadcastStatus {
         if value { beat() }
     }
 
-    /// Extension がフレーム処理中に数秒おきに呼ぶ生存通知。
-    /// broadcastFinished を呼べずに Extension が死んだ場合 (メモリ上限での強制終了や
-    /// 終了直前の書き込み欠落) に activeKey が true のまま残留するため、
-    /// Host はこのハートビートの鮮度も見て実効状態を判定する。
+    /// Extension のタイマーが 2 秒おきに呼ぶ生存通知。
+    /// 生存時刻に加えて active フラグも毎回 true に再主張する — Host 側が万一
+    /// 誤修復 (false 化) しても、Extension が生きている限り 2 秒以内に STOP 表示へ
+    /// 復帰する。どちらの方向に誤っても必ず実際の生死に収束させるための対称性。
     public static func beat() {
+        defaults?.set(true, forKey: activeKey)
         defaults?.set(Date().timeIntervalSince1970, forKey: heartbeatKey)
     }
 
     /// Host が REC/STOP ボタン表示に使う実効状態。
     /// active フラグが立っていてもハートビートが staleAfter 秒以上途絶していれば
     /// 「Extension は死んでいる」とみなし、フラグを自動修復して false を返す。
-    public static func isEffectivelyActive(staleAfter seconds: TimeInterval = 10) -> Bool {
+    /// しきい値 30 秒 = ビート 15 回ぶん。配信中の Extension はサスペンドされないため、
+    /// 生きているのに 15 連続で途絶することは実質なく、誤って REC 表示へ戻ることはない。
+    /// (残留 STOP の自然治癒が 30 秒になるが、旧来は永久残留だったので許容)
+    public static func isEffectivelyActive(staleAfter seconds: TimeInterval = 30) -> Bool {
         guard let d = defaults, d.bool(forKey: activeKey) else { return false }
         let last = d.double(forKey: heartbeatKey)
         if Date().timeIntervalSince1970 - last > seconds {
