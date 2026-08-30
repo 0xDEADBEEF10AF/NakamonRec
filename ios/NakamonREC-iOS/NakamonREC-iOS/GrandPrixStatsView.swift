@@ -234,6 +234,7 @@ struct GrandPrixStatsView: View {
             Text("ボーダー").frame(width: 60, alignment: .trailing)
         }
         .font(.caption2).foregroundStyle(.gray)
+        .lineLimit(1).minimumScaleFactor(0.7)   // Dynamic Type 大でも折り返さず縮小
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
@@ -266,6 +267,7 @@ struct GrandPrixStatsView: View {
             Text(r.borderRating.map { String(format: "%.1f", $0) } ?? "—")
                 .font(.caption2).foregroundStyle(.cyan.opacity(0.9)).frame(width: 60, alignment: .trailing)
         }
+        .lineLimit(1).minimumScaleFactor(0.6)   // Dynamic Type 大でも数値を折り返さず縮小
         .padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
     }
 
