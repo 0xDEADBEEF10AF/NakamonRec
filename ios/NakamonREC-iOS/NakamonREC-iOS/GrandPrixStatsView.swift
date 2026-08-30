@@ -4,14 +4,17 @@ import NakamonREC_Shared
 
 /// グランプリ集計画面。読込中ファイルの grandPrixRecords を、自分のレーティング折れ線 +
 /// ボーダー折れ線で表示(グラフ既定)。トグルでテキスト(レコード一覧)に切替でき、
-/// レコードをタップすると編集メニュー(レーティング/ボーダー/ランク帯の修正・削除・次に追加)。
+/// レコードをタップすると操作メニュー(編集/削除/次に追加)。
 /// 「1 ファイル = 1 グランプリ」前提。
 struct GrandPrixStatsView: View {
     @State private var records: [GrandPrixRecord] = []
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
     @State private var chartZoomed = false         // true = 直近N戦ズーム+横スクロール
-    @State private var editing: GrandPrixRecord? = nil      // 編集メニュー対象
-    @State private var pendingAddDate: Date? = nil         // 手動追加(初期日時)
+    @State private var editing: GrandPrixRecord? = nil      // 操作メニュー対象
+    @State private var editingForm: GrandPrixRecord? = nil  // 編集フォーム対象
+    @State private var pendingAdd: FormSeed? = nil          // 追加フォーム (初期日時+引き継ぐランク帯)
+    @State private var rawSelection: Date? = nil            // グラフのドラッグ/タップ選択 (生値)
+    @State private var pinnedDate: Date? = nil              // 確定した選択点 (nil = 最新)
 
     /// ズーム時に表示する直近の戦闘数 (大会中は4桁になり得るため全体表示だと潰れる)
     private let zoomBattleCount = 50
@@ -58,7 +61,10 @@ struct GrandPrixStatsView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { pendingAddDate = Date() } label: { Image(systemName: "plus") }
+                    Button {
+                        // 追加はランク帯を最新レコードから引き継ぐ
+                        pendingAdd = FormSeed(date: Date(), rankTier: sorted.last?.rankTier)
+                    } label: { Image(systemName: "plus") }
                         .foregroundStyle(Color.recCoral)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -69,25 +75,47 @@ struct GrandPrixStatsView: View {
             .sheet(item: $editing) { rec in
                 GrandPrixEditMenu(
                     record: rec,
-                    onApply: { updated in
-                        if let updated {
-                            BattleHistoryStore.shared.updateGrandPrix(updated)
-                        } else {
-                            BattleHistoryStore.shared.deleteGrandPrix(id: rec.id)
-                        }
+                    onEdit: { editingForm = rec },
+                    onDelete: {
+                        BattleHistoryStore.shared.deleteGrandPrix(id: rec.id)
                         reload()
                     },
                     onAddAfter: { r in
-                        // この記録の 1 秒後を初期日時にして追加フォームを開く
+                        // この記録の 1 秒後を初期日時に、ランク帯を引き継いで追加フォームを開く
                         let base = BattleTimestampFormatter.date(from: r.timestamp) ?? Date()
-                        pendingAddDate = base.addingTimeInterval(1)
+                        pendingAdd = FormSeed(date: base.addingTimeInterval(1), rankTier: r.rankTier)
                     }
                 )
             }
-            .sheet(item: Binding(get: { pendingAddDate.map { DateBox(date: $0) } },
-                                 set: { pendingAddDate = $0?.date })) { box in
-                GrandPrixAddSheet(initialDate: box.date) { new in
-                    BattleHistoryStore.shared.appendGrandPrix(new)
+            .sheet(item: $editingForm) { rec in
+                GrandPrixFormSheet(
+                    title: "グランプリ記録の編集",
+                    initialDate: BattleTimestampFormatter.date(from: rec.timestamp) ?? Date(),
+                    initialRating: String(format: "%.1f", rec.currentRating),
+                    initialBorder: rec.borderRating.map { String(format: "%.1f", $0) } ?? "",
+                    initialTier: rec.rankTier
+                ) { date, rating, border, tier in
+                    var c = rec
+                    c.timestamp = BattleTimestampFormatter.formatter.string(from: date)
+                    c.currentRating = rating
+                    c.neededRating = border.map { $0 - rating }
+                    c.rankTier = tier
+                    BattleHistoryStore.shared.updateGrandPrix(id: rec.id, with: c)
+                    reload()
+                }
+            }
+            .sheet(item: $pendingAdd) { seed in
+                GrandPrixFormSheet(
+                    title: "グランプリ記録の追加",
+                    initialDate: seed.date,
+                    initialRating: "",
+                    initialBorder: "",
+                    initialTier: seed.rankTier
+                ) { date, rating, border, tier in
+                    let ts = BattleTimestampFormatter.formatter.string(from: date)
+                    BattleHistoryStore.shared.appendGrandPrix(
+                        GrandPrixRecord(timestamp: ts, result: "WIN", currentRating: rating,
+                                        neededRating: border.map { $0 - rating }, rankTier: tier))
                     reload()
                 }
             }
@@ -102,7 +130,7 @@ struct GrandPrixStatsView: View {
             Text("グランプリの記録がありません").foregroundStyle(.gray)
             Text("大会用 VS 画面で校正し、大会中に記録すると\nここにレーティング推移が表示されます。")
                 .font(.caption).multilineTextAlignment(.center).foregroundStyle(.gray.opacity(0.8))
-            Button("手動で追加") { pendingAddDate = Date() }
+            Button("手動で追加") { pendingAdd = FormSeed(date: Date(), rankTier: nil) }
                 .foregroundStyle(Color.recCoral).padding(.top, 8)
         }
         .padding(32)
@@ -148,6 +176,27 @@ struct GrandPrixStatsView: View {
         }
         return pts
     }
+
+    /// Y レンジ = データの min..max ±10% (Android GrandPrixGraphView と同じ。0 起点だと潰れる)
+    private var yDomain: ClosedRange<Double> {
+        let vals = sorted.flatMap { [$0.currentRating] + ($0.borderRating.map { [$0] } ?? []) }
+        guard let lo = vals.min(), let hi = vals.max() else { return 0...1 }
+        let span = max(hi - lo, 1)
+        return (lo - span * 0.1)...(hi + span * 0.1)
+    }
+
+    /// 選択中のレコード (未選択時は最新 = Android と同じ既定)
+    private var selectedRecord: GrandPrixRecord? {
+        guard let pinned = pinnedDate else { return sorted.last }
+        return sorted.first { BattleTimestampFormatter.date(from: $0.timestamp) == pinned } ?? sorted.last
+    }
+
+    /// 生の選択日時から最も近いレコードの日時にスナップする
+    private func nearestRecordDate(to date: Date) -> Date? {
+        let dates = sorted.compactMap { BattleTimestampFormatter.date(from: $0.timestamp) }
+        return dates.min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
+    }
+
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -161,6 +210,7 @@ struct GrandPrixStatsView: View {
                     .font(.caption.bold()).foregroundStyle(Color.recCoral)
                 }
             }
+            selectionInfoRow
             if chartZoomed, let domain = zoomDomain {
                 ratingChart
                     .chartScrollableAxes(.horizontal)
@@ -174,20 +224,60 @@ struct GrandPrixStatsView: View {
         .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    /// 選択点の詳細 (Android のツールチップ相当): エンブレム + R/B + 日時
+    private var selectionInfoRow: some View {
+        HStack(spacing: 8) {
+            if let sel = selectedRecord {
+                RankBadge(tier: sel.rankTier, height: 20)
+                Text("R:" + String(format: "%.1f", sel.currentRating))
+                    .font(.footnote.bold()).foregroundStyle(Color.recCoral)
+                Text("B:" + (sel.borderRating.map { String(format: "%.1f", $0) } ?? "—"))
+                    .font(.footnote.bold()).foregroundStyle(.cyan)
+                Text(shortDateTime(sel.timestamp)).font(.caption2).foregroundStyle(.gray)
+            }
+            Spacer()
+        }
+        .lineLimit(1).minimumScaleFactor(0.7)
+    }
+
     private var ratingChart: some View {
-        Chart(chartPoints) { pt in
-            LineMark(x: .value("日時", pt.date), y: .value("レーティング", pt.rating))
-                .foregroundStyle(by: .value("系列", pt.series))
-                .symbol(by: .value("系列", pt.series))
+        Chart {
+            ForEach(chartPoints) { pt in
+                LineMark(x: .value("日時", pt.date), y: .value("レーティング", pt.rating))
+                    .foregroundStyle(by: .value("系列", pt.series))
+                    .symbol(.circle)
+                    .symbolSize(24)
+            }
+            // 選択点: 縦ルーラー + 白い強調点 (Android のインジケーターと同じ)
+            if let sel = selectedRecord,
+               let d = BattleTimestampFormatter.date(from: sel.timestamp) {
+                RuleMark(x: .value("日時", d))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                PointMark(x: .value("日時", d), y: .value("レーティング", sel.currentRating))
+                    .foregroundStyle(.white)
+                    .symbolSize(60)
+            }
         }
         .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
+        .chartYScale(domain: yDomain)
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+            AxisMarks(values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()
                 if let d = value.as(Date.self) {
-                    AxisValueLabel { Text(d, format: .dateTime.month(.defaultDigits).day().hour().minute()) }
+                    // 2 行ラベル (日付/時刻) で横幅を抑え、ラベル同士の重なりを防ぐ
+                    AxisValueLabel {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(d, format: .dateTime.month(.defaultDigits).day())
+                            Text(d, format: .dateTime.hour().minute())
+                        }
+                    }
                 }
             }
+        }
+        .chartXSelection(value: $rawSelection)
+        .onChange(of: rawSelection) { _, new in
+            if let d = new { pinnedDate = nearestRecordDate(to: d) }
         }
         .chartLegend(position: .top, alignment: .leading)
         .frame(height: 300)
@@ -281,10 +371,20 @@ struct GrandPrixStatsView: View {
         }
         return (ts.replacingOccurrences(of: "-", with: "."), "")
     }
+
+    private func shortDateTime(_ ts: String) -> String {
+        guard let d = BattleTimestampFormatter.date(from: ts) else { return ts }
+        let f = DateFormatter(); f.dateFormat = "M/d HH:mm"; f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: d)
+    }
 }
 
-/// Identifiable ラッパ (pendingAddDate を .sheet(item:) に載せる用)
-private struct DateBox: Identifiable { let date: Date; var id: TimeInterval { date.timeIntervalSince1970 } }
+/// 追加フォームの初期値 (日時 + 引き継ぐランク帯) を .sheet(item:) に載せる用
+private struct FormSeed: Identifiable {
+    let date: Date
+    let rankTier: String?
+    var id: TimeInterval { date.timeIntervalSince1970 }
+}
 
 /// ランク帯のエンブレムサムネイル。tier が未設定/対象外なら何も描かない。
 /// (色バッジ版は GrandPrixRecord.rankBadge に定義が残っており差し戻し可)
@@ -302,31 +402,15 @@ struct RankBadge: View {
     }
 }
 
-private extension Color {
-    /// "RRGGBB" (# なし) から生成
-    init(hex: String) {
-        var v: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&v)
-        self.init(.sRGB,
-                  red: Double((v >> 16) & 0xFF) / 255.0,
-                  green: Double((v >> 8) & 0xFF) / 255.0,
-                  blue: Double(v & 0xFF) / 255.0)
-    }
-}
-
-/// グランプリ記録の編集メニュー (メイン戦績の RecordEditMenu と同じ作法)。
-/// タップした 1 レコードに対する操作一覧を出す。onApply(nil) = 削除。
+/// グランプリ記録の操作メニュー (メイン戦績の RecordEditMenu と同じ作法)。
+/// 編集 (日時/レーティング/ボーダー/ランク帯を一括) / 削除 / 次に追加 の 3 択。
 private struct GrandPrixEditMenu: View {
     let record: GrandPrixRecord
-    let onApply: (GrandPrixRecord?) -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
     let onAddAfter: (GrandPrixRecord) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    @State private var ratingText = ""
-    @State private var borderText = ""
-    @State private var showRatingEdit = false
-    @State private var showBorderEdit = false
-    @State private var showRankPicker = false
     @State private var showDeleteConfirm = false
 
     var body: some View {
@@ -334,21 +418,9 @@ private struct GrandPrixEditMenu: View {
             List {
                 Section {
                     Button {
-                        ratingText = String(format: "%.1f", record.currentRating)
-                        showRatingEdit = true
+                        onEdit(); dismiss()
                     } label: {
-                        rowLabel("figure.walk.motion", "レーティングスコアを修正 (現在 \(String(format: "%.1f", record.currentRating)))")
-                    }
-                    Button {
-                        borderText = record.borderRating.map { String(format: "%.1f", $0) } ?? ""
-                        showBorderEdit = true
-                    } label: {
-                        rowLabel("flag.checkered", "ボーダースコアを修正 (現在 \(record.borderRating.map { String(format: "%.1f", $0) } ?? "なし"))")
-                    }
-                    Button {
-                        showRankPicker = true
-                    } label: {
-                        rowLabel("rosette", "ランク帯を修正 (現在 \(record.rankTier ?? "未設定"))")
+                        rowLabel("square.and.pencil", "このレコードを編集")
                     }
                 }
                 Section {
@@ -365,37 +437,13 @@ private struct GrandPrixEditMenu: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.black)
-            .navigationTitle("グランプリ記録の編集")
+            .navigationTitle("グランプリ記録")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } }
             }
-            .alert("レーティングスコアを修正", isPresented: $showRatingEdit) {
-                TextField("例 2208.1", text: $ratingText).keyboardType(.decimalPad)
-                Button("保存") {
-                    if let v = Double(ratingText) {
-                        var c = record; c.currentRating = v; onApply(c); dismiss()
-                    }
-                }
-                Button("キャンセル", role: .cancel) {}
-            }
-            .alert("ボーダースコアを修正", isPresented: $showBorderEdit) {
-                TextField("空欄=なし", text: $borderText).keyboardType(.decimalPad)
-                Button("保存") {
-                    var c = record
-                    c.neededRating = Double(borderText).map { $0 - c.currentRating }
-                    onApply(c); dismiss()
-                }
-                Button("キャンセル", role: .cancel) {}
-            }
-            .sheet(isPresented: $showRankPicker) {
-                RankTierPicker(current: record.rankTier) { tier in
-                    var c = record; c.rankTier = tier; onApply(c)
-                    showRankPicker = false; dismiss()
-                }
-            }
             .confirmationDialog("このレコードを削除しますか?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                Button("削除", role: .destructive) { onApply(nil); dismiss() }
+                Button("削除", role: .destructive) { onDelete(); dismiss() }
                 Button("キャンセル", role: .cancel) {}
             }
         }
@@ -411,56 +459,27 @@ private struct GrandPrixEditMenu: View {
     }
 }
 
-/// ランク帯選択サブシート
-private struct RankTierPicker: View {
-    let current: String?
-    let onSelect: (String?) -> Void
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Button {
-                    onSelect(nil)
-                } label: {
-                    HStack {
-                        Text("未設定").foregroundStyle(.white); Spacer()
-                        if current == nil { Image(systemName: "checkmark").foregroundStyle(Color.recCoral) }
-                    }
-                }
-                ForEach(GrandPrixRecord.rankTiers, id: \.self) { tier in
-                    Button {
-                        onSelect(tier)
-                    } label: {
-                        HStack {
-                            Text(tier).foregroundStyle(.white); Spacer()
-                            if current == tier { Image(systemName: "checkmark").foregroundStyle(Color.recCoral) }
-                        }
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(Color.black)
-            .navigationTitle("ランク帯を選択")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-/// 記録漏れの手動追加フォーム (日時・レーティング・ボーダー)。勝敗は WIN 既定。
-private struct GrandPrixAddSheet: View {
+/// グランプリ記録の入力フォーム (編集/追加 共用)。
+/// 日時・レーティング・ボーダー・ランク帯を一度に編集できる。
+private struct GrandPrixFormSheet: View {
+    let title: String
     let initialDate: Date
-    let onSave: (GrandPrixRecord) -> Void
+    let initialRating: String
+    let initialBorder: String
+    let initialTier: String?
+    /// (日時, レーティング, ボーダー(なし=nil), ランク帯(未設定=nil))
+    let onSave: (Date, Double, Double?, String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var date = Date()
     @State private var ratingText = ""
     @State private var borderText = ""
+    @State private var tier: String? = nil
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("記録の追加") {
+                Section {
                     DatePicker("日時", selection: $date)
                     HStack {
                         Text("レーティング"); Spacer()
@@ -472,24 +491,33 @@ private struct GrandPrixAddSheet: View {
                         TextField("空欄=なし", text: $borderText)
                             .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 120)
                     }
+                    Picker("ランク帯", selection: $tier) {
+                        Text("未設定").tag(String?.none)
+                        ForEach(GrandPrixRecord.rankTiers, id: \.self) { t in
+                            Text(t).tag(String?.some(t))
+                        }
+                    }
                 }
             }
-            .navigationTitle("グランプリ記録の追加")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         guard let rating = Double(ratingText) else { return }
-                        let needed = Double(borderText).map { $0 - rating }
-                        let ts = BattleTimestampFormatter.formatter.string(from: date)
-                        onSave(GrandPrixRecord(timestamp: ts, result: "WIN", currentRating: rating, neededRating: needed))
+                        onSave(date, rating, Double(borderText), tier)
                         dismiss()
                     }
                     .disabled(Double(ratingText) == nil)
                 }
             }
-            .onAppear { date = initialDate }
+            .onAppear {
+                date = initialDate
+                ratingText = initialRating
+                borderText = initialBorder
+                tier = initialTier
+            }
         }
     }
 }

@@ -174,10 +174,15 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     /// id (timestamp) でグランプリ記録を 1 件更新 (手入力での訂正用)
     public func updateGrandPrix(_ updated: GrandPrixRecord) {
+        updateGrandPrix(id: updated.id, with: updated)
+    }
+
+    /// 旧 id を指定して 1 件更新 (日時 = id 自体を編集するケース用)
+    public func updateGrandPrix(id oldId: String, with updated: GrandPrixRecord) {
         ioLock.lock(); defer { ioLock.unlock() }
         var history = loadActive()
         guard var gp = history.grandPrixRecords,
-              let idx = gp.firstIndex(where: { $0.id == updated.id }) else { return }
+              let idx = gp.firstIndex(where: { $0.id == oldId }) else { return }
         gp[idx] = updated
         history.grandPrixRecords = gp
         saveActive(history)

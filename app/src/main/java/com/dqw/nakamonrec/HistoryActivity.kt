@@ -1018,12 +1018,11 @@ class HistoryActivity : AppCompatActivity() {
         return container
     }
 
-    /** 行の長押しで出す編集メニュー (メイン戦績の長押し編集と同じ作法)。onDone で再描画。 */
+    /** 行の長押しで出す操作メニュー (メイン戦績の長押し編集と同じ作法)。
+     *  編集 (日時/レーティング/ボーダー/ランク帯を一括) / 削除 / 次に追加 の 3 択。onDone で再描画。 */
     private fun showGrandPrixRecordMenu(record: GrandPrixRecord, onDone: () -> Unit) {
         val items = arrayOf(
-            "レーティングスコアを修正",
-            "ボーダースコアを修正",
-            "ランク帯を修正",
+            "このレコードを編集",
             "このレコードを削除",
             "このレコードの次にスコアを追加"
         )
@@ -1031,100 +1030,93 @@ class HistoryActivity : AppCompatActivity() {
             .setTitle("グランプリ記録")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> editGrandPrixNumber("レーティングスコアを修正",
-                        String.format(Locale.US, "%.1f", record.currentRating), allowEmpty = false) { v ->
-                        dataManager.updateGrandPrix(record.copy(currentRating = v!!)); onDone()
+                    0 -> showGrandPrixFormDialog(
+                        title = "グランプリ記録の編集",
+                        initialTs = record.timestamp,
+                        initialRating = String.format(Locale.US, "%.1f", record.currentRating),
+                        initialBorder = record.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "",
+                        initialTier = record.rankTier
+                    ) { ts, rating, needed, tier ->
+                        dataManager.updateGrandPrix(record.timestamp, record.copy(
+                            timestamp = ts, currentRating = rating, neededRating = needed, rankTier = tier))
+                        onDone()
                     }
-                    1 -> editGrandPrixNumber("ボーダースコアを修正 (空欄=なし)",
-                        record.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "", allowEmpty = true) { v ->
-                        dataManager.updateGrandPrix(record.copy(neededRating = v?.let { it - record.currentRating })); onDone()
-                    }
-                    2 -> editGrandPrixRank(record, onDone)
-                    3 -> AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+                    1 -> AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
                         .setMessage("このレコードを削除しますか?")
                         .setPositiveButton("削除") { _, _ -> dataManager.deleteGrandPrix(record.timestamp); onDone() }
                         .setNegativeButton("キャンセル", null)
                         .show()
-                    4 -> {
-                        // この記録の 1 秒後を初期日時にして追加
+                    2 -> {
+                        // この記録の 1 秒後を初期日時に、ランク帯を引き継いで追加
                         val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
                         val base = try { tsFormat.parse(record.timestamp)?.time ?: System.currentTimeMillis() }
                                    catch (_: Exception) { System.currentTimeMillis() }
-                        showGrandPrixAddDialog(tsFormat.format(java.util.Date(base + 1000)), onDone)
+                        showGrandPrixAddDialog(tsFormat.format(java.util.Date(base + 1000)), record.rankTier, onDone)
                     }
                 }
             }
             .show()
     }
 
-    /** 数値入力ダイアログ (レーティング/ボーダー修正用)。allowEmpty=true なら空欄で null を返す。 */
-    private fun editGrandPrixNumber(title: String, initial: String, allowEmpty: Boolean, onSave: (Double?) -> Unit) {
-        val edit = android.widget.EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(initial)
+    /** 記録漏れの手動追加 (日時・レーティング・ボーダー・ランク帯)。勝敗は WIN 既定。 */
+    private fun showGrandPrixAddDialog(initialTs: String, initialTier: String? = null, onDone: () -> Unit) {
+        showGrandPrixFormDialog(
+            title = "グランプリ記録の追加",
+            initialTs = initialTs, initialRating = "", initialBorder = "", initialTier = initialTier
+        ) { ts, rating, needed, tier ->
+            dataManager.appendGrandPrix(GrandPrixRecord(timestamp = ts, result = "WIN",
+                currentRating = rating, neededRating = needed, rankTier = tier))
+            onDone()
         }
-        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
-            .setTitle(title)
-            .setView(edit)
-            .setPositiveButton("保存") { _, _ ->
-                val text = edit.text.toString().trim()
-                if (text.isEmpty()) {
-                    if (allowEmpty) onSave(null)
-                    else Toast.makeText(this, "数値を入力してください", Toast.LENGTH_SHORT).show()
-                } else {
-                    val v = text.toDoubleOrNull()
-                    if (v == null) Toast.makeText(this, "数値が不正です", Toast.LENGTH_SHORT).show()
-                    else onSave(v)
-                }
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
     }
 
-    /** ランク帯選択ダイアログ (未設定 + rankTiers)。 */
-    private fun editGrandPrixRank(record: GrandPrixRecord, onDone: () -> Unit) {
-        val options = (listOf("未設定") + GrandPrixRecord.rankTiers).toTypedArray()
-        val currentIdx = record.rankTier?.let { GrandPrixRecord.rankTiers.indexOf(it) + 1 } ?: 0
-        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
-            .setTitle("ランク帯を選択")
-            .setSingleChoiceItems(options, currentIdx) { d, which ->
-                val tier = if (which == 0) null else GrandPrixRecord.rankTiers[which - 1]
-                dataManager.updateGrandPrix(record.copy(rankTier = tier))
-                onDone()
-                d.dismiss()
-            }
-            .setNegativeButton("キャンセル", null)
-            .show()
-    }
-
-    /** 記録漏れの手動追加 (日時・レーティング・ボーダー)。勝敗は WIN 既定。 */
-    private fun showGrandPrixAddDialog(initialTs: String, onDone: () -> Unit) {
+    /**
+     * グランプリ記録の入力フォーム (編集/追加 共用)。
+     * 日時・レーティング・ボーダー・ランク帯を一度に編集できる (iOS の GrandPrixFormSheet と対応)。
+     * onSave(ts, rating, needed(=ボーダー-レーティング, なし=null), rankTier(未設定=null))
+     */
+    private fun showGrandPrixFormDialog(title: String, initialTs: String, initialRating: String,
+                                        initialBorder: String, initialTier: String?,
+                                        onSave: (String, Double, Double?, String?) -> Unit) {
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        fun label(text: String) = android.widget.TextView(this).apply {
+            this.text = text; setTextColor("#888888".toColorInt()); textSize = 12f
+        }
 
         val col = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(4))
         }
-        col.addView(android.widget.TextView(this).apply { text = "日時"; setTextColor("#888888".toColorInt()); textSize = 12f })
+        col.addView(label("日時"))
         val tsEdit = android.widget.EditText(this).apply { setText(initialTs) }
         col.addView(tsEdit)
-        col.addView(android.widget.TextView(this).apply { text = "レーティング"; setTextColor("#888888".toColorInt()); textSize = 12f })
+        col.addView(label("レーティング"))
         val ratingEdit = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
             hint = "例 2208.1"
+            setText(initialRating)
         }
         col.addView(ratingEdit)
-        col.addView(android.widget.TextView(this).apply { text = "ボーダー (空欄=なし)"; setTextColor("#888888".toColorInt()); textSize = 12f })
+        col.addView(label("ボーダー (空欄=なし)"))
         val borderEdit = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(initialBorder)
         }
         col.addView(borderEdit)
+        col.addView(label("ランク帯"))
+        val tierOptions = listOf("未設定") + GrandPrixRecord.rankTiers
+        val tierSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@HistoryActivity,
+                android.R.layout.simple_spinner_dropdown_item, tierOptions)
+            setSelection(initialTier?.let { GrandPrixRecord.rankTiers.indexOf(it) + 1 } ?: 0)
+        }
+        col.addView(tierSpinner)
 
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
-            .setTitle("グランプリ記録の追加")
-            .setView(col)
+            .setTitle(title)
+            .setView(android.widget.ScrollView(this).apply { addView(col) })
             .setPositiveButton("保存") { _, _ ->
                 val rating = ratingEdit.text.toString().toDoubleOrNull()
                 if (rating == null) { Toast.makeText(this, "レーティングが不正です", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
@@ -1132,9 +1124,9 @@ class HistoryActivity : AppCompatActivity() {
                 val parsed = try { tsFormat.parse(ts) } catch (_: Exception) { null }
                 if (parsed == null) { Toast.makeText(this, "日時の形式が不正です (yyyy-MM-dd HH:mm:ss)", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
                 val needed = borderEdit.text.toString().toDoubleOrNull()?.let { it - rating }
-                dataManager.appendGrandPrix(GrandPrixRecord(timestamp = ts, result = "WIN",
-                    currentRating = rating, neededRating = needed))
-                onDone()
+                val tier = (tierSpinner.selectedItemPosition - 1)
+                    .let { if (it < 0) null else GrandPrixRecord.rankTiers[it] }
+                onSave(ts, rating, needed, tier)
             }
             .setNegativeButton("キャンセル", null)
             .show()

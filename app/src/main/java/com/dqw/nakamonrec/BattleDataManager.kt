@@ -115,10 +115,13 @@ class BattleDataManager(private val context: Context) {
         }
     }
 
-    fun updateGrandPrix(record: GrandPrixRecord) {
+    fun updateGrandPrix(record: GrandPrixRecord) = updateGrandPrix(record.timestamp, record)
+
+    /** 旧 timestamp を指定して 1 件更新 (日時 = id 自体を編集するケース用) */
+    fun updateGrandPrix(oldTimestamp: String, record: GrandPrixRecord) {
         synchronized(saveLock) {
             val list = history.grandPrixRecords ?: return
-            val idx = list.indexOfFirst { it.timestamp == record.timestamp }
+            val idx = list.indexOfFirst { it.timestamp == oldTimestamp }
             if (idx >= 0) {
                 list[idx] = record
                 saveHistory()
