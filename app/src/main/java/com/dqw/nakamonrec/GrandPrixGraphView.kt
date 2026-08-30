@@ -25,10 +25,14 @@ class GrandPrixGraphView @JvmOverloads constructor(
     private var scrollOffset: Float = 0f
     private var touchX: Float = -1f
     private var selectedIndex: Int = -1
+    private var lastNotifiedIndex = -2
     var visibleCount = 8
 
-    private val paddingLeft = 88f
-    private val paddingRight = 30f
+    /** 選択点が変わったら通知 (null = 選択なし)。数値表示はグラフ上部の情報枠が担う (iOS と統一) */
+    var onSelectionChanged: ((RatingPoint?) -> Unit)? = null
+
+    private val paddingLeft = 16f
+    private val paddingRight = 88f   // Y軸目盛りは右側 (iOS Swift Charts と統一)
     private val paddingTop = 40f
     private val paddingBottom = 40f
 
@@ -51,23 +55,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
     private val indicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE; strokeWidth = 2f; style = Paint.Style.STROKE
     }
-    private val tooltipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textSize = 28f; textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
-    }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val badgeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-
-    // ランク帯エンブレムの Bitmap キャッシュ (tier → drawable、無ければ null を記憶)
-    private val emblemCache = HashMap<String, android.graphics.Bitmap?>()
-    private fun emblemBitmap(tier: String?): android.graphics.Bitmap? {
-        val asset = GrandPrixRecord.rankEmblemAsset(tier) ?: return null
-        return emblemCache.getOrPut(asset) {
-            val resId = resources.getIdentifier(asset, "drawable", context.packageName)
-            if (resId == 0) null
-            else android.graphics.BitmapFactory.decodeResource(resources, resId)
-        }
-    }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, dy: Float): Boolean {
@@ -80,6 +68,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
             val stepX = calculateStepX(); if (stepX <= 0) return false
             val i = ((e.x + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
             selectedIndex = if (selectedIndex == i) -1 else i
+            notifySelection()
             invalidate(); return true
         }
     })
@@ -87,7 +76,27 @@ class GrandPrixGraphView @JvmOverloads constructor(
     fun setData(points: List<RatingPoint>) {
         this.dataPoints = points
         selectedIndex = if (points.isNotEmpty()) points.size - 1 else -1
-        post { scrollOffset = calculateMaxScroll(); invalidate() }
+        lastNotifiedIndex = -2
+        post { scrollOffset = calculateMaxScroll(); notifySelection(); invalidate() }
+    }
+
+    /** 現在のアクティブ点 (ドラッグ中はタッチ位置、それ以外はタップ選択) */
+    private fun activeIndexNow(): Int {
+        val stepX = calculateStepX()
+        if (dataPoints.isEmpty() || stepX <= 0) return -1
+        return if (touchX != -1f) {
+            if (touchX in (paddingLeft - 20f)..(width - paddingRight + 50f))
+                ((touchX + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
+            else -1
+        } else selectedIndex
+    }
+
+    private fun notifySelection() {
+        val idx = activeIndexNow()
+        if (idx != lastNotifiedIndex) {
+            lastNotifiedIndex = idx
+            onSelectionChanged?.invoke(dataPoints.getOrNull(idx))
+        }
     }
 
     private fun calculateStepX(): Float {
@@ -127,7 +136,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
             val v = yMin + (yMax - yMin) * i / steps
             val y = yOf(v)
             canvas.drawLine(paddingLeft, y, w - paddingRight, y, gridPaint)
-            canvas.drawText(String.format(Locale.US, "%.0f", v), 5f, y + 6f, textPaint)
+            canvas.drawText(String.format(Locale.US, "%.0f", v), w - paddingRight + 8f, y + 6f, textPaint)
         }
 
         val pathRating = Path()
@@ -170,12 +179,8 @@ class GrandPrixGraphView @JvmOverloads constructor(
         canvas.drawPath(pathRating, ratingLinePaint)
         canvas.restore()
 
-        // タップ位置のインジケーター+ツールチップ
-        val activeIndex = if (touchX != -1f) {
-            if (touchX in (paddingLeft - 20f)..(w - paddingRight + 50f))
-                ((touchX + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
-            else -1
-        } else selectedIndex
+        // タップ位置のインジケーター (縦線+強調点)。数値表示は上部情報枠 (iOS と統一)
+        val activeIndex = activeIndexNow()
 
         if (activeIndex != -1 && stepX >= 0) {
             val targetX = paddingLeft + activeIndex * stepX - scrollOffset
@@ -191,45 +196,6 @@ class GrandPrixGraphView @JvmOverloads constructor(
                     canvas.drawCircle(targetX, yB, 4f, circlePaint.apply { color = borderLinePaint.color })
                 }
 
-                val labelR = String.format(Locale.US, "R:%.1f", data.rating)
-                val labelB = data.border?.let { String.format(Locale.US, "B:%.1f", it) }
-                val maxTextW = maxOf(tooltipPaint.measureText(labelR), labelB?.let { tooltipPaint.measureText(it) } ?: 0f)
-                val marginX = 12f
-                val isRightSide = (targetX + marginX + maxTextW <= w - 5f)
-                tooltipPaint.textAlign = if (isRightSide) Paint.Align.LEFT else Paint.Align.RIGHT
-                val drawX = if (isRightSide) targetX + marginX else targetX - marginX
-
-                val ts = tooltipPaint.textSize
-                var rTextY = yR + (ts / 3f)
-                var bTextY = data.border?.let { yOf(it) + (ts / 3f) } ?: rTextY
-                if (labelB != null && Math.abs(rTextY - bTextY) < ts) {
-                    if (yR < yOf(data.border!!)) { rTextY = yR - ts / 2f; bTextY = yOf(data.border!!) + ts * 0.8f }
-                    else { rTextY = yR + ts * 0.8f; bTextY = yOf(data.border!!) - ts / 2f }
-                }
-                val topLimit = paddingTop + ts; val bottomLimit = paddingTop + innerH
-                rTextY = rTextY.coerceIn(topLimit, bottomLimit)
-                bTextY = bTextY.coerceIn(topLimit, bottomLimit)
-
-                // ランク帯のエンブレムサムネイルを R:xxxx の左に描く
-                // (色バッジ版は GrandPrixRecord.rankBadge に定義が残っており差し戻し可)
-                emblemBitmap(data.rankTier)?.let { emblem ->
-                    val labelLeftX = if (tooltipPaint.textAlign == Paint.Align.LEFT) drawX
-                                     else drawX - tooltipPaint.measureText(labelR)
-                    val bh = tooltipPaint.textSize * 1.5f
-                    val bw = bh * emblem.width / emblem.height
-                    val right = labelLeftX - 6f
-                    val left = right - bw
-                    val cy = rTextY - tooltipPaint.textSize * 0.34f
-                    val dst = android.graphics.RectF(left, cy - bh / 2f, right, cy + bh / 2f)
-                    canvas.drawBitmap(emblem, null, dst, badgeFillPaint)
-                }
-
-                tooltipPaint.color = ratingLinePaint.color
-                canvas.drawText(labelR, drawX, rTextY, tooltipPaint)
-                if (labelB != null) {
-                    tooltipPaint.color = borderLinePaint.color
-                    canvas.drawText(labelB, drawX, bTextY, tooltipPaint)
-                }
             }
         }
     }
@@ -243,6 +209,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touchX = -1f
         }
+        notifySelection()
         invalidate()
         return true
     }

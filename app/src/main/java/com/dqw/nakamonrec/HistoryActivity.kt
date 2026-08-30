@@ -873,7 +873,38 @@ class HistoryActivity : AppCompatActivity() {
             toggleBtn.text = if (zoomed) "全体表示" else "直近${zoomCount}戦"
         }
         toggleBtn.setOnClickListener { zoomed = !zoomed; applyZoom() }
+
+        // 選択点の詳細 (iOS の情報枠と統一): エンブレム + R/B + 日時 をグラフ上部に固定表示
+        val selEmblem = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            visibility = View.GONE
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)
+            ).apply { marginEnd = dp(6) }
+        }
+        val selText = android.widget.TextView(this).apply { textSize = 13f }
+        fun showSelection(p: GrandPrixGraphView.RatingPoint?) {
+            // 選択なしのときは最新点を表示 (iOS と同じ既定)
+            val sel = p ?: points.lastOrNull()
+            if (sel == null) { selEmblem.visibility = View.GONE; selText.text = ""; return }
+            val resId = GrandPrixRecord.rankEmblemAsset(sel.rankTier)
+                ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
+            if (resId != 0) { selEmblem.setImageResource(resId); selEmblem.visibility = View.VISIBLE }
+            else selEmblem.visibility = View.GONE
+            val r = String.format(Locale.US, "R:%.1f", sel.rating)
+            val b = sel.border?.let { String.format(Locale.US, "B:%.1f", it) } ?: "B:—"
+            val s = android.text.SpannableString("$r  $b  ${sel.dateLabel}")
+            fun span(color: Int, from: Int, to: Int) = s.setSpan(
+                android.text.style.ForegroundColorSpan(color), from, to,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            span("#F09199".toColorInt(), 0, r.length)
+            span("#90D7EC".toColorInt(), r.length + 2, r.length + 2 + b.length)
+            span("#888888".toColorInt(), r.length + 2 + b.length, s.length)
+            selText.text = s
+        }
+        graph.onSelectionChanged = { p -> showSelection(p) }
         applyZoom()
+        showSelection(points.lastOrNull())
 
         val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
         col.addView(android.widget.LinearLayout(this).apply {
@@ -888,8 +919,15 @@ class HistoryActivity : AppCompatActivity() {
             })
             addView(toggleBtn)
         })
+        col.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
+            addView(selEmblem)
+            addView(selText)
+        })
         col.addView(graph, android.widget.LinearLayout.LayoutParams(
-            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(320)
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(300)
         ))
         return col
     }
@@ -1089,8 +1127,32 @@ class HistoryActivity : AppCompatActivity() {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(4))
         }
-        col.addView(label("日時"))
-        val tsEdit = android.widget.EditText(this).apply { setText(initialTs) }
+        // 日時はテキスト入力ではなく、タップで日付→時刻ピッカーを連結して選ぶ (iOS のリール入力に相当)
+        // 秒は initialTs のものを維持する
+        val pickedCal = java.util.Calendar.getInstance().apply {
+            time = (try { tsFormat.parse(initialTs) } catch (_: Exception) { null }) ?: java.util.Date()
+        }
+        col.addView(label("日時 (タップして選択)"))
+        val tsEdit = android.widget.EditText(this).apply {
+            setText(tsFormat.format(pickedCal.time))
+            isFocusable = false
+            isClickable = true
+        }
+        tsEdit.setOnClickListener {
+            android.app.DatePickerDialog(this, { _, y, m, d ->
+                pickedCal.set(java.util.Calendar.YEAR, y)
+                pickedCal.set(java.util.Calendar.MONTH, m)
+                pickedCal.set(java.util.Calendar.DAY_OF_MONTH, d)
+                android.app.TimePickerDialog(this, { _, hh, mm ->
+                    pickedCal.set(java.util.Calendar.HOUR_OF_DAY, hh)
+                    pickedCal.set(java.util.Calendar.MINUTE, mm)
+                    tsEdit.setText(tsFormat.format(pickedCal.time))
+                }, pickedCal.get(java.util.Calendar.HOUR_OF_DAY),
+                   pickedCal.get(java.util.Calendar.MINUTE), true).show()
+            }, pickedCal.get(java.util.Calendar.YEAR),
+               pickedCal.get(java.util.Calendar.MONTH),
+               pickedCal.get(java.util.Calendar.DAY_OF_MONTH)).show()
+        }
         col.addView(tsEdit)
         col.addView(label("レーティング"))
         val ratingEdit = android.widget.EditText(this).apply {
