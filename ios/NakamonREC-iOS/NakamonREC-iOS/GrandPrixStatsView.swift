@@ -199,17 +199,7 @@ struct GrandPrixStatsView: View {
 
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("レーティング推移").font(.caption.bold()).foregroundStyle(.gray)
-                Spacer()
-                // レコードが多いときだけ「直近N戦ズーム+横スクロール」への切替を出す
-                if sorted.count > zoomBattleCount {
-                    Button(chartZoomed ? "全体表示" : "直近\(zoomBattleCount)戦") {
-                        chartZoomed.toggle()
-                    }
-                    .font(.caption.bold()).foregroundStyle(Color.recCoral)
-                }
-            }
+            Text("レーティング推移").font(.caption.bold()).foregroundStyle(.gray)
             selectionInfoRow
             if chartZoomed, let domain = zoomDomain {
                 ratingChart
@@ -218,6 +208,19 @@ struct GrandPrixStatsView: View {
                     .chartScrollPosition(initialX: domain.start)
             } else {
                 ratingChart
+            }
+            // 凡例 + ズームトグルはグラフ (横軸ラベル) の下 (Android と統一)
+            HStack(spacing: 12) {
+                Text("● 自分").font(.caption).foregroundStyle(Color.recCoral)
+                Text("● ボーダー").font(.caption).foregroundStyle(.cyan)
+                Spacer()
+                // レコードが多いときだけ「直近N戦ズーム+横スクロール」への切替を出す
+                if sorted.count > zoomBattleCount {
+                    Button(chartZoomed ? "全体表示" : "直近\(zoomBattleCount)戦") {
+                        chartZoomed.toggle()
+                    }
+                    .font(.caption.bold()).foregroundStyle(Color.recCoral)
+                }
             }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -279,7 +282,7 @@ struct GrandPrixStatsView: View {
         .onChange(of: rawSelection) { _, new in
             if let d = new { pinnedDate = nearestRecordDate(to: d) }
         }
-        .chartLegend(position: .top, alignment: .leading)
+        .chartLegend(.hidden)   // 凡例は chartCard 側でグラフ下に自前描画 (Android と統一)
         .frame(height: 300)
     }
 

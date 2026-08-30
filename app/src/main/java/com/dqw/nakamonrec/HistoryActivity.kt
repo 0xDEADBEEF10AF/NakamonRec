@@ -919,6 +919,18 @@ class HistoryActivity : AppCompatActivity() {
             orientation = android.widget.LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             setPadding(0, dp(4), 0, dp(4))
+            addView(selEmblem)
+            addView(selText)
+        })
+        // カードの余白+凡例+情報枠ぶんを差し引いて contentFrame (360dp) に収める
+        col.addView(graph, android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(265)
+        ))
+        // 凡例 + ズームトグルはグラフ (横軸ラベル) の下 (iOS と統一)
+        col.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, 0)
             addView(android.widget.TextView(this@HistoryActivity).apply { text = "● 自分"; textSize = 12f; setTextColor("#F09199".toColorInt()) })
             addView(android.widget.TextView(this@HistoryActivity).apply {
                 text = "   ● ボーダー"; textSize = 12f; setTextColor("#90D7EC".toColorInt())
@@ -927,17 +939,6 @@ class HistoryActivity : AppCompatActivity() {
             })
             addView(toggleBtn)
         })
-        col.addView(android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(4))
-            addView(selEmblem)
-            addView(selText)
-        })
-        // カードの余白+凡例+情報枠ぶんを差し引いて contentFrame (360dp) に収める
-        col.addView(graph, android.widget.LinearLayout.LayoutParams(
-            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(265)
-        ))
         return col
     }
 
