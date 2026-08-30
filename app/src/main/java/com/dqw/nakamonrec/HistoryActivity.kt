@@ -633,9 +633,25 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun showAnalysisDialog() {
         val items = arrayOf("パーティ集計", "モンスター集計", "グランプリ集計")
+        // グランプリ集計は「①校正でグランプリモード or ②GP 記録が 1 件以上」のときだけ有効。
+        // どちらも満たさなければグレーアウト (GP を使わないユーザーに空画面を見せない)。
+        val gpAvailable = GrandPrixMode.isEnabled(this) ||
+            dataManager.loadGrandPrixRecords().isNotEmpty()
+        val adapter = object : android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_list_item_1, items
+        ) {
+            override fun isEnabled(position: Int) = position != 2 || gpAvailable
+            override fun getView(position: Int, convertView: android.view.View?,
+                                 parent: android.view.ViewGroup): android.view.View {
+                val v = super.getView(position, convertView, parent) as android.widget.TextView
+                v.setTextColor(if (isEnabled(position)) android.graphics.Color.WHITE
+                               else "#666666".toColorInt())
+                return v
+            }
+        }
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle("集計メニュー")
-            .setItems(items) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 when (which) {
                     0 -> showPartyAnalysisDialog()
                     1 -> showMonsterRankingDialog()
