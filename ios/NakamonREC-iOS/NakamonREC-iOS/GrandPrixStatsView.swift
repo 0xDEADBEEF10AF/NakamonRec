@@ -19,8 +19,8 @@ struct GrandPrixStatsView: View {
                 < (BattleTimestampFormatter.date(from: $1.timestamp) ?? .distantPast)
         }
     }
-    private var maxRating: Double? { sorted.map(\.currentRating).max() }
-    private var currentRating: Double? { sorted.last?.currentRating }
+    private var currentRecord: GrandPrixRecord? { sorted.last }
+    private var maxRecord: GrandPrixRecord? { sorted.max { $0.currentRating < $1.currentRating } }
 
     private func reload() { records = BattleHistoryStore.shared.loadGrandPrixRecords() }
 
@@ -105,20 +105,24 @@ struct GrandPrixStatsView: View {
     }
 
     // MARK: - Summary header (現在 | 最高、メイン画面と同じ独立カード2枚)
+    // 数値の左にそのレコードのランク帯エンブレムを表示 (現在=最新 / 最高=最高値のレコード)
 
     private var summaryHeader: some View {
         HStack(spacing: 8) {
-            summaryCard("現在レーティング", value: currentRating, valueColor: .white)
-            summaryCard("最高レーティング", value: maxRating, valueColor: Color.recCoral)
+            summaryCard("現在レーティング", record: currentRecord, valueColor: .white)
+            summaryCard("最高レーティング", record: maxRecord, valueColor: Color.recCoral)
         }
     }
 
-    private func summaryCard(_ label: String, value: Double?, valueColor: Color) -> some View {
+    private func summaryCard(_ label: String, record: GrandPrixRecord?, valueColor: Color) -> some View {
         VStack(spacing: 4) {
             Text(label).font(.caption2).foregroundStyle(.gray)
-            Text(value.map { String(format: "%.1f", $0) } ?? "—")
-                .font(.system(size: 28, weight: .bold)).foregroundStyle(valueColor)
-                .lineLimit(1).minimumScaleFactor(0.7)
+            HStack(spacing: 6) {
+                if record?.rankTier != nil { RankBadge(tier: record?.rankTier, height: 28) }
+                Text(record.map { String(format: "%.1f", $0.currentRating) } ?? "—")
+                    .font(.system(size: 28, weight: .bold)).foregroundStyle(valueColor)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
         }
         .frame(maxWidth: .infinity).padding(.vertical, 12)
         .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))

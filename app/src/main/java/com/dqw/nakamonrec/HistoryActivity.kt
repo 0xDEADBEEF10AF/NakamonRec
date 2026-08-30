@@ -745,7 +745,8 @@ class HistoryActivity : AppCompatActivity() {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(8))
         }
-        // 現在レーティング | 最高レーティング (メイン画面と同じ独立カード2枚)
+        // 現在レーティング | 最高レーティング (メイン画面と同じ独立カード2枚)。
+        // 数値の左にそのレコードのランク帯エンブレム (現在=最新 / 最高=最高値のレコード)。
         val curRatingView = android.widget.TextView(this).apply {
             setTextColor(android.graphics.Color.WHITE); textSize = 26f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -754,7 +755,16 @@ class HistoryActivity : AppCompatActivity() {
             setTextColor("#F09199".toColorInt()); textSize = 26f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        fun summaryCard(label: String, value: android.widget.TextView) =
+        fun emblemView() = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            visibility = View.GONE
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, dp(28)
+            ).apply { marginEnd = dp(6) }
+        }
+        val curEmblemView = emblemView()
+        val maxEmblemView = emblemView()
+        fun summaryCard(label: String, emblem: android.widget.ImageView, value: android.widget.TextView) =
             android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
                 gravity = android.view.Gravity.CENTER_HORIZONTAL
@@ -770,12 +780,17 @@ class HistoryActivity : AppCompatActivity() {
                 addView(android.widget.TextView(this@HistoryActivity).apply {
                     text = label; setTextColor("#888888".toColorInt()); textSize = 11f
                 })
-                addView(value)
+                addView(android.widget.LinearLayout(this@HistoryActivity).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    addView(emblem)
+                    addView(value)
+                })
             }
         root.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            addView(summaryCard("現在レーティング", curRatingView))
-            addView(summaryCard("最高レーティング", maxRatingView))
+            addView(summaryCard("現在レーティング", curEmblemView, curRatingView))
+            addView(summaryCard("最高レーティング", maxEmblemView, maxRatingView))
         })
 
         // 差し替えるコンテンツ領域 (グラフ or テキスト)
@@ -785,12 +800,20 @@ class HistoryActivity : AppCompatActivity() {
         ))
 
         var showList = false
+        fun bindEmblem(iv: android.widget.ImageView, tier: String?) {
+            val resId = GrandPrixRecord.rankEmblemAsset(tier)
+                ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
+            if (resId != 0) { iv.setImageResource(resId); iv.visibility = View.VISIBLE }
+            else iv.visibility = View.GONE
+        }
         fun rebuild() {
             val records = currentRecords()
-            val max = records.maxOfOrNull { it.currentRating }
-            maxRatingView.text = max?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
-            val cur = records.lastOrNull()?.currentRating
-            curRatingView.text = cur?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
+            val maxRec = records.maxByOrNull { it.currentRating }
+            maxRatingView.text = maxRec?.let { String.format(Locale.US, "%.1f", it.currentRating) } ?: "—"
+            bindEmblem(maxEmblemView, maxRec?.rankTier)
+            val curRec = records.lastOrNull()
+            curRatingView.text = curRec?.let { String.format(Locale.US, "%.1f", it.currentRating) } ?: "—"
+            bindEmblem(curEmblemView, curRec?.rankTier)
             contentFrame.removeAllViews()
             if (showList) {
                 // 行を長押しで編集メニュー (メイン戦績の長押し編集と同じ作法)
