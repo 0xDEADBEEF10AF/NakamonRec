@@ -198,9 +198,18 @@
 <h3 id="quickstart-android">Android の場合</h3>
 <ol class="steps">
   <li>メイン画面の中央にある「REC」ボタンを押す</li>
-  <li>ドラクエウォークの画面を選択する (Android 14 以降の場合)</li>
+  <li>画面共有の確認ダイアログで共有範囲を選ぶ —
+      <strong>Android 15 以降は初期値が「1個のアプリを共有」のため、プルダウンから
+      「画面全体を共有」に切り替えてから「画面を共有」を押してください</strong> (下図)。
+      Android 14 はドラクエウォークの画面を選択します</li>
   <li>戦闘を開始する — 校正が成功していれば、VS画面で戦闘開始の通知が出ます</li>
 </ol>
+<div class="shots">
+  <figure>
+    <img src="images/help-19-capture-picker.jpg" alt="キャプチャ対象の選択 (Android 15)" loading="lazy">
+    <figcaption>Android 15 以降の共有ダイアログ (「画面全体を共有」に切り替える)</figcaption>
+  </figure>
+</div>
 <h3 id="quickstart-ios">iPhone の場合</h3>
 <ol class="steps">
   <li>メイン画面の中央にある「REC」ボタンを押す</li>
@@ -340,22 +349,36 @@
 
 <h2 id="grandprix">特設: グランプリ集計 (ベータ) — 大会のレーティングを自動記録</h2>
 <p>
-  v26.9.1 の新機能です。なかまモンスターグランプリ (大会) 中の<strong>レーティングスコアとボーダー
-  (次のランクまでのライン) を自動で記録</strong>し、推移をグラフで振り返ることができます。
+  v26.9.1 の新機能です。なかまモンスターグランプリ (大会) 中の<strong>レーティングスコアとボーダーを自動で記録</strong>し
+  (グランドマスター中はボーダーは記録されません)、推移をグラフで振り返ることができます。
   ランク帯 (マスター3〜グランドマスター) も自動判定してエンブレムで表示します。
 </p>
 
-<h3>使い方</h3>
+<h3>使い方 (非グランプリ期間の動作確認手順)</h3>
 <ol class="steps">
   <li><strong>大会用の VS 画面のスクリーンショット</strong>を撮り、「VS画面」を再校正する
       — 校正画面の右上に <strong>GRAND PRIX MODE</strong> と表示されたら準備完了です
-      (大会の VS 画面は通常戦と絵柄が異なるため、大会のたびに再校正するのがおすすめです)</li>
+      (大会の VS 画面は通常戦と絵柄が異なるため、大会のたびに再校正してください)</li>
   <li>いつも通り REC して大会で対戦する</li>
   <li>対戦が終わったら、<strong>勝敗表示の画面をタップしてレーティングの表示を出す</strong>
       — この画面からスコアを読み取ります (勝敗表示から20秒以内)</li>
   <li>Android では記録できると「GP記録 xxxx.x」の通知が出ます (iPhone は OS の制約で通知が出ませんが、記録はされています)</li>
   <li>集計メニュー (虫眼鏡) の「グランプリ集計」で、レーティング推移のグラフとレコード一覧を確認できます</li>
 </ol>
+<div class="shots">
+  <figure>
+    <img src="images/help-20-gp-vs.jpg" alt="大会用VS画面の例" loading="lazy">
+    <figcaption>手順1で撮る「大会用 VS 画面」の例</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-21-gp-mode.jpg" alt="GRAND PRIX MODE 表示" loading="lazy">
+    <figcaption>校正に成功すると右上に GRAND PRIX MODE と表示</figcaption>
+  </figure>
+  <figure>
+    <img src="images/help-22-gp-rating.jpg" alt="レーティング表示画面" loading="lazy">
+    <figcaption>手順3でタップして出す「レーティング表示」の例</figcaption>
+  </figure>
+</div>
 
 <h3>グランプリ集計画面でできること</h3>
 <ul>
@@ -369,21 +392,18 @@
     <li>本機能はベータ版です。スコアの読み取りに自信が持てない場合、なかモンREC は<strong>誤った値を書き込まず「記録しない」</strong>動作をします。抜けた戦はテキスト表示から手動追加してください</li>
     <li><strong>記録ファイルは大会ごとに分ける</strong>のがおすすめです (グランプリ集計は読込中のファイルの記録を1本の推移として表示します)</li>
     <li>グランプリモード中は通常戦 (フレンドマッチング等) が記録されないことがあります。大会が終わったら通常の VS 画面で再校正するとグランプリモードが解除されます</li>
+    <li>現時点では、グランプリ記録は CSV エクスポート/インポートの対象外です (今後のバージョンで対応予定)。CSV で戦績を移行してもグランプリ記録は引き継がれない点にご注意ください</li>
   </ul>
 </div>
 
-<!-- TODO: 公開版 26.9.1 のスクリーンショットが揃ったら差し込む
+<!-- TODO: 公開版のグランプリ集計スクショが揃ったら差し込む
 <div class="shots">
   <figure>
-    <img src="images/help-19-gp-mode.png" alt="GRAND PRIX MODE 表示" loading="lazy">
-    <figcaption>大会用 VS 画面で校正すると右上に GRAND PRIX MODE と表示</figcaption>
-  </figure>
-  <figure>
-    <img src="images/help-20-gp-graph.png" alt="グランプリ集計 (グラフ表示)" loading="lazy">
+    <img src="images/help-23-gp-graph.jpg" alt="グランプリ集計 (グラフ表示)" loading="lazy">
     <figcaption>グランプリ集計 (グラフ表示)</figcaption>
   </figure>
   <figure>
-    <img src="images/help-21-gp-list.png" alt="グランプリ集計 (テキスト表示)" loading="lazy">
+    <img src="images/help-24-gp-list.jpg" alt="グランプリ集計 (テキスト表示)" loading="lazy">
     <figcaption>グランプリ集計 (テキスト表示)</figcaption>
   </figure>
 </div>
