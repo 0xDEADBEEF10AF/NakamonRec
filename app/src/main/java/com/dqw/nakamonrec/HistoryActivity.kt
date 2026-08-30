@@ -906,7 +906,15 @@ class HistoryActivity : AppCompatActivity() {
         applyZoom()
         showSelection(points.lastOrNull())
 
-        val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        // 凡例+情報枠+グラフをまとめて角丸カードに (iOS の chartCard と統一)
+        val col = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor("#333333".toColorInt())
+                cornerRadius = dp(12).toFloat()
+            }
+        }
         col.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -926,8 +934,9 @@ class HistoryActivity : AppCompatActivity() {
             addView(selEmblem)
             addView(selText)
         })
+        // カードの余白+凡例+情報枠ぶんを差し引いて contentFrame (360dp) に収める
         col.addView(graph, android.widget.LinearLayout.LayoutParams(
-            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(300)
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(265)
         ))
         return col
     }
