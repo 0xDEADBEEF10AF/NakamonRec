@@ -103,24 +103,23 @@ struct GrandPrixStatsView: View {
         .padding(32)
     }
 
-    // MARK: - Summary header (現在 | 最高)
+    // MARK: - Summary header (現在 | 最高、メイン画面と同じ独立カード2枚)
 
     private var summaryHeader: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 4) {
-                Text("現在レーティング").font(.caption2).foregroundStyle(.gray)
-                Text(currentRating.map { String(format: "%.1f", $0) } ?? "—")
-                    .font(.system(size: 30, weight: .bold)).foregroundStyle(.white)
-            }
-            .frame(maxWidth: .infinity)
-            VStack(spacing: 4) {
-                Text("最高レーティング").font(.caption2).foregroundStyle(.gray)
-                Text(maxRating.map { String(format: "%.1f", $0) } ?? "—")
-                    .font(.system(size: 30, weight: .bold)).foregroundStyle(Color.recCoral)
-            }
-            .frame(maxWidth: .infinity)
+        HStack(spacing: 8) {
+            summaryCard("現在レーティング", value: currentRating, valueColor: .white)
+            summaryCard("最高レーティング", value: maxRating, valueColor: Color.recCoral)
         }
-        .padding(.vertical, 12)
+    }
+
+    private func summaryCard(_ label: String, value: Double?, valueColor: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(label).font(.caption2).foregroundStyle(.gray)
+            Text(value.map { String(format: "%.1f", $0) } ?? "—")
+                .font(.system(size: 28, weight: .bold)).foregroundStyle(valueColor)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 12)
         .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -166,19 +165,19 @@ struct GrandPrixStatsView: View {
 
     // MARK: - List
 
+    // メイン戦績と同じ「1 レコード = 1 カード」形式
     private var listView: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 6) {
             listHeader
-            Divider().overlay(Color.gray.opacity(0.3))
             ForEach(Array(sorted.enumerated().reversed()), id: \.element.id) { idx, r in
                 Button { editing = r } label: {
                     recordRow(r, battleNo: idx + 1, delta: delta(at: idx))
+                        .background(Color.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                if idx != 0 { Divider().overlay(Color.gray.opacity(0.2)) }
             }
         }
-        .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var listHeader: some View {

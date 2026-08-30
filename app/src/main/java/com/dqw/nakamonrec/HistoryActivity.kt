@@ -745,29 +745,37 @@ class HistoryActivity : AppCompatActivity() {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(8))
         }
-        // 現在レーティング | 最高レーティング (2 カラム)
+        // 現在レーティング | 最高レーティング (メイン画面と同じ独立カード2枚)
         val curRatingView = android.widget.TextView(this).apply {
-            setTextColor(android.graphics.Color.WHITE); textSize = 30f
+            setTextColor(android.graphics.Color.WHITE); textSize = 26f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         val maxRatingView = android.widget.TextView(this).apply {
-            setTextColor("#F09199".toColorInt()); textSize = 30f
+            setTextColor("#F09199".toColorInt()); textSize = 26f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        fun summaryColumn(label: String, value: android.widget.TextView) =
+        fun summaryCard(label: String, value: android.widget.TextView) =
             android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor("#333333".toColorInt())
+                    cornerRadius = dp(10).toFloat()
+                }
                 layoutParams = android.widget.LinearLayout.LayoutParams(0,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(4), 0, dp(4), 0)
+                }
                 addView(android.widget.TextView(this@HistoryActivity).apply {
-                    text = label; setTextColor("#888888".toColorInt()); textSize = 12f
+                    text = label; setTextColor("#888888".toColorInt()); textSize = 11f
                 })
                 addView(value)
             }
         root.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            addView(summaryColumn("現在レーティング", curRatingView))
-            addView(summaryColumn("最高レーティング", maxRatingView))
+            addView(summaryCard("現在レーティング", curRatingView))
+            addView(summaryCard("最高レーティング", maxRatingView))
         })
 
         // 差し替えるコンテンツ領域 (グラフ or テキスト)
@@ -883,7 +891,7 @@ class HistoryActivity : AppCompatActivity() {
         // ヘッダ
         list.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            setPadding(dp(4), dp(6), dp(4), dp(6))
+            setPadding(dp(8), dp(6), dp(8), dp(6))
             addView(cell("日時", "#888888".toColorInt(), 11f, 1.6f, false))
             addView(cell("ランク", "#888888".toColorInt(), 11f, 1.0f, false))
             addView(cell("戦", "#888888".toColorInt(), 11f, 1.0f, true))  // 大会中は4桁になり得る
@@ -924,9 +932,19 @@ class HistoryActivity : AppCompatActivity() {
                     text = timeStr; setTextColor(android.graphics.Color.WHITE); textSize = 10f
                 })
             }
+            // メイン戦績と同じ「1 レコード = 1 カード」形式
             list.addView(android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
-                setPadding(dp(4), dp(8), dp(4), dp(8))
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor("#333333".toColorInt())
+                    cornerRadius = dp(8).toFloat()
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, dp(2), 0, dp(2)) }
                 isLongClickable = true
                 addView(timeCell)
                 addView(rankCell)
