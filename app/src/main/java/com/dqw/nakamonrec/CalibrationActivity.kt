@@ -106,7 +106,11 @@ class CalibrationActivity : AppCompatActivity() {
             // 現在のモードに応じて対象のカスタムテンプレートのみを削除
             when (mode) {
                 "party" -> analyzer.deleteCustomTemplate("party_custom.png")
-                "vs" -> analyzer.deleteCustomTemplate("vs_custom.png")
+                "vs" -> {
+                    analyzer.deleteCustomTemplate("vs_custom.png")
+                    // VS をデフォルトに戻す = 大会用でなくなるためグランプリモード解除
+                    GrandPrixMode.setEnabled(this, false)
+                }
                 "win" -> analyzer.deleteCustomTemplate("win_custom.png")
                 "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
             }
@@ -141,7 +145,9 @@ class CalibrationActivity : AppCompatActivity() {
         val text = when (mode) {
             "vs" -> {
                 val vsFile = File(filesDir, "vs_custom.png")
-                if (vsFile.exists()) "Template: CUSTOM" else "Template: BASE"
+                val base = if (vsFile.exists()) "Template: CUSTOM" else "Template: BASE"
+                // 大会用 VS で校正済みなら (= グランプリ記録モード) を併記
+                if (vsFile.exists() && GrandPrixMode.isEnabled(this)) "$base\nGRAND PRIX MODE" else base
             }
             "party" -> {
                 val partyFile = File(filesDir, "party_custom.png")
@@ -197,9 +203,12 @@ class CalibrationActivity : AppCompatActivity() {
                     val autoData = analyzer.autoCalibrateBattleScene(bitmap)
                     if (autoData != null) {
                         newScale = autoData.uiScale
-                        
+
                         // 見つかったVSロゴをその場でカスタムテンプレートとして保存
                         analyzer.saveCustomTemplate(bitmap, autoData.vsBox, "vs_custom.png")
+
+                        // 大会用 VS を校正した = グランプリ記録モード ON (通常 VS なら OFF)。
+                        GrandPrixMode.setEnabled(this@CalibrationActivity, analyzer.lastVsCalibrationWasTournament)
 
                         val list = mutableListOf<CalibrationView.CalibrationBox>()
                         val vsScore = analyzer.detectVsScore(bitmap, autoData.vsBox)

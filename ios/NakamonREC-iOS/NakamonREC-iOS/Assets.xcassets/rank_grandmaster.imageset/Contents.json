@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "rank_grandmaster.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

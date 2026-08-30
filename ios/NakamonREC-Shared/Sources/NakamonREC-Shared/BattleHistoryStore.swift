@@ -14,6 +14,10 @@ public final class BattleHistoryStore: @unchecked Sendable {
     private let fileManager = FileManager.default
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    /// 複合書き込み (load→変更→save) を直列化するロック。
+    /// 戦闘終了の BattleRecord 追記 (解析キュー) と グランプリ記録追記 (キャプチャスレッド) が
+    /// 同時に走り得るため、read-modify-write の取りこぼしを防ぐ。
+    private let ioLock = NSLock()
 
     private init() {
         encoder = JSONEncoder()
@@ -103,6 +107,7 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     /// アクティブな履歴に 1 件追記し、totals を再計算して保存
     public func append(_ record: BattleRecord) {
+        ioLock.lock(); defer { ioLock.unlock() }
         var history = loadActive()
         history.records.append(record)
         history.recomputeTotals()
@@ -111,6 +116,7 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     /// アクティブな履歴をクリア
     public func clearActive() {
+        ioLock.lock(); defer { ioLock.unlock() }
         saveActive(BattleHistory())
     }
 
@@ -118,6 +124,7 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     /// id (timestamp) で 1 件を更新
     public func updateRecord(_ updated: BattleRecord) {
+        ioLock.lock(); defer { ioLock.unlock() }
         var history = loadActive()
         if let idx = history.records.firstIndex(where: { $0.id == updated.id }) {
             history.records[idx] = updated
@@ -128,6 +135,7 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     /// id (timestamp) で 1 件を削除
     public func deleteRecord(id: String) {
+        ioLock.lock(); defer { ioLock.unlock() }
         var history = loadActive()
         history.records.removeAll { $0.id == id }
         history.recomputeTotals()
@@ -136,6 +144,7 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     /// 指定 id の次の位置に新規レコードを挿入
     public func insertRecord(_ new: BattleRecord, afterId: String) {
+        ioLock.lock(); defer { ioLock.unlock() }
         var history = loadActive()
         if let idx = history.records.firstIndex(where: { $0.id == afterId }) {
             history.records.insert(new, at: idx + 1)
@@ -143,6 +152,44 @@ public final class BattleHistoryStore: @unchecked Sendable {
             history.records.append(new)
         }
         history.recomputeTotals()
+        saveActive(history)
+    }
+
+    // MARK: - Grand Prix records
+
+    /// アクティブなファイルのグランプリ記録一覧 (未記録なら空)
+    public func loadGrandPrixRecords() -> [GrandPrixRecord] {
+        loadActive().grandPrixRecords ?? []
+    }
+
+    /// グランプリ記録を 1 件追記 (通常戦績とは別系列。totals には影響しない)
+    public func appendGrandPrix(_ record: GrandPrixRecord) {
+        ioLock.lock(); defer { ioLock.unlock() }
+        var history = loadActive()
+        var gp = history.grandPrixRecords ?? []
+        gp.append(record)
+        history.grandPrixRecords = gp
+        saveActive(history)
+    }
+
+    /// id (timestamp) でグランプリ記録を 1 件更新 (手入力での訂正用)
+    public func updateGrandPrix(_ updated: GrandPrixRecord) {
+        ioLock.lock(); defer { ioLock.unlock() }
+        var history = loadActive()
+        guard var gp = history.grandPrixRecords,
+              let idx = gp.firstIndex(where: { $0.id == updated.id }) else { return }
+        gp[idx] = updated
+        history.grandPrixRecords = gp
+        saveActive(history)
+    }
+
+    /// id (timestamp) でグランプリ記録を 1 件削除
+    public func deleteGrandPrix(id: String) {
+        ioLock.lock(); defer { ioLock.unlock() }
+        var history = loadActive()
+        guard var gp = history.grandPrixRecords else { return }
+        gp.removeAll { $0.id == id }
+        history.grandPrixRecords = gp
         saveActive(history)
     }
 

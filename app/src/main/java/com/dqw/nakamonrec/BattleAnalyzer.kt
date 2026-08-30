@@ -314,6 +314,10 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return res?.let { it.config to it.score }
     }
 
+    /** 直近の VS 自動校正で大会用 VS (MG) が採用されたか。CalibrationActivity が読む。 */
+    var lastVsCalibrationWasTournament: Boolean = false
+        private set
+
     fun autoCalibrateBattleScene(sceneBitmap: Bitmap): CalibrationData? {
         val fullMat = Mat()
         Utils.bitmapToMat(sceneBitmap, fullMat)
@@ -326,11 +330,15 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         // 最もスコアの高い結果を位置基準として採用
         val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
-        
+
         if (bestRes == null || bestRes.score < 0.4) {
             fullMat.release()
             return null
         }
+
+        // 大会用 (MG) が通常 (FM) より高スコアなら「大会用 VS をインポートした」と判定
+        // (グランプリモード判定。CalibrationActivity が読んで GrandPrixMode を設定する)。
+        lastVsCalibrationWasTournament = (mgRes?.score ?: -1.0) > (fmRes?.score ?: -1.0)
         
         // 標準アセット幅を取得（1080p基準）
         val standardVsWidth = (vsFmTemplate ?: vsMgTemplate)?.cols()?.toDouble() ?: return null
@@ -766,6 +774,33 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             saveRoi(bitmap, calibrationData.vsBox, "vs", vMargin, hMargin)
         }
         return detected
+    }
+
+    /** VS 検知で勝ったテンプレ種別 (グランプリ二段ゲート用)。未検知は null */
+    enum class VsTemplateKind { CUSTOM, FM, MG }
+
+    fun detectVsTemplate(bitmap: Bitmap): VsTemplateKind? {
+        val vMargin = (bitmap.height * 0.1).toInt()
+        val hMargin = (ROI_PAD_GENERAL_H * calibrationData.uiScale).toInt()
+        var bestKind: VsTemplateKind? = null
+        var bestScore = 0.0
+        vsCustomTemplateScaled?.let {
+            val s = performColorMatchCached(bitmap, calibrationData.vsBox, it, vMargin, hMargin)
+            if (s > bestScore) { bestScore = s; bestKind = VsTemplateKind.CUSTOM }
+        }
+        run {
+            val s = performColorMatchCached(bitmap, calibrationData.vsBox, vsFmTemplateScaled, vMargin, hMargin)
+            if (s > bestScore) { bestScore = s; bestKind = VsTemplateKind.FM }
+        }
+        run {
+            val s = performColorMatchCached(bitmap, calibrationData.vsBox, vsMgTemplateScaled, vMargin, hMargin)
+            if (s > bestScore) { bestScore = s; bestKind = VsTemplateKind.MG }
+        }
+        if (bestScore > vsThreshold && bestKind != null) {
+            saveRoi(bitmap, calibrationData.vsBox, "vs", vMargin, hMargin)
+            return bestKind
+        }
+        return null
     }
 
     fun checkBattleResult(bitmap: Bitmap): String? {

@@ -14,6 +14,8 @@ struct CalibrationView: View {
     @State private var hasCustomTemplate: Bool = false
     @State private var isAutoCalibrating: Bool = false
     @State private var statusMessage: String? = nil
+    /// VS 画面のカスタムテンプレが「大会用 VS」で作られている (= グランプリ記録モード ON) か
+    @State private var isGrandPrixTemplate: Bool = false
 
     // 詳細校正 (VS画面のみ): 8 スロットに事前にモンスター ID を指定し、1-vs-1 マッチで校正する
     @State private var showDetailCalSheet: Bool = false
@@ -54,12 +56,22 @@ struct CalibrationView: View {
                         .background(Color.black.opacity(0.6))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     Spacer()
-                    Text("Template: \(hasCustomTemplate ? "CUSTOM" : "BASE")")
-                        .font(.caption.bold())
-                        .foregroundStyle(hasCustomTemplate ? Color.recCoral : .gray)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Template: \(hasCustomTemplate ? "CUSTOM" : "BASE")")
+                            .font(.caption.bold())
+                            .foregroundStyle(hasCustomTemplate ? Color.recCoral : .gray)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        if isGrandPrixTemplate {
+                            Text("GRAND PRIX MODE")
+                                .font(.caption2.bold())
+                                .foregroundStyle(Color.recCoral)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Color.black.opacity(0.6))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
@@ -247,6 +259,8 @@ struct CalibrationView: View {
         }
         rois = roisFromConfig()
         hasCustomTemplate = CustomTemplateStore.exists(customKind)
+        // VS 画面のカスタムが大会用で作られている場合 (= グランプリモード) はラベル表示
+        isGrandPrixTemplate = (customKind == .vs) && hasCustomTemplate && GrandPrixMode.isEnabled
         recomputeScores()
     }
 
@@ -280,6 +294,11 @@ struct CalibrationView: View {
         // 既存カスタムテンプレも削除
         CustomTemplateStore.remove(customKind)
         hasCustomTemplate = false
+        // VS をデフォルトに戻す = 大会用でなくなるためグランプリモード解除
+        if screen == .battlePrep {
+            GrandPrixMode.isEnabled = false
+            isGrandPrixTemplate = false
+        }
         recomputeScores()
     }
 
@@ -544,29 +563,29 @@ struct CalibrationView: View {
         isAutoCalibrating = true
         CustomTemplateStore.remove(.vs)
         hasCustomTemplate = false
+        isGrandPrixTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
             // --- 1. VS 検出 (テンプレを scene スケール × マルチスケールでリサイズしてマッチング) ---
-            //   FM と MG の両テンプレを 5 段階の倍率で試し、全体の最高スコアを採用する。
-            var bestVSLocOpt: NakamonMatchLocation? = nil
+            //   FM (通常) と MG (大会用) を別々に追跡し、それぞれの最高スコアを持つ。
+            //   MG の方が高ければ「大会用 VS をインポートした」= グランプリモード ON と判定する。
+            var bestFMOpt: NakamonMatchLocation? = nil
+            var bestMGOpt: NakamonMatchLocation? = nil
             for ms in Self.autoCalMicroScales {
                 let vsFMScaled = self.templateScaledToScene(vsFM, scene: scene, microScale: ms)
                 let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFMScaled)
-                if bestVSLocOpt == nil || locFM.score > bestVSLocOpt!.score {
-                    bestVSLocOpt = locFM
-                }
+                if bestFMOpt == nil || locFM.score > bestFMOpt!.score { bestFMOpt = locFM }
                 if let vsMG = vsMG {
                     let vsMGScaled = self.templateScaledToScene(vsMG, scene: scene, microScale: ms)
                     let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMGScaled)
-                    if bestVSLocOpt == nil || locMG.score > bestVSLocOpt!.score {
-                        bestVSLocOpt = locMG
-                    }
+                    if bestMGOpt == nil || locMG.score > bestMGOpt!.score { bestMGOpt = locMG }
                 }
             }
-            // 以降のロジック (slotResults 取得 + handleBattlePrepAutoCalResult への引き渡し) は
-            // 旧コードと同じく非 Optional の `bestVSLoc` を期待しているため、ここで展開する。
-            // マルチスケールループ後は必ず 1 つ以上の loc が代入されているので nil ではない。
-            let bestVSLoc: NakamonMatchLocation = bestVSLocOpt!
+            // 大会用 (MG) が通常 (FM) より高スコアなら大会 VS と判定。
+            let fmScore = bestFMOpt?.score ?? -1
+            let mgScore = bestMGOpt?.score ?? -1
+            let isTournament = mgScore > fmScore
+            let bestVSLoc: NakamonMatchLocation = isTournament ? bestMGOpt! : bestFMOpt!
 
             // --- 2. 全モンスターテンプレをロード + scene スケールにリサイズ + キャッシュ ---
             let scale = scene.size.width / 1080.0
@@ -616,6 +635,7 @@ struct CalibrationView: View {
 
             DispatchQueue.main.async {
                 handleBattlePrepAutoCalResult(vsLocation: bestVSLoc,
+                                              isTournament: isTournament,
                                               slotResults: slotResults,
                                               scene: scene)
             }
@@ -623,11 +643,15 @@ struct CalibrationView: View {
     }
 
     private func handleBattlePrepAutoCalResult(vsLocation: NakamonMatchLocation,
+                                               isTournament: Bool,
                                                slotResults: [(ratioX: Double, ratioY: Double, score: Double, id: String)],
                                                scene: UIImage) {
         defer { isAutoCalibrating = false }
         guard vsLocation.score >= 0.4 else {
             statusMessage = String(format: "VS ロゴを検出できませんでした (最高スコア %.3f)", vsLocation.score)
+            // 検出失敗時はカスタム未保存 = グランプリモードは無効のまま
+            GrandPrixMode.isEnabled = false
+            isGrandPrixTemplate = false
             return
         }
         let sceneW = Double(scene.size.width)
@@ -664,13 +688,19 @@ struct CalibrationView: View {
             hasCustomTemplate = true
         }
 
+        // 大会用 VS を校正した = グランプリ記録モードを ON (通常 VS なら OFF)。
+        // B 方針: 校正が大会記録モードのスイッチを兼ねる。
+        GrandPrixMode.isEnabled = isTournament
+        isGrandPrixTemplate = isTournament
+
         recomputeScores()
         let slotSummary = slotResults.enumerated().map { idx, r in
             let label = idx < 4 ? "味方\(idx)" : "敵\(idx - 4)"
             return String(format: "%@:%@ %.2f", label, r.id, r.score)
         }.joined(separator: " / ")
-        statusMessage = String(format: "自動校正完了\nVS Score %.3f\n%@\nこの位置で決定 を押すと保存されます。",
-                               vsLocation.score, slotSummary)
+        let modeNote = isTournament ? "\n🎖 グランプリ記録モード ON (大会用 VS を検出)" : ""
+        statusMessage = String(format: "自動校正完了\nVS Score %.3f%@\n%@\nこの位置で決定 を押すと保存されます。",
+                               vsLocation.score, modeNote, slotSummary)
     }
 
     /// 名前を指定して templates フォルダから BASE テンプレを取得
@@ -707,25 +737,24 @@ struct CalibrationView: View {
         isAutoCalibrating = true
         CustomTemplateStore.remove(.vs)
         hasCustomTemplate = false
+        isGrandPrixTemplate = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // --- 1. VS 検出 (マルチスケール) ---
-            var bestVSLocOpt: NakamonMatchLocation? = nil
+            // --- 1. VS 検出 (マルチスケール、FM/MG 別追跡で大会判定) ---
+            var bestFMOpt: NakamonMatchLocation? = nil
+            var bestMGOpt: NakamonMatchLocation? = nil
             for ms in Self.autoCalMicroScales {
                 let vsFMScaled = self.templateScaledToScene(vsFM, scene: scene, microScale: ms)
                 let locFM = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsFMScaled)
-                if bestVSLocOpt == nil || locFM.score > bestVSLocOpt!.score {
-                    bestVSLocOpt = locFM
-                }
+                if bestFMOpt == nil || locFM.score > bestFMOpt!.score { bestFMOpt = locFM }
                 if let vsMG = vsMG {
                     let vsMGScaled = self.templateScaledToScene(vsMG, scene: scene, microScale: ms)
                     let locMG = NakamonWrapper.findBestMatchLocation(inScene: scene, templateImg: vsMGScaled)
-                    if bestVSLocOpt == nil || locMG.score > bestVSLocOpt!.score {
-                        bestVSLocOpt = locMG
-                    }
+                    if bestMGOpt == nil || locMG.score > bestMGOpt!.score { bestMGOpt = locMG }
                 }
             }
-            let bestVSLoc = bestVSLocOpt!
+            let isTournament = (bestMGOpt?.score ?? -1) > (bestFMOpt?.score ?? -1)
+            let bestVSLoc = isTournament ? bestMGOpt! : bestFMOpt!
 
             // --- 2. 各スロットを 1-vs-1 で検索 ---
             // 探索範囲は通常 auto-cal と同じ (X ±100, Y ±350 ぶん) — 詳細校正でも広めに取る
@@ -767,6 +796,7 @@ struct CalibrationView: View {
 
             DispatchQueue.main.async {
                 handleBattlePrepAutoCalResult(vsLocation: bestVSLoc,
+                                              isTournament: isTournament,
                                               slotResults: slotResults,
                                               scene: scene)
             }

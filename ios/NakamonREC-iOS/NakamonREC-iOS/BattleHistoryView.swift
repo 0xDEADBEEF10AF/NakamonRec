@@ -55,7 +55,7 @@ struct BattleHistoryView: View {
     @State private var statsTarget: StatsTarget? = nil
 
     enum StatsTarget: String, Identifiable {
-        case party, monster
+        case party, monster, grandPrix
         var id: String { rawValue }
     }
     @Environment(\.dismiss) private var dismiss
@@ -148,13 +148,14 @@ struct BattleHistoryView: View {
                     statsTarget = target
                 }
             }
-            .presentationDetents([.fraction(0.3)])
+            .presentationDetents([.fraction(0.38)])
         }
         .sheet(item: $statsTarget) { target in
             switch target {
             case .party:   PartyStatsView(records: history.records)
             // P1~3 簡易フィルタ・フィルタモードを反映するため filtered を渡す
             case .monster: MonsterStatsView(records: filtered, partyFilter: filter.partyIndex)
+            case .grandPrix: GrandPrixStatsView()
             }
         }
     }
