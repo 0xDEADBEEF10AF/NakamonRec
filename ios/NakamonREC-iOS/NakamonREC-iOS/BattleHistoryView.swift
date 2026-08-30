@@ -12,6 +12,10 @@ struct BattleFilter: Equatable {
     var requiredMyMonsters: Set<String> = []
     /// 敵に含まれているべきモンスター
     var requiredEnemyMonsters: Set<String> = []
+    /// 味方に含まれていてはいけないモンスター (除外条件)
+    var excludedMyMonsters: Set<String> = []
+    /// 敵に含まれていてはいけないモンスター (除外条件)
+    var excludedEnemyMonsters: Set<String> = []
     /// パーティ index (カードタップによる簡易フィルタ用) — nil = 全パーティ
     var partyIndex: Int? = nil
 
@@ -19,6 +23,8 @@ struct BattleFilter: Equatable {
         winLoseFilter == nil &&
         requiredMyMonsters.isEmpty &&
         requiredEnemyMonsters.isEmpty &&
+        excludedMyMonsters.isEmpty &&
+        excludedEnemyMonsters.isEmpty &&
         partyIndex == nil
     }
 
@@ -29,6 +35,12 @@ struct BattleFilter: Equatable {
         }
         for m in requiredEnemyMonsters {
             if !record.enemyParty.contains(m) { return false }
+        }
+        for m in excludedMyMonsters {
+            if record.myParty.contains(m) { return false }
+        }
+        for m in excludedEnemyMonsters {
+            if record.enemyParty.contains(m) { return false }
         }
         if let pi = partyIndex, record.partyIndex != pi { return false }
         return true
@@ -356,17 +368,35 @@ struct BattleHistoryView: View {
                             }
                         }
                     }
+                    // 含む条件: タップで「除く」へ切替
                     ForEach(Array(filter.requiredMyMonsters), id: \.self) { m in
-                        chipMonster(name: m, isEnemy: false) {
+                        chipMonster(name: m, isEnemy: false, excluded: false) {
                             withAnimation(.easeInOut(duration: 0.25)) {
-                                _ = filter.requiredMyMonsters.remove(m)
+                                filter.requiredMyMonsters.remove(m)
+                                filter.excludedMyMonsters.insert(m)
                             }
                         }
                     }
                     ForEach(Array(filter.requiredEnemyMonsters), id: \.self) { m in
-                        chipMonster(name: m, isEnemy: true) {
+                        chipMonster(name: m, isEnemy: true, excluded: false) {
                             withAnimation(.easeInOut(duration: 0.25)) {
-                                _ = filter.requiredEnemyMonsters.remove(m)
+                                filter.requiredEnemyMonsters.remove(m)
+                                filter.excludedEnemyMonsters.insert(m)
+                            }
+                        }
+                    }
+                    // 除く条件 (スラッシュ表示): タップで解除
+                    ForEach(Array(filter.excludedMyMonsters), id: \.self) { m in
+                        chipMonster(name: m, isEnemy: false, excluded: true) {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                _ = filter.excludedMyMonsters.remove(m)
+                            }
+                        }
+                    }
+                    ForEach(Array(filter.excludedEnemyMonsters), id: \.self) { m in
+                        chipMonster(name: m, isEnemy: true, excluded: true) {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                _ = filter.excludedEnemyMonsters.remove(m)
                             }
                         }
                     }
@@ -399,15 +429,26 @@ struct BattleHistoryView: View {
         }
     }
 
-    /// モンスターチップ — 味方=コーラル枠、敵=水色枠。ラベル/× は省略
-    private func chipMonster(name: String, isEnemy: Bool, onRemove: @escaping () -> Void) -> some View {
+    /// モンスターチップ — 味方=コーラル枠、敵=水色枠。ラベル/× は省略。
+    /// excluded (除く条件) は半透明+赤スラッシュで区別。
+    /// タップ: 含む→除く / 除く→解除 (呼び出し側で切替)。
+    private func chipMonster(name: String, isEnemy: Bool, excluded: Bool,
+                             onTap: @escaping () -> Void) -> some View {
         let color = isEnemy ? Color.sideEnemy : Color.sideMy
-        return Button(action: onRemove) {
+        return Button(action: onTap) {
             MonsterThumb(name: name, size: 24)
+                .opacity(excluded ? 0.45 : 1.0)
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .stroke(color, lineWidth: 2)
+                        .stroke(color.opacity(excluded ? 0.5 : 1.0), lineWidth: 2)
                 )
+                .overlay {
+                    if excluded {
+                        Image(systemName: "line.diagonal")
+                            .font(.system(size: 22, weight: .black))
+                            .foregroundStyle(.red)
+                    }
+                }
         }
     }
 
@@ -450,12 +491,33 @@ struct BattleHistoryView: View {
             case .winLose(let value):
                 filter.winLoseFilter = value
             case .myMonster(let name) where name != "?":
-                filter.requiredMyMonsters.insert(name)
+                var (req, exc) = (filter.requiredMyMonsters, filter.excludedMyMonsters)
+                cycleMonsterFilter(name, required: &req, excluded: &exc)
+                filter.requiredMyMonsters = req
+                filter.excludedMyMonsters = exc
             case .enemyMonster(let name) where name != "?":
-                filter.requiredEnemyMonsters.insert(name)
+                var (req, exc) = (filter.requiredEnemyMonsters, filter.excludedEnemyMonsters)
+                cycleMonsterFilter(name, required: &req, excluded: &exc)
+                filter.requiredEnemyMonsters = req
+                filter.excludedEnemyMonsters = exc
             default:
                 break
             }
+        }
+    }
+
+    /// レコード上のモンスタータップの巡回: 未設定→含む→除く→含む→…
+    /// (解除はフィルタ条件行のチップ側で行う)
+    private func cycleMonsterFilter(_ name: String, required: inout Set<String>,
+                                    excluded: inout Set<String>) {
+        if required.contains(name) {
+            required.remove(name)
+            excluded.insert(name)
+        } else if excluded.contains(name) {
+            excluded.remove(name)
+            required.insert(name)
+        } else {
+            required.insert(name)
         }
     }
 

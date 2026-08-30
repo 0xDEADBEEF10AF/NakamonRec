@@ -32,6 +32,9 @@ class HistoryActivity : AppCompatActivity() {
     private var filterResult: String? = null // null: All, "WIN", "LOSE"
     private val filterEnemyMonsters = mutableListOf<String>()
     private val filterMyMonsters = mutableListOf<String>()
+    // 除外条件: このモンスターを「含まない」レコードだけ表示 (iOS と同一仕様)
+    private val excludedEnemyMonsters = mutableListOf<String>()
+    private val excludedMyMonsters = mutableListOf<String>()
     private var isFilterMode = false
     
     private lateinit var historyAdapter: BattleHistoryAdapter
@@ -61,6 +64,8 @@ class HistoryActivity : AppCompatActivity() {
         binding.btnClearFilter.setOnClickListener {
             filterEnemyMonsters.clear()
             filterMyMonsters.clear()
+            excludedEnemyMonsters.clear()
+            excludedMyMonsters.clear()
             filterResult = null
             updateFilterStatusUI()
             setupUI()
@@ -130,18 +135,26 @@ class HistoryActivity : AppCompatActivity() {
         setupUI()
     }
 
+    /**
+     * レコード上のモンスタータップの巡回: 未設定→含む→除く→含む→…
+     * (解除はフィルタ条件行のチップ側で行う。iOS と同一仕様)
+     */
     private fun addMonsterFilter(name: String, isEnemy: Boolean) {
-        val list = if (isEnemy) filterEnemyMonsters else filterMyMonsters
-        if (list.contains(name)) return
-        if (list.size >= 4) return
-        
-        list.add(name)
+        val required = if (isEnemy) filterEnemyMonsters else filterMyMonsters
+        val excluded = if (isEnemy) excludedEnemyMonsters else excludedMyMonsters
+        when {
+            required.contains(name) -> { required.remove(name); excluded.add(name) }
+            excluded.contains(name) -> { excluded.remove(name); required.add(name) }
+            required.size >= 4 -> return
+            else -> required.add(name)
+        }
         updateFilterStatusUI()
         setupUI()
     }
 
     private fun updateFilterStatusUI() {
-        if (filterEnemyMonsters.isEmpty() && filterMyMonsters.isEmpty() && filterResult == null) {
+        if (filterEnemyMonsters.isEmpty() && filterMyMonsters.isEmpty() &&
+            excludedEnemyMonsters.isEmpty() && excludedMyMonsters.isEmpty() && filterResult == null) {
             binding.layoutFilterStatus.visibility = View.GONE
             historyAdapter.filterMyMonsters = listOf()
             historyAdapter.filterEnemyMonsters = listOf()
@@ -160,8 +173,10 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        filterMyMonsters.forEach { name -> addMonsterFilterChip(name, false) }
-        filterEnemyMonsters.forEach { name -> addMonsterFilterChip(name, true) }
+        filterMyMonsters.forEach { name -> addMonsterFilterChip(name, false, excluded = false) }
+        filterEnemyMonsters.forEach { name -> addMonsterFilterChip(name, true, excluded = false) }
+        excludedMyMonsters.forEach { name -> addMonsterFilterChip(name, false, excluded = true) }
+        excludedEnemyMonsters.forEach { name -> addMonsterFilterChip(name, true, excluded = true) }
         
         historyAdapter.filterMyMonsters = filterMyMonsters.toList()
         historyAdapter.filterEnemyMonsters = filterEnemyMonsters.toList()
@@ -195,7 +210,11 @@ class HistoryActivity : AppCompatActivity() {
         binding.chipGroupFilters.addView(chip)
     }
 
-    private fun addMonsterFilterChip(name: String, isEnemy: Boolean) {
+    /**
+     * モンスターフィルタチップ。excluded (除く条件) は半透明+赤スラッシュで区別。
+     * タップ: 含む→除くへ切替 / 除く→解除 (iOS と同一の3段階巡回)。
+     */
+    private fun addMonsterFilterChip(name: String, isEnemy: Boolean, excluded: Boolean) {
         val iconSize = resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
         val density = resources.displayMetrics.density
         
@@ -236,8 +255,9 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        // 枠線（縁取り）
-        val strokeColor = if (isEnemy) "#90D7EC".toColorInt() else "#F09199".toColorInt()
+        // 枠線（縁取り）。除く条件は薄めにする
+        val baseStroke = if (isEnemy) "#90D7EC".toColorInt() else "#F09199".toColorInt()
+        val strokeColor = if (excluded) (baseStroke and 0x00FFFFFF) or (0x80 shl 24) else baseStroke
         val border = View(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -253,9 +273,39 @@ class HistoryActivity : AppCompatActivity() {
 
         container.addView(imageView)
         container.addView(border)
-        
+
+        if (excluded) {
+            imageView.alpha = 0.45f
+            // 赤スラッシュのオーバーレイ (左下→右上)
+            val slash = object : View(this) {
+                private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.RED
+                    strokeWidth = 2.5f * density
+                    strokeCap = android.graphics.Paint.Cap.ROUND
+                }
+                override fun onDraw(canvas: android.graphics.Canvas) {
+                    super.onDraw(canvas)
+                    canvas.drawLine(width * 0.15f, height * 0.85f,
+                                    width * 0.85f, height * 0.15f, paint)
+                }
+            }.apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+            container.addView(slash)
+        }
+
         container.setOnClickListener {
-            if (isEnemy) filterEnemyMonsters.remove(name) else filterMyMonsters.remove(name)
+            val required = if (isEnemy) filterEnemyMonsters else filterMyMonsters
+            val excludedList = if (isEnemy) excludedEnemyMonsters else excludedMyMonsters
+            if (excluded) {
+                excludedList.remove(name)          // 除く → 解除
+            } else {
+                required.remove(name)              // 含む → 除く
+                excludedList.add(name)
+            }
             updateFilterStatusUI()
             setupUI()
         }
@@ -305,8 +355,11 @@ class HistoryActivity : AppCompatActivity() {
             val matchMy = if (filterMyMonsters.isEmpty()) true else {
                 filterMyMonsters.all { fName -> record.myParty.contains(fName) }
             }
-            
-            matchParty && matchComposition && matchResult && matchEnemy && matchMy
+            // 除外条件: 1体でも含まれていたら不一致
+            val matchExcluded = excludedEnemyMonsters.none { record.enemyParty.contains(it) } &&
+                excludedMyMonsters.none { record.myParty.contains(it) }
+
+            matchParty && matchComposition && matchResult && matchEnemy && matchMy && matchExcluded
         }
     }
 
@@ -322,7 +375,9 @@ class HistoryActivity : AppCompatActivity() {
             val matchMy = if (filterMyMonsters.isEmpty()) true else {
                 filterMyMonsters.all { fName -> record.myParty.contains(fName) }
             }
-            matchResult && matchEnemy && matchMy
+            val matchExcluded = excludedEnemyMonsters.none { record.enemyParty.contains(it) } &&
+                excludedMyMonsters.none { record.myParty.contains(it) }
+            matchResult && matchEnemy && matchMy && matchExcluded
         }
         
         val wins = topStatsRecords.count { it.result == "WIN" }
@@ -548,20 +603,22 @@ class HistoryActivity : AppCompatActivity() {
                 // 総合戦績を選択した場合
                 filterPartyIndex = partyIndex
                 filterMyPartyComposition = null
-                // フィルタバーの味方モンスターもクリア
+                // フィルタバーの味方モンスターもクリア (除外条件も矛盾防止でクリア)
                 filterMyMonsters.clear()
+                excludedMyMonsters.clear()
             } else {
                 // 特定の組成を選択した場合
                 filterPartyIndex = partyIndex
                 filterMyPartyComposition = selected.members
-                
+
                 // フィルタモードに強制移行
                 if (!isFilterMode) {
                     toggleMode()
                 }
-                
-                // フィルタ欄（味方モンスター）をこの組成で更新
+
+                // フィルタ欄（味方モンスター）をこの組成で更新 (除外条件は矛盾するのでクリア)
                 filterMyMonsters.clear()
+                excludedMyMonsters.clear()
                 filterMyMonsters.addAll(selected.members.filter { it.isNotEmpty() && it != "?" })
             }
             
