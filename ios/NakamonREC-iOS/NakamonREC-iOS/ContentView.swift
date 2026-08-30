@@ -12,7 +12,7 @@ struct ContentView: View {
     @State private var showDebugMenu = false
     @State private var nakamonRotation: Double = 180   // 起動時はアプリアイコンと同じ「NAKAMON が下」の状態。180° → 0° まで反時計回りに半周して着地
     @State private var hasAnimatedLogo: Bool = false
-    @State private var isBroadcasting: Bool = BroadcastStatus.isActive
+    @State private var isBroadcasting: Bool = BroadcastStatus.isEffectivelyActive()
     @State private var showFileManager = false
     @State private var showUserSettings = false
     @State private var showHelp = false
@@ -86,13 +86,15 @@ struct ContentView: View {
             .onAppear {
                 reloadHistory()
                 playLogoIntroIfNeeded()
-                isBroadcasting = BroadcastStatus.isActive
+                // ハートビート鮮度込みの実効状態 (Extension が finished を呼べず死んだ
+                // 場合の STOP 表示残留を自動修復する)
+                isBroadcasting = BroadcastStatus.isEffectivelyActive()
             }
             .task {
                 // Extension からの放送状態と戦績更新シグナルを 0.5 秒ごとに polling。
                 // SwiftUI の .task は view が消えると自動でキャンセルされる
                 while !Task.isCancelled {
-                    let active = BroadcastStatus.isActive
+                    let active = BroadcastStatus.isEffectivelyActive()
                     if active != isBroadcasting {
                         isBroadcasting = active
                         if !active {

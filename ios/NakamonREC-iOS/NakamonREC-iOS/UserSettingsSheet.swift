@@ -11,7 +11,7 @@ struct UserSettingsSheet: View {
     @State private var lightCount: Int = LightLoadConfig.lightMonsterIDs.count
     @State private var showLightPicker = false
     @State private var calibrationTarget: CalibrationScreen? = nil
-    @State private var recIsActive: Bool = BroadcastStatus.isActive
+    @State private var recIsActive: Bool = BroadcastStatus.isEffectivelyActive()
 
     var body: some View {
         NavigationStack {

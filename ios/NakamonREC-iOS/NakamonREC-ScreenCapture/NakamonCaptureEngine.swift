@@ -8,6 +8,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private let logger = Logger(subsystem: "com.android.NakamonREC-iOS", category: "CaptureEngine")
 
     private var lastProcessTime: TimeInterval = 0
+    private var lastHeartbeatAt: TimeInterval = 0   // 生存通知の送出間隔制御
     private let processInterval: TimeInterval = 0.5
 
     // バースト解析用
@@ -224,6 +225,13 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     private func handleVideoSample(_ sampleBuffer: CMSampleBuffer) {
         let currentTime = CACurrentMediaTime()
+
+        // 生存通知 (2秒間隔)。broadcastFinished を呼べず死んだ場合の
+        // STOP ボタン残留を Host 側で検知・自動修復できるようにする
+        if currentTime - lastHeartbeatAt >= 2 {
+            lastHeartbeatAt = currentTime
+            BroadcastStatus.beat()
+        }
 
         // バースト撮影中: モンスター解析のために画像蓄積
         if isAnalyzing {
