@@ -106,13 +106,15 @@ class MainActivity : AppCompatActivity() {
     }
     private var csvContentToSave: String? = null
 
+    /// 起動時に PackageInfo から取得した versionName。About ダイアログでも表示する
+    private var currentVersionName = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        var currentVersionName = ""
         try {
             val pInfo = if (Build.VERSION.SDK_INT >= 33) {
                 packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
@@ -769,9 +771,27 @@ class MainActivity : AppCompatActivity() {
         return try { contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(File(filesDir, destFileName)).use { output -> input.copyTo(output) } }; true } catch (_: Exception) { false }
     }
 
+    // About ダイアログ (旧 Readme)。使い方・主要機能・推奨環境は公開ヘルプ (help_url) に移管したため、
+    // ここではバージョン + ヘルプへの導線 + 概要/注意事項/問い合わせ/著作権だけを表示する (iOS HelpView と同構成)。
+    // アップデート確認はデバッグメニュー (バージョン番号長押し) と起動時自動チェックが担う。
     private fun showReadmeDialog() {
-        val scrollView = ScrollView(this); val textView = TextView(this).apply { text = getString(R.string.readme_content); textSize = 13f; setPadding(60, 40, 60, 40); setLineSpacing(0f, 1.2f); setTextColor("#CCCCCC".toColorInt()) }
-        scrollView.addView(textView); AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle(R.string.readme_title).setView(scrollView).setPositiveButton("閉じる", null).show()
+        val body = buildString {
+            append(getString(R.string.readme_version_format, currentVersionName)).append("\n\n")
+            append(getString(R.string.readme_help_hint)).append("\n\n")
+            append(getString(R.string.readme_content))
+        }
+        val scrollView = ScrollView(this); val textView = TextView(this).apply { text = body; textSize = 13f; setPadding(60, 40, 60, 40); setLineSpacing(0f, 1.2f); setTextColor("#CCCCCC".toColorInt()) }
+        scrollView.addView(textView)
+        AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle(R.string.readme_title).setView(scrollView)
+            .setPositiveButton("閉じる", null)
+            // 外部ブラウザで公開ヘルプを開く (通信の主体はブラウザ。アプリ自身はヘルプ取得の通信をしない)
+            .setNeutralButton(R.string.btn_open_help) { _, _ -> openHelpPage() }
+            .show()
+    }
+
+    private fun openHelpPage() {
+        try { startActivity(Intent(Intent.ACTION_VIEW, getString(R.string.help_url).toUri())) }
+        catch (_: Exception) { showTopToast("ブラウザを開けませんでした") }
     }
 
     override fun onStart() { super.onStart(); ContextCompat.registerReceiver(this, serviceStopReceiver, IntentFilter(MediaCaptureService.ACTION_SERVICE_STOPPED), ContextCompat.RECEIVER_NOT_EXPORTED); updateUI(MediaCaptureService.isRunning) }

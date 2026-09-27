@@ -1,8 +1,12 @@
 import SwiftUI
 import NakamonREC_Shared
 
-/// ヘルプ + バージョン情報 + アップデート確認画面 (Phase 9)
-/// メイン画面の右上「?」アイコンから表示する。Android `readme_content` を iOS 向けに調整した内容
+/// About 画面 (バージョン情報 + アップデート確認 + 概要 / 注意事項 / 著作権)
+/// メイン画面の右上「?」アイコンから表示する。Android `readme_content` と同じ構成。
+///
+/// 使い方・主要機能・推奨環境などバージョンごとに変化する説明は 26.10.1 でアプリから外し、
+/// 公開ヘルプ (docs/help.html) に一本化した。「使い方はこちら」ボタンで外部ブラウザを開く
+/// (通信の主体はブラウザであり、アプリ自身はヘルプ取得のための通信を行わない)。
 struct HelpView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -16,6 +20,9 @@ struct HelpView: View {
     // App Store のアプリページ URL は iTunes Lookup API から動的に取得する
     // (GitHub Releases リンクはストア一本化 2026-08-15 で廃止)
 
+    /// 公開ヘルプ (GitHub Pages)。Android `help_url` と同じ URL
+    private let helpURL = URL(string: "https://0xdeadbeef10af.github.io/NakamonRec/help.html")!
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -23,10 +30,8 @@ struct HelpView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         versionCard
+                        helpLinkCard
                         section(title: "アプリ概要", body: appOverview)
-                        section(title: "主要機能", body: features)
-                        section(title: "使い方", body: usage)
-                        section(title: "推奨環境", body: requirements)
                         section(title: "注意事項", body: cautions)
                         section(title: "不具合・ご要望について", body: feedback)
                         section(title: "著作権表記", body: copyright)
@@ -53,7 +58,7 @@ struct HelpView: View {
                     Text("Version \(appVersion) (build \(buildNumber))")
                         .font(.headline)
                         .foregroundStyle(.white)
-                    Text("iOS 17.0 以上")
+                    Text("iOS 26.5 以上 / iPhone 専用")
                         .font(.caption)
                         .foregroundStyle(.gray)
                 }
@@ -80,6 +85,32 @@ struct HelpView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
+    /// 公開ヘルプへの導線。使い方・機能一覧・推奨環境・グランプリ特設などはすべてこちらに集約
+    private var helpLinkCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                UIApplication.shared.open(helpURL)
+            } label: {
+                HStack {
+                    Text("📖")
+                    Text("使い方はこちら")
+                    Spacer()
+                    Image(systemName: "safari")
+                }
+                .font(.callout.bold())
+                .foregroundStyle(Color.recCoral)
+            }
+            Text("使い方・主要機能・推奨環境・グランプリ集計の手順などは、ブラウザで開く公開ヘルプに掲載しています。")
+                .font(.caption)
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     private func section(title: String, body: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("【\(title)】")
@@ -97,44 +128,11 @@ struct HelpView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    // MARK: - Texts (Android strings.xml readme_content をベースに iOS 向け調整)
+    // MARK: - Texts (Android strings.xml readme_content と同じ構成)
+    // 使い方・主要機能・推奨環境は docs/help.html に移管済み (26.10.1)。ここには変化の少ない文書だけを置く。
 
     private let appOverview = """
 本アプリはドラクエウォークの「なかまモンスター」戦闘画面をリアルタイムで解析し、自分と相手のモンスターおよび勝敗を自動的に記録する「非公式」の分析ツールです。ファンコミュニティの活動をサポートし、より楽しいゲーム体験を提供することを目的としています。
-"""
-
-    private let features = """
-・自動戦闘記録: iOS の画面ブロードキャスト (Broadcast Upload Extension) によるリアルタイム画面解析 (動画ファイルは生成されません)
-・OpenCV パターンマッチング: 独自の高速キャッシュ + 1080-ref スケーリングで様々な iPhone 解像度に対応
-・パーティ集計: TOTAL / P1 / P2 / P3 ごとの勝率・使用率と、1 日ごとの勝率推移を表示
-・モンスター集計: 敵モンスターの出現率と対戦時勝率をランキング表示。出現率順 / 勝率低い順 / 勝率高い順で並べ替え可能。P1〜3 簡易フィルタにも追従
-・直近勝率トレンドグラフ: 20 戦のローリング勝率推移を戦績画面上部に表示。スクロールで過去まで遡れる
-・マッチングスコア詳細: 戦績ごとに識別スコアを保存。識別漏れがあった場合に閾値超過状況を確認できる (最新 1 戦はサムネ画像も保持)
-・戦績の編集・削除: 誤って記録された内容は、戦績一覧から手動で修正・削除可能。レコードの追加挿入もできる
-・データ管理: 複数の戦績ファイル切替、新規作成、リネーム、削除、ファイルマージ、CSV エクスポート / インポートに対応
-・柔軟な校正: パーティ選択 / VS / 勝利 / ざんねん の 4 画面それぞれを自動校正可能。校正で生成されるカスタムテンプレで識別精度を最大化。VS画面ではモンスター 8 スロット per-slot 自動校正も実装
-・軽負荷モード: 識別対象を指定モンスターのみに絞って解析時間を短縮。対象モンスターをユーザーが追加 / 削除可能
-・VS_FM + VS_MG 多段検出: 普段用 / 大会用どちらの VS ロゴでも検出。校正済みでも未校正ロゴ種にフォールバック
-"""
-
-    private let usage = """
-1. 画面上部の 📂 アイコンから記録用のファイルを選択または新規作成します。
-2. 初回のみ 📷 アイコンの「キャプチャー画面の校正」から、パーティ選択画面・VS画面・勝利画面・ざんねん画面のスクショをインポートし、「自動校正」ボタンを押してください。緑枠がモンスター/ロゴ位置に合うはずです。
-3. メイン画面の「REC」ボタンを押し、画面ブロードキャストを開始します。
-4. 戦闘を開始すると、VS画面で自動的にモンスターが識別され、終了時に勝敗が記録されます。
-5. 記録された内容は画面下部の戦績サマリをタップして「戦績チェック」画面で確認できます。レコードを長押しすると勝敗・モンスター・使用パーティ・マッチングスコア詳細の確認や修正・削除ができます。
-6. 戦績画面下部のアイコンで操作切替: ◀ 戻る、✎ / ▼フィルタ アイコンで編集モード / フィルタモードを切替。🔍 アイコンから集計メニュー (パーティ集計 / モンスター集計) にアクセス。
-7. 戦績画面上部の P1 / P2 / P3 カードや WIN/LOSE/モンスター行のタップでフィルタ条件を絞り込み可能 (フィルタモード時)。
-8. メイン画面の 🗑 アイコンで現在のファイルの戦績を全件クリアできます (ファイル自体は残ります)。
-"""
-
-    private let requirements = """
-・OS: iOS 17.0 以上
-・メモリ: 4GB 以上推奨 (Broadcast Upload Extension は 50MB 制限がありシビアです)
-・動作確認済み: iPhone 13 mini / iPhone 15
-・iPhone SE シリーズ (4.7インチ) は本バージョンから対応 (β) です。パーティ選択画面の校正には「一覧をスクロールせず、パーティ1か2を選択した状態」のスクリーンショットを使ってください (パーティ3の位置は自動補完されます)
-・iPad は動作対象外です (iPhone 専用アプリ)
-・上記以外の機種は未検証ですが、校正機能で多くの機種差は吸収できる設計です
 """
 
     private let cautions = """
@@ -149,6 +147,7 @@ struct HelpView: View {
 
     private let feedback = """
 動作しない場合や改善のご要望がありましたら、GitHub の Issue または SNS にてお知らせください。その際、ご使用の機種名 (例: iPhone 15 Pro) を併記いただけますと幸いです。皆様のフィードバックがアプリの改善に繋がります。
+GitHub Issues: https://github.com/0xDEADBEEF10AF/NakamonRec/issues
 """
 
     private let copyright = """

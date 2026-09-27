@@ -59,7 +59,7 @@
 <body>
 
 <h1>NakamonREC Privacy Policy / プライバシーポリシー</h1>
-<p class="meta">Last updated: 2026-06-25</p>
+<p class="meta">Last updated: 2026-09-27</p>
 
 <h2>日本語</h2>
 
@@ -88,35 +88,58 @@
   <li>解析処理はすべて<strong>端末内ローカル</strong>で実行されます</li>
   <li>動画ファイル・スクリーンショット画像は一切外部に送信されません</li>
   <li>解析結果 (対戦戦績データ) は端末内のアプリ専用領域にのみ保存されます</li>
-  <li>本アプリは<strong>ネットワーク通信を一切行いません</strong></li>
+  <li>画面映像・解析結果・戦績データのために<strong>ネットワーク通信を行うことはありません</strong></li>
 </ul>
 
-<h3>3. データの第三者提供</h3>
+<h3>3. ネットワーク通信について</h3>
 <p>
-  本アプリは外部サーバーとの通信を一切行いません。したがって、ユーザーのいかなるデータも
-  第三者 (Apple、Google、開発者本人を含む) に提供・送信されることはありません。
+  本アプリが行うネットワーク通信は、以下の<strong>アップデート確認</strong>に限られます。
+  いずれもアプリストアが提供する公開 API であり、ユーザーのデータ (戦績・画面映像・個人情報) は
+  一切含まれません。
+</p>
+<ul>
+  <li>iOS: Apple の iTunes Lookup API (<code>itunes.apple.com</code>) に本アプリの
+    Bundle ID を送信し、App Store 上の最新バージョン情報を取得します</li>
+  <li>Android: Google Play の In-App Update API を通じて、Google Play 上の最新バージョン情報を取得します</li>
+</ul>
+<p>
+  これらの通信は Apple / Google のサーバーとの間で行われ、通信に伴い接続元の IP アドレス等が
+  各社のプライバシーポリシーに従って取り扱われる可能性があります。開発者がこれらの通信内容を
+  受け取ることはありません。アップデート確認は起動時に自動で行われるほか、アプリ内から手動で
+  実行することもできます。
+</p>
+<p>
+  また、アプリ内の「使い方はこちら」等のリンクは端末の Web ブラウザを起動して開きます。
+  その際の通信は本アプリではなくブラウザが行います。
 </p>
 
-<h3>4. データの保管期間</h3>
+<h3>4. データの第三者提供</h3>
+<p>
+  本アプリは、上記のアップデート確認以外に外部サーバーとの通信を行いません。
+  ユーザーの戦績データ・画面映像・個人情報が第三者 (Apple、Google、開発者本人を含む) に
+  提供・送信されることはありません。
+</p>
+
+<h3>5. データの保管期間</h3>
 <p>
   すべての戦績データは、ユーザーの端末内にのみ保存されます。ユーザーがアプリを
   アンインストールした時点で、すべてのデータは端末から削除されます。
   バックアップサーバー等への保存は一切行われません。
 </p>
 
-<h3>5. 子供のプライバシー</h3>
+<h3>6. 子供のプライバシー</h3>
 <p>
   本アプリは特定の年齢層を対象とせず、ユーザーから情報を収集することもないため、
   COPPA (米国児童オンラインプライバシー保護法) に該当する情報の取得は発生しません。
 </p>
 
-<h3>6. プライバシーポリシーの変更</h3>
+<h3>7. プライバシーポリシーの変更</h3>
 <p>
   本ポリシーの内容は、必要に応じて変更されることがあります。変更があった場合、
   本ページ上で最終更新日を改定して告知します。
 </p>
 
-<h3>7. お問い合わせ</h3>
+<h3>8. お問い合わせ</h3>
 <p>
   本ポリシーまたは本アプリに関するお問い合わせは、下記の GitHub Issues
   ページよりお願いいたします。
@@ -160,36 +183,65 @@
   <li>All analysis runs <strong>locally on the device</strong></li>
   <li>No video files or screenshots are transmitted externally</li>
   <li>Battle records are stored only in the App's local sandbox</li>
-  <li>The App performs <strong>no network communication</strong></li>
+  <li>The App performs <strong>no network communication</strong> for screen
+    frames, analysis results, or battle records</li>
 </ul>
 
-<h3>3. Third-party Data Sharing</h3>
+<h3>3. Network Communication</h3>
 <p>
-  The App does not communicate with any external server. Therefore, no user
-  data is shared with or transmitted to any third party, including Apple,
-  Google, or the developer.
+  The only network communication performed by the App is the
+  <strong>update check</strong> described below. Both use public APIs provided
+  by the app stores, and no user data (battle records, screen frames, or
+  personal information) is included.
+</p>
+<ul>
+  <li>iOS: The App sends its Bundle ID to Apple's iTunes Lookup API
+    (<code>itunes.apple.com</code>) to retrieve the latest version available on
+    the App Store</li>
+  <li>Android: The App retrieves the latest version available on Google Play
+    via the Google Play In-App Update API</li>
+</ul>
+<p>
+  These requests are exchanged with Apple / Google servers, and connection
+  metadata such as the IP address may be handled under their respective
+  privacy policies. The developer does not receive any of this traffic. The
+  update check runs automatically at launch and can also be triggered manually
+  from within the App.
+</p>
+<p>
+  Links inside the App (such as "How to use") open in the device's web
+  browser. Any communication that follows is performed by the browser, not by
+  the App.
 </p>
 
-<h3>4. Data Retention</h3>
+<h3>4. Third-party Data Sharing</h3>
+<p>
+  Apart from the update check above, the App does not communicate with any
+  external server. No battle records, screen frames, or personal information
+  are shared with or transmitted to any third party, including Apple, Google,
+  or the developer.
+</p>
+
+<h3>5. Data Retention</h3>
 <p>
   All battle data is stored only on the user's device. When the user
   uninstalls the App, all data is removed from the device. No data is
   retained on any backup server.
 </p>
 
-<h3>5. Children's Privacy</h3>
+<h3>6. Children's Privacy</h3>
 <p>
   The App does not target any specific age group and collects no
   information from users, so no information subject to COPPA is acquired.
 </p>
 
-<h3>6. Changes to This Policy</h3>
+<h3>7. Changes to This Policy</h3>
 <p>
   This policy may be updated as necessary. When updated, the
   "Last updated" date on this page will be revised.
 </p>
 
-<h3>7. Contact</h3>
+<h3>8. Contact</h3>
 <p>
   For inquiries about this policy or the App, please use the GitHub Issues
   page below.
