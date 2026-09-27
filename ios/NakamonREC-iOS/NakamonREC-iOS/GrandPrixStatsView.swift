@@ -7,7 +7,12 @@ import NakamonREC_Shared
 /// レコードを長押しすると操作メニュー(編集/削除/次に追加)。
 /// 「1 ファイル = 1 グランプリ」前提。
 struct GrandPrixStatsView: View {
-    @State private var records: [GrandPrixRecord] = []
+    // ドラッグ選択中は state 変化ごとに body が再評価されるため、並べ替え・日時パース・点データは
+    // reload() で一度だけ計算して保持する (計算プロパティにすると 1 フレームに複数回の
+    // DateFormatter パース付きソートが走り、なぞりが引っかかる。2026-09-27 ビーフ指摘で修正)
+    @State private var sorted: [GrandPrixRecord] = []       // timestamp 昇順
+    @State private var sortedDates: [Date] = []             // sorted と同じ並びのパース済み日時 (不正は .distantPast)
+    @State private var chartPoints: [ChartPoint] = []       // グラフ用の点 (id は安定)
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
     @State private var chartZoomed = false         // true = 直近N戦ズーム+横スクロール
     /// 横軸。false = 戦闘の順番 (既定、1 戦 = 1 目盛で等間隔) / true = 実時間 (日時)。
@@ -18,8 +23,8 @@ struct GrandPrixStatsView: View {
     @State private var editing: GrandPrixRecord? = nil      // 操作メニュー対象
     @State private var editingForm: GrandPrixRecord? = nil  // 編集フォーム対象
     @State private var pendingAdd: FormSeed? = nil          // 追加フォーム (初期日時+引き継ぐランク帯)
-    @State private var rawSelection: Date? = nil            // グラフのドラッグ/タップ選択 (生値)
-    @State private var pinnedDate: Date? = nil              // 確定した選択点 (nil = 最新)
+    @State private var rawSelection: Date? = nil            // 日時軸でのドラッグ/タップ選択 (生値)
+    @State private var pinnedIndex: Int? = nil              // 確定した選択点 (sorted の添字、nil = 最新)
 
     /// ズーム時に表示する直近の戦闘数 (大会中は4桁になり得るため全体表示だと潰れる)
     private let zoomBattleCount = 50
@@ -29,16 +34,30 @@ struct GrandPrixStatsView: View {
     private var showDots: Bool { chartZoomed || sorted.count <= dotLimit }
     @Environment(\.dismiss) private var dismiss
 
-    private var sorted: [GrandPrixRecord] {
-        records.sorted {
-            (BattleTimestampFormatter.date(from: $0.timestamp) ?? .distantPast)
-                < (BattleTimestampFormatter.date(from: $1.timestamp) ?? .distantPast)
-        }
-    }
     private var currentRecord: GrandPrixRecord? { sorted.last }
     private var maxRecord: GrandPrixRecord? { sorted.max { $0.currentRating < $1.currentRating } }
 
-    private func reload() { records = BattleHistoryStore.shared.loadGrandPrixRecords() }
+    /// ストアから読み直し、並べ替え・日時・グラフ点をまとめて再計算する (編集/追加/削除後にも呼ぶ)
+    private func reload() {
+        let recs = BattleHistoryStore.shared.loadGrandPrixRecords()
+        let paired = recs
+            .map { ($0, BattleTimestampFormatter.date(from: $0.timestamp)) }
+            .sorted { ($0.1 ?? .distantPast) < ($1.1 ?? .distantPast) }
+        sorted = paired.map { $0.0 }
+        sortedDates = paired.map { $0.1 ?? .distantPast }
+        // index = 戦闘の順番 (1 始まり、テキスト一覧の「戦」と同じ番号)。日時不正の点はグラフから除外
+        var pts: [ChartPoint] = []
+        for (i, (r, d)) in paired.enumerated() {
+            guard let d else { continue }
+            pts.append(ChartPoint(index: i + 1, date: d, rating: r.currentRating, series: "自分"))
+            if let border = r.borderRating {
+                pts.append(ChartPoint(index: i + 1, date: d, rating: border, series: "ボーダー"))
+            }
+        }
+        chartPoints = pts
+        // 選択は範囲内なら維持、外れたら最新へ
+        if let p = pinnedIndex, !sorted.indices.contains(p) { pinnedIndex = nil }
+    }
 
     var body: some View {
         NavigationStack {
@@ -171,27 +190,22 @@ struct GrandPrixStatsView: View {
 
     // MARK: - Chart
 
+    /// id は「戦闘番号|系列」で安定させる (UUID だと再評価ごとに全マークが作り直されて重い)
     private struct ChartPoint: Identifiable {
-        let id = UUID(); let index: Int; let date: Date; let rating: Double; let series: String
-    }
-    /// index = 戦闘の順番 (1 始まり、テキスト一覧の「戦」と同じ番号)
-    private var chartPoints: [ChartPoint] {
-        var pts: [ChartPoint] = []
-        for (i, r) in sorted.enumerated() {
-            guard let d = BattleTimestampFormatter.date(from: r.timestamp) else { continue }
-            pts.append(ChartPoint(index: i + 1, date: d, rating: r.currentRating, series: "自分"))
-            if let border = r.borderRating {
-                pts.append(ChartPoint(index: i + 1, date: d, rating: border, series: "ボーダー"))
-            }
-        }
-        return pts
+        let index: Int; let date: Date; let rating: Double; let series: String
+        var id: String { "\(index)|\(series)" }
     }
 
-    /// 選択レコードの戦闘番号 (1 始まり)
-    private var selectedIndex: Int? {
-        guard let sel = selectedRecord, let i = sorted.firstIndex(where: { $0.id == sel.id }) else { return nil }
-        return i + 1
+    /// 選択レコードの sorted 添字 (未選択時は最新)
+    private var selectedSortedIndex: Int? {
+        guard !sorted.isEmpty else { return nil }
+        if let p = pinnedIndex, sorted.indices.contains(p) { return p }
+        return sorted.count - 1
     }
+    /// 選択レコードの戦闘番号 (1 始まり)
+    private var selectedIndex: Int? { selectedSortedIndex.map { $0 + 1 } }
+    /// 選択レコードの日時 (日時軸の RuleMark 用、パース済み)
+    private var selectedDate: Date? { selectedSortedIndex.map { sortedDates[$0] } }
 
     /// Y レンジ = データの min..max ±10% (Android GrandPrixGraphView と同じ。0 起点だと潰れる)
     private var yDomain: ClosedRange<Double> {
@@ -202,15 +216,16 @@ struct GrandPrixStatsView: View {
     }
 
     /// 選択中のレコード (未選択時は最新 = Android と同じ既定)
-    private var selectedRecord: GrandPrixRecord? {
-        guard let pinned = pinnedDate else { return sorted.last }
-        return sorted.first { BattleTimestampFormatter.date(from: $0.timestamp) == pinned } ?? sorted.last
-    }
+    private var selectedRecord: GrandPrixRecord? { selectedSortedIndex.map { sorted[$0] } }
 
-    /// 生の選択日時から最も近いレコードの日時にスナップする
-    private func nearestRecordDate(to date: Date) -> Date? {
-        let dates = sorted.compactMap { BattleTimestampFormatter.date(from: $0.timestamp) }
-        return dates.min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
+    /// 生の選択日時から最も近いレコードの添字にスナップする (パース済み日時を使うので軽い)
+    private func nearestIndex(to date: Date) -> Int? {
+        var best: Int? = nil; var bestDist = TimeInterval.infinity
+        for (i, d) in sortedDates.enumerated() where d != .distantPast {
+            let dist = abs(d.timeIntervalSince(date))
+            if dist < bestDist { bestDist = dist; best = i }
+        }
+        return best
     }
 
     private var chartCard: some View {
@@ -311,17 +326,17 @@ struct GrandPrixStatsView: View {
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine()
-                if let i = value.as(Int.self), i >= 1, i <= sorted.count,
-                   let d = BattleTimestampFormatter.date(from: sorted[i - 1].timestamp) {
-                    AxisValueLabel { axisDateLabel(d) }
+                if let i = value.as(Int.self), i >= 1, i <= sortedDates.count,
+                   sortedDates[i - 1] != .distantPast {
+                    AxisValueLabel { axisDateLabel(sortedDates[i - 1]) }
                 }
             }
         }
         .chartXSelection(value: $rawIndexSelection)
         .onChange(of: rawIndexSelection) { _, new in
             guard let i = new, !sorted.isEmpty else { return }
-            let clamped = min(max(i, 1), sorted.count)
-            pinnedDate = BattleTimestampFormatter.date(from: sorted[clamped - 1].timestamp)
+            let clamped = min(max(i, 1), sorted.count) - 1
+            if pinnedIndex != clamped { pinnedIndex = clamped }
         }
         .chartLegend(.hidden)   // 凡例は chartCard 側でグラフ下に自前描画 (Android と統一)
         .frame(height: 300)
@@ -336,8 +351,7 @@ struct GrandPrixStatsView: View {
                     .symbol(.circle)
                     .symbolSize(showDots ? 24 : 0)
             }
-            if let sel = selectedRecord,
-               let d = BattleTimestampFormatter.date(from: sel.timestamp) {
+            if let sel = selectedRecord, let d = selectedDate, d != .distantPast {
                 RuleMark(x: .value("日時", d))
                     .foregroundStyle(.white.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1))
@@ -358,7 +372,8 @@ struct GrandPrixStatsView: View {
         }
         .chartXSelection(value: $rawSelection)
         .onChange(of: rawSelection) { _, new in
-            if let d = new { pinnedDate = nearestRecordDate(to: d) }
+            guard let d = new, let i = nearestIndex(to: d) else { return }
+            if pinnedIndex != i { pinnedIndex = i }
         }
         .chartLegend(.hidden)
         .frame(height: 300)
@@ -367,7 +382,7 @@ struct GrandPrixStatsView: View {
     /// 日時軸でのズーム時の可視範囲: 直近 zoomBattleCount 戦ぶんの時間幅 (最低10分)。
     /// initialX = その先頭日時 (開いた時点で最新側が見える)。戦闘数軸では chartCard 側で件数指定
     private var zoomDomain: (start: Date, length: TimeInterval)? {
-        let dates = sorted.compactMap { BattleTimestampFormatter.date(from: $0.timestamp) }
+        let dates = sortedDates.filter { $0 != .distantPast }
         guard let last = dates.last, dates.count > zoomBattleCount else { return nil }
         let start = dates[dates.count - zoomBattleCount]
         let length = max(last.timeIntervalSince(start), 600)
