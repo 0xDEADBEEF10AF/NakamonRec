@@ -852,19 +852,22 @@ class HistoryActivity : AppCompatActivity() {
         val sdfIn = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfOut = SimpleDateFormat("M/d HH:mm", Locale.US)  // 例: 8/23 18:00
         val points = records.map { r ->
-            val label = try { sdfOut.format(sdfIn.parse(r.timestamp)!!) } catch (_: Exception) { r.timestamp.takeLast(5) }
-            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier)
+            val date = try { sdfIn.parse(r.timestamp) } catch (_: Exception) { null }
+            val label = date?.let { sdfOut.format(it) } ?: r.timestamp.takeLast(5)
+            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier, date?.time ?: 0L)
         }
         // 大会中は4桁レコードになり得るため、全体表示 (既定) と
         // 直近N戦ズーム+横スクロールをトグルで切替できるようにする
         val zoomCount = 50
         val graph = GrandPrixGraphView(this)
         var zoomed = false
-        val toggleBtn = android.widget.TextView(this).apply {
+        fun toggleTextView() = android.widget.TextView(this).apply {
             textSize = 12f
             setTextColor("#F09199".toColorInt())
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(dp(8), dp(2), dp(8), dp(2))
+        }
+        val toggleBtn = toggleTextView().apply {
             visibility = if (points.size > zoomCount) View.VISIBLE else View.GONE
         }
         fun applyZoom() {
@@ -873,6 +876,12 @@ class HistoryActivity : AppCompatActivity() {
             toggleBtn.text = if (zoomed) "全体表示" else "直近${zoomCount}戦"
         }
         toggleBtn.setOnClickListener { zoomed = !zoomed; applyZoom() }
+        // 横軸の切替 (既定 = 戦闘数、タップで日時軸と反転。表示は現在の軸。iOS と統一)
+        val axisBtn = toggleTextView().apply { text = "横軸: 戦闘数" }
+        axisBtn.setOnClickListener {
+            graph.timeAxis = !graph.timeAxis
+            axisBtn.text = if (graph.timeAxis) "横軸: 日時" else "横軸: 戦闘数"
+        }
 
         // 選択点の詳細 (iOS の情報枠と統一): エンブレム + R/B + 日時 をグラフ上部に固定表示
         val selEmblem = android.widget.ImageView(this).apply {
@@ -937,6 +946,7 @@ class HistoryActivity : AppCompatActivity() {
                 layoutParams = android.widget.LinearLayout.LayoutParams(0,
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            addView(axisBtn)
             addView(toggleBtn)
         })
         return col

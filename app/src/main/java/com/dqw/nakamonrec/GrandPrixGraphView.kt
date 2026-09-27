@@ -13,13 +13,17 @@ import java.util.Locale
  * グランプリのレーティング推移グラフ。MonsterStatsGraphView (勝率/出現率の2本線) と
  * 同じ見た目・操作 (横スクロール+タップでツールチップ) を踏襲しつつ、
  * Y軸を固定 0-100% ではなくデータの min..max に自動レンジ化し、
- * 自分のレーティング (赤) と ボーダー (青) の2本を描く。ボーダーは欠損点 (GM/ランクアップ) で途切れる。
+ * 自分のレーティング (赤) と ボーダー (青) の2本を描く。ボーダーは欠損点 (GM/ランクアップ) を挟んでも前後の点を連結する。
+ * 横軸は戦闘の順番 (既定) / 実時間 (timeAxis=true) を切替可。
  */
 class GrandPrixGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    data class RatingPoint(val rating: Double, val border: Double?, val dateLabel: String, val rankTier: String? = null)
+    data class RatingPoint(
+        val rating: Double, val border: Double?, val dateLabel: String, val rankTier: String? = null,
+        val epochMillis: Long = 0L   // 日時軸モードでの X 位置に使う (0 = 不明、その場合は等間隔扱い)
+    )
 
     private var dataPoints: List<RatingPoint> = emptyList()
     private var scrollOffset: Float = 0f
@@ -27,6 +31,16 @@ class GrandPrixGraphView @JvmOverloads constructor(
     private var selectedIndex: Int = -1
     private var lastNotifiedIndex = -2
     var visibleCount = 8
+
+    /**
+     * 横軸。false = 戦闘の順番 (既定、1 戦 = 1 目盛で等間隔) / true = 実時間 (日時)。
+     * 日時軸では全体の横幅 (= (n-1)*stepX) を保ったまま、各点を時刻の比率で配置する。
+     * 実時間軸はセッションが縦に潰れて形が読めないため既定は戦闘数軸 (iOS と統一、2026-09-27)。
+     */
+    var timeAxis: Boolean = false
+        set(value) { if (field != value) { field = value; lastNotifiedIndex = -2; notifySelection(); invalidate() } }
+    private var tMin = 0L
+    private var tMax = 0L
 
     /** 選択点が変わったら通知 (null = 選択なし)。数値表示はグラフ上部の情報枠が担う (iOS と統一) */
     var onSelectionChanged: ((RatingPoint?) -> Unit)? = null
@@ -66,7 +80,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (dataPoints.isEmpty()) return false
             val stepX = calculateStepX(); if (stepX <= 0) return false
-            val i = ((e.x + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
+            val i = nearestIndex(e.x, stepX)
             selectedIndex = if (selectedIndex == i) -1 else i
             notifySelection()
             invalidate(); return true
@@ -75,9 +89,33 @@ class GrandPrixGraphView @JvmOverloads constructor(
 
     fun setData(points: List<RatingPoint>) {
         this.dataPoints = points
+        val ts = points.map { it.epochMillis }.filter { it > 0L }
+        tMin = ts.minOrNull() ?: 0L
+        tMax = ts.maxOrNull() ?: 0L
         selectedIndex = if (points.isNotEmpty()) points.size - 1 else -1
         lastNotifiedIndex = -2
         post { scrollOffset = calculateMaxScroll(); notifySelection(); invalidate() }
+    }
+
+    /** i 番目の点の X 座標 (スクロール反映済み)。戦闘数軸は等間隔、日時軸は時刻の比率で配置 */
+    private fun xOf(i: Int, stepX: Float): Float {
+        val n = dataPoints.size
+        val base = if (timeAxis && n > 1 && tMax > tMin) {
+            val t = dataPoints[i].epochMillis
+            val frac = if (t > 0L) (t - tMin).toDouble() / (tMax - tMin).toDouble() else i.toDouble() / (n - 1)
+            (frac * (n - 1) * stepX).toFloat()
+        } else i * stepX
+        return paddingLeft + base - scrollOffset
+    }
+
+    /** 画面 X 座標に最も近い点のインデックス */
+    private fun nearestIndex(screenX: Float, stepX: Float): Int {
+        var best = 0; var bestD = Float.MAX_VALUE
+        for (i in dataPoints.indices) {
+            val d = kotlin.math.abs(xOf(i, stepX) - screenX)
+            if (d < bestD) { bestD = d; best = i }
+        }
+        return best
     }
 
     /** 現在のアクティブ点 (ドラッグ中はタッチ位置、それ以外はタップ選択) */
@@ -85,8 +123,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
         val stepX = calculateStepX()
         if (dataPoints.isEmpty() || stepX <= 0) return -1
         return if (touchX != -1f) {
-            if (touchX in (paddingLeft - 20f)..(width - paddingRight + 50f))
-                ((touchX + scrollOffset - paddingLeft) / stepX + 0.5f).toInt().coerceIn(0, dataPoints.size - 1)
+            if (touchX in (paddingLeft - 20f)..(width - paddingRight + 50f)) nearestIndex(touchX, stepX)
             else -1
         } else selectedIndex
     }
@@ -146,7 +183,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
         val labelGap = 16f
 
         dataPoints.forEachIndexed { i, data ->
-            val x = paddingLeft + i * stepX - scrollOffset
+            val x = xOf(i, stepX)
             if (x < paddingLeft - stepX || x > w + stepX) return@forEachIndexed
             val yR = yOf(data.rating)
             if (pathRating.isEmpty) pathRating.moveTo(x, yR) else pathRating.lineTo(x, yR)
@@ -179,7 +216,7 @@ class GrandPrixGraphView @JvmOverloads constructor(
         val activeIndex = activeIndexNow()
 
         if (activeIndex != -1 && stepX >= 0) {
-            val targetX = paddingLeft + activeIndex * stepX - scrollOffset
+            val targetX = xOf(activeIndex, stepX)
             if (targetX in (paddingLeft - 5f)..(w - paddingRight + 5f)) {
                 val data = dataPoints[activeIndex]
                 val yR = yOf(data.rating)

@@ -3,13 +3,18 @@ import Charts
 import NakamonREC_Shared
 
 /// グランプリ集計画面。読込中ファイルの grandPrixRecords を、自分のレーティング折れ線 +
-/// ボーダー折れ線で表示(グラフ既定)。トグルでテキスト(レコード一覧)に切替でき、
+/// ボーダー折れ線で表示(グラフ既定、横軸は戦闘数が既定で日時軸にも切替可)。トグルでテキスト(レコード一覧)に切替でき、
 /// レコードを長押しすると操作メニュー(編集/削除/次に追加)。
 /// 「1 ファイル = 1 グランプリ」前提。
 struct GrandPrixStatsView: View {
     @State private var records: [GrandPrixRecord] = []
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
     @State private var chartZoomed = false         // true = 直近N戦ズーム+横スクロール
+    /// 横軸。false = 戦闘の順番 (既定、1 戦 = 1 目盛で等間隔) / true = 実時間 (日時)。
+    /// 実時間軸はプレイが集中するセッションが縦に潰れ、空白期間が長い直線になって形が読めない
+    /// (2026-09-27 ビーフ確認) ため、Android と同じ戦闘数軸を既定にしトグルで日時軸も選べるようにした。
+    @State private var timeAxis = false
+    @State private var rawIndexSelection: Int? = nil        // 戦闘数軸でのドラッグ/タップ選択 (生値)
     @State private var editing: GrandPrixRecord? = nil      // 操作メニュー対象
     @State private var editingForm: GrandPrixRecord? = nil  // 編集フォーム対象
     @State private var pendingAdd: FormSeed? = nil          // 追加フォーム (初期日時+引き継ぐランク帯)
@@ -163,18 +168,25 @@ struct GrandPrixStatsView: View {
     // MARK: - Chart
 
     private struct ChartPoint: Identifiable {
-        let id = UUID(); let date: Date; let rating: Double; let series: String
+        let id = UUID(); let index: Int; let date: Date; let rating: Double; let series: String
     }
+    /// index = 戦闘の順番 (1 始まり、テキスト一覧の「戦」と同じ番号)
     private var chartPoints: [ChartPoint] {
         var pts: [ChartPoint] = []
-        for r in sorted {
+        for (i, r) in sorted.enumerated() {
             guard let d = BattleTimestampFormatter.date(from: r.timestamp) else { continue }
-            pts.append(ChartPoint(date: d, rating: r.currentRating, series: "自分"))
+            pts.append(ChartPoint(index: i + 1, date: d, rating: r.currentRating, series: "自分"))
             if let border = r.borderRating {
-                pts.append(ChartPoint(date: d, rating: border, series: "ボーダー"))
+                pts.append(ChartPoint(index: i + 1, date: d, rating: border, series: "ボーダー"))
             }
         }
         return pts
+    }
+
+    /// 選択レコードの戦闘番号 (1 始まり)
+    private var selectedIndex: Int? {
+        guard let sel = selectedRecord, let i = sorted.firstIndex(where: { $0.id == sel.id }) else { return nil }
+        return i + 1
     }
 
     /// Y レンジ = データの min..max ±10% (Android GrandPrixGraphView と同じ。0 起点だと潰れる)
@@ -201,19 +213,32 @@ struct GrandPrixStatsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("レーティング推移").font(.caption.bold()).foregroundStyle(.gray)
             selectionInfoRow
-            if chartZoomed, let domain = zoomDomain {
-                ratingChart
-                    .chartScrollableAxes(.horizontal)
-                    .chartXVisibleDomain(length: domain.length)
-                    .chartScrollPosition(initialX: domain.start)
+            if chartZoomed, sorted.count > zoomBattleCount {
+                if timeAxis, let domain = zoomDomain {
+                    ratingChart
+                        .chartScrollableAxes(.horizontal)
+                        .chartXVisibleDomain(length: domain.length)
+                        .chartScrollPosition(initialX: domain.start)
+                } else {
+                    // 戦闘数軸: 可視範囲 = ちょうど zoomBattleCount 戦ぶん、初期位置 = 最新側
+                    ratingChart
+                        .chartScrollableAxes(.horizontal)
+                        .chartXVisibleDomain(length: zoomBattleCount)
+                        .chartScrollPosition(initialX: sorted.count - zoomBattleCount + 1)
+                }
             } else {
                 ratingChart
             }
-            // 凡例 + ズームトグルはグラフ (横軸ラベル) の下 (Android と統一)
+            // 凡例 + 横軸トグル + ズームトグルはグラフ (横軸ラベル) の下 (Android と統一)
             HStack(spacing: 12) {
                 Text("● 自分").font(.caption).foregroundStyle(Color.recCoral)
                 Text("● ボーダー").font(.caption).foregroundStyle(.cyan)
                 Spacer()
+                // 横軸の切替 (表示は現在の軸。タップで反転)
+                Button(timeAxis ? "横軸: 日時" : "横軸: 戦闘数") {
+                    timeAxis.toggle()
+                }
+                .font(.caption.bold()).foregroundStyle(Color.recCoral)
                 // レコードが多いときだけ「直近N戦ズーム+横スクロール」への切替を出す
                 if sorted.count > zoomBattleCount {
                     Button(chartZoomed ? "全体表示" : "直近\(zoomBattleCount)戦") {
@@ -222,6 +247,7 @@ struct GrandPrixStatsView: View {
                     .font(.caption.bold()).foregroundStyle(Color.recCoral)
                 }
             }
+            .lineLimit(1).minimumScaleFactor(0.8)
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cardBackground).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -243,7 +269,62 @@ struct GrandPrixStatsView: View {
         .lineLimit(1).minimumScaleFactor(0.7)
     }
 
+    @ViewBuilder
     private var ratingChart: some View {
+        if timeAxis { timeAxisChart } else { indexAxisChart }
+    }
+
+    /// 2 行ラベル (日付/時刻)。横幅を抑え、ラベル同士の重なりを防ぐ (両軸共通)
+    private func axisDateLabel(_ d: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(d, format: .dateTime.month(.defaultDigits).day())
+            Text(d, format: .dateTime.hour().minute())
+        }
+    }
+
+    /// 既定の横軸 = 戦闘の順番 (Android GrandPrixGraphView と同じ等間隔プロット)。
+    /// 目盛りラベルはその戦の日時 (Android と同じ見せ方)
+    private var indexAxisChart: some View {
+        Chart {
+            ForEach(chartPoints) { pt in
+                LineMark(x: .value("戦", pt.index), y: .value("レーティング", pt.rating))
+                    .foregroundStyle(by: .value("系列", pt.series))
+                    .symbol(.circle)
+                    .symbolSize(24)
+            }
+            // 選択点: 縦ルーラー + 白い強調点 (Android のインジケーターと同じ)
+            if let sel = selectedRecord, let i = selectedIndex {
+                RuleMark(x: .value("戦", i))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                PointMark(x: .value("戦", i), y: .value("レーティング", sel.currentRating))
+                    .foregroundStyle(.white)
+                    .symbolSize(60)
+            }
+        }
+        .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
+        .chartYScale(domain: yDomain)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine()
+                if let i = value.as(Int.self), i >= 1, i <= sorted.count,
+                   let d = BattleTimestampFormatter.date(from: sorted[i - 1].timestamp) {
+                    AxisValueLabel { axisDateLabel(d) }
+                }
+            }
+        }
+        .chartXSelection(value: $rawIndexSelection)
+        .onChange(of: rawIndexSelection) { _, new in
+            guard let i = new, !sorted.isEmpty else { return }
+            let clamped = min(max(i, 1), sorted.count)
+            pinnedDate = BattleTimestampFormatter.date(from: sorted[clamped - 1].timestamp)
+        }
+        .chartLegend(.hidden)   // 凡例は chartCard 側でグラフ下に自前描画 (Android と統一)
+        .frame(height: 300)
+    }
+
+    /// 横軸 = 実時間 (日時)。ボーダーが時間とともに上昇する様子を見たいときの切替表示
+    private var timeAxisChart: some View {
         Chart {
             ForEach(chartPoints) { pt in
                 LineMark(x: .value("日時", pt.date), y: .value("レーティング", pt.rating))
@@ -251,7 +332,6 @@ struct GrandPrixStatsView: View {
                     .symbol(.circle)
                     .symbolSize(24)
             }
-            // 選択点: 縦ルーラー + 白い強調点 (Android のインジケーターと同じ)
             if let sel = selectedRecord,
                let d = BattleTimestampFormatter.date(from: sel.timestamp) {
                 RuleMark(x: .value("日時", d))
@@ -268,13 +348,7 @@ struct GrandPrixStatsView: View {
             AxisMarks(values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()
                 if let d = value.as(Date.self) {
-                    // 2 行ラベル (日付/時刻) で横幅を抑え、ラベル同士の重なりを防ぐ
-                    AxisValueLabel {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(d, format: .dateTime.month(.defaultDigits).day())
-                            Text(d, format: .dateTime.hour().minute())
-                        }
-                    }
+                    AxisValueLabel { axisDateLabel(d) }
                 }
             }
         }
@@ -282,12 +356,12 @@ struct GrandPrixStatsView: View {
         .onChange(of: rawSelection) { _, new in
             if let d = new { pinnedDate = nearestRecordDate(to: d) }
         }
-        .chartLegend(.hidden)   // 凡例は chartCard 側でグラフ下に自前描画 (Android と統一)
+        .chartLegend(.hidden)
         .frame(height: 300)
     }
 
-    /// ズーム時の可視範囲: 直近 zoomBattleCount 戦ぶんの時間幅 (最低10分)。
-    /// initialX = その先頭日時 (開いた時点で最新側が見える)
+    /// 日時軸でのズーム時の可視範囲: 直近 zoomBattleCount 戦ぶんの時間幅 (最低10分)。
+    /// initialX = その先頭日時 (開いた時点で最新側が見える)。戦闘数軸では chartCard 側で件数指定
     private var zoomDomain: (start: Date, length: TimeInterval)? {
         let dates = sorted.compactMap { BattleTimestampFormatter.date(from: $0.timestamp) }
         guard let last = dates.last, dates.count > zoomBattleCount else { return nil }
