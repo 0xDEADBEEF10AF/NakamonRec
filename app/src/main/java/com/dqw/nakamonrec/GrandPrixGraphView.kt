@@ -71,6 +71,13 @@ class GrandPrixGraphView @JvmOverloads constructor(
     }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
+    /** 各点の小さなリング (iOS Swift Charts の LineMark シンボルと同じ見え方: 線色の輪+背景色の中身) */
+    private val dotStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+    private val dotFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = "#333333".toColorInt() }
+    private val dotRadius = 4f
+    /** 点シンボルを描く上限 (表示中の点がこれ以下のときだけ。多いと線を覆って読めない。iOS と同じ値) */
+    private val dotLimit = 100
+
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, dy: Float): Boolean {
             if (dataPoints.size <= visibleCount) return false
@@ -210,6 +217,20 @@ class GrandPrixGraphView @JvmOverloads constructor(
         canvas.clipRect(paddingLeft, 0f, w - paddingRight, h)
         canvas.drawPath(pathBorder, borderLinePaint)
         canvas.drawPath(pathRating, ratingLinePaint)
+        // 各点の小さなリング (表示中の点が dotLimit 以下のときだけ)。
+        // 実測点と補間区間 (GM 帯を挟むボーダーの直線) を見分けられ、日時軸では記録の密度も見える
+        if (visibleCount <= dotLimit) {
+            fun ring(x: Float, y: Float, color: Int) {
+                canvas.drawCircle(x, y, dotRadius, dotFillPaint)
+                canvas.drawCircle(x, y, dotRadius, dotStrokePaint.apply { this.color = color })
+            }
+            dataPoints.forEachIndexed { i, data ->
+                val x = xOf(i, stepX)
+                if (x < paddingLeft - stepX || x > w + stepX) return@forEachIndexed
+                data.border?.let { ring(x, yOf(it), borderLinePaint.color) }
+                ring(x, yOf(data.rating), ratingLinePaint.color)
+            }
+        }
         canvas.restore()
 
         // タップ位置のインジケーター (縦線+強調点)。数値表示は上部情報枠 (iOS と統一)

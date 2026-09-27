@@ -23,6 +23,10 @@ struct GrandPrixStatsView: View {
 
     /// ズーム時に表示する直近の戦闘数 (大会中は4桁になり得るため全体表示だと潰れる)
     private let zoomBattleCount = 50
+    /// 各点の小さなシンボルを描く上限 (表示中の点がこれ以下のときだけ。多いと線を覆って読めない。Android と同じ値)
+    private let dotLimit = 100
+    /// 点シンボルを描くか: ズーム中 (=直近 zoomBattleCount 点) または全体で dotLimit 以下
+    private var showDots: Bool { chartZoomed || sorted.count <= dotLimit }
     @Environment(\.dismiss) private var dismiss
 
     private var sorted: [GrandPrixRecord] {
@@ -290,7 +294,7 @@ struct GrandPrixStatsView: View {
                 LineMark(x: .value("戦", pt.index), y: .value("レーティング", pt.rating))
                     .foregroundStyle(by: .value("系列", pt.series))
                     .symbol(.circle)
-                    .symbolSize(24)
+                    .symbolSize(showDots ? 24 : 0)
             }
             // 選択点: 縦ルーラー + 白い強調点 (Android のインジケーターと同じ)
             if let sel = selectedRecord, let i = selectedIndex {
@@ -330,7 +334,7 @@ struct GrandPrixStatsView: View {
                 LineMark(x: .value("日時", pt.date), y: .value("レーティング", pt.rating))
                     .foregroundStyle(by: .value("系列", pt.series))
                     .symbol(.circle)
-                    .symbolSize(24)
+                    .symbolSize(showDots ? 24 : 0)
             }
             if let sel = selectedRecord,
                let d = BattleTimestampFormatter.date(from: sel.timestamp) {
