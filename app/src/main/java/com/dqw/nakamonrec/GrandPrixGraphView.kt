@@ -141,27 +141,23 @@ class GrandPrixGraphView @JvmOverloads constructor(
 
         val pathRating = Path()
         val pathBorder = Path()
-        var borderStarted = false
         // X軸ラベルの重なり防止: 直前に描いたラベルの右端を追跡し、日付+時刻 (幅可変) でも重ならないようにする
         var lastLabelRight = Float.NEGATIVE_INFINITY
         val labelGap = 16f
 
         dataPoints.forEachIndexed { i, data ->
             val x = paddingLeft + i * stepX - scrollOffset
-            if (x < paddingLeft - stepX || x > w + stepX) {
-                borderStarted = false // 画面外に出たらボーダー線を一旦切る
-                return@forEachIndexed
-            }
+            if (x < paddingLeft - stepX || x > w + stepX) return@forEachIndexed
             val yR = yOf(data.rating)
             if (pathRating.isEmpty) pathRating.moveTo(x, yR) else pathRating.lineTo(x, yR)
 
-            val b = data.border
-            if (b != null) {
+            // ボーダー線はレーティング線と同じく「点がある所だけを順に結ぶ」。
+            // ボーダーはマスター帯のみ記録 (GM 中は null) のため、マスター1→GM→GM→マスター1 のような
+            // 系列では点が飛地になる。26.9.1 までは欠損点で線を切っていたが、飛地の点同士も線で
+            // 連結するよう変更 (2026-09-02 ビーフ要望。iOS Swift Charts は欠損点を渡さないため元から連結)
+            data.border?.let { b ->
                 val yB = yOf(b)
-                if (!borderStarted) { pathBorder.moveTo(x, yB); borderStarted = true }
-                else pathBorder.lineTo(x, yB)
-            } else {
-                borderStarted = false // 欠損点でボーダー線を途切れさせる
+                if (pathBorder.isEmpty) pathBorder.moveTo(x, yB) else pathBorder.lineTo(x, yB)
             }
 
             // X軸ラベル（前ラベルと重ならない範囲で描画）
