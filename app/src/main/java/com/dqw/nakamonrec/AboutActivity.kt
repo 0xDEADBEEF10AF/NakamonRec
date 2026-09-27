@@ -24,6 +24,16 @@ import com.dqw.nakamonrec.databinding.ActivityAboutBinding
  */
 class AboutActivity : AppCompatActivity() {
 
+    companion object {
+        /**
+         * Google Play 上のアプリ ID (= release の applicationId)。
+         * debug ビルドは applicationIdSuffix ".debug" が付くため packageName をそのまま使うと
+         * Play に存在しない ID になりストアが開けない。ストアリンクは常にこの定数を使う。
+         */
+        const val PLAY_PACKAGE_ID = "com.dqw.nakamonrec"
+        const val PLAY_STORE_WEB_URL = "https://play.google.com/store/apps/details?id=$PLAY_PACKAGE_ID"
+    }
+
     private lateinit var binding: ActivityAboutBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,9 +70,9 @@ class AboutActivity : AppCompatActivity() {
     /** Google Play のアプリページを開く (Play 未搭載端末はブラウザ URL にフォールバック)。iOS の「App Store で最新版を確認」に対応 */
     private fun openStorePage() {
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri()))
+            startActivity(Intent(Intent.ACTION_VIEW, "market://details?id=$PLAY_PACKAGE_ID".toUri()))
         } catch (_: ActivityNotFoundException) {
-            openUrl("https://play.google.com/store/apps/details?id=$packageName")
+            openUrl(PLAY_STORE_WEB_URL)
         }
     }
 

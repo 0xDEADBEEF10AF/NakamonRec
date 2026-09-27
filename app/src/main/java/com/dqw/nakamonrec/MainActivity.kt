@@ -255,11 +255,12 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // debug ビルドは packageName に ".debug" が付き Play に存在しないため、掲載 ID の定数を使う
     private fun openPlayStorePage() {
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri()))
+            startActivity(Intent(Intent.ACTION_VIEW, "market://details?id=${AboutActivity.PLAY_PACKAGE_ID}".toUri()))
         } catch (_: Exception) {
-            startActivity(Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$packageName".toUri()))
+            startActivity(Intent(Intent.ACTION_VIEW, AboutActivity.PLAY_STORE_WEB_URL.toUri()))
         }
     }
 
