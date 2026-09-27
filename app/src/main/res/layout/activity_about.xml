@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    About 画面 (旧 Readme ダイアログ)。iOS HelpView.swift と同じ視覚言語:
+    黒背景 / 右上「閉じる」/ 角丸 10dp のカード (#2E2E2E = iOS Color(white: 0.18)) /
+    セクション見出しはコーラル (#F09199 = iOS recCoral) の「【…】」/ 本文は白。
+    使い方・主要機能・推奨環境は公開ヘルプ (help_url) に移管済みのため、ここには載せない。
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootAbout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#000000">
+
+    <!-- ナビゲーションバー相当: 中央タイトル + 右端「閉じる」 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/readme_title"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnClose"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:gravity="center"
+            android:paddingHorizontal="16dp"
+            android:text="@string/btn_close"
+            android:textColor="#F09199"
+            android:textSize="16sp"
+            android:background="?attr/selectableItemBackgroundBorderless" />
+    </FrameLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- バージョンカード: 版 + 推奨 OS + ストアで最新版確認 -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/NakamonRec.AboutCard">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:id="@+id/textVersion"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FFFFFF"
+                        android:textSize="17sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/about_requirements"
+                        android:textColor="#9E9E9E"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/btnStoreCheck"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:paddingVertical="4dp"
+                        android:text="@string/about_store_check"
+                        android:textColor="#F09199"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:background="?attr/selectableItemBackgroundBorderless" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ヘルプ導線カード -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/NakamonRec.AboutCard">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:id="@+id/btnOpenHelp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingVertical="4dp"
+                        android:background="?attr/selectableItemBackground">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/btn_open_help"
+                            android:textColor="#F09199"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@android:drawable/ic_menu_compass"
+                            app:tint="#F09199"
+                            android:contentDescription="@null" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/readme_help_hint"
+                        android:textColor="#9E9E9E"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 以下、テキストセクション (iOS section() と同構成) -->
+            <com.google.android.material.card.MaterialCardView style="@style/NakamonRec.AboutCard">
+                <LinearLayout style="@style/NakamonRec.AboutSection">
+                    <TextView style="@style/NakamonRec.AboutSectionTitle" android:text="@string/about_title_overview" />
+                    <TextView style="@style/NakamonRec.AboutSectionBody" android:text="@string/about_overview" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView style="@style/NakamonRec.AboutCard">
+                <LinearLayout style="@style/NakamonRec.AboutSection">
+                    <TextView style="@style/NakamonRec.AboutSectionTitle" android:text="@string/about_title_cautions" />
+                    <TextView style="@style/NakamonRec.AboutSectionBody" android:text="@string/about_cautions" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView style="@style/NakamonRec.AboutCard">
+                <LinearLayout style="@style/NakamonRec.AboutSection">
+                    <TextView style="@style/NakamonRec.AboutSectionTitle" android:text="@string/about_title_feedback" />
+                    <TextView style="@style/NakamonRec.AboutSectionBody" android:text="@string/about_feedback" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView style="@style/NakamonRec.AboutCard">
+                <LinearLayout style="@style/NakamonRec.AboutSection">
+                    <TextView style="@style/NakamonRec.AboutSectionTitle" android:text="@string/about_title_copyright" />
+                    <TextView style="@style/NakamonRec.AboutSectionBody" android:text="@string/about_copyright" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="24dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

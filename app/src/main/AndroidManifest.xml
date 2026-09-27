@@ -39,6 +39,12 @@
             android:label="@string/title_calibration"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false"
+            android:label="@string/readme_title"
+            android:screenOrientation="portrait" />
+
         <service
             android:name=".MediaCaptureService"
             android:enabled="true"

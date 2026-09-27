@@ -155,27 +155,23 @@
     <string name="readme_title">NakamonREC について</string>
     <string name="help_url" translatable="false">https://0xdeadbeef10af.github.io/NakamonRec/help.html</string>
     <string name="btn_open_help">📖 使い方はこちら</string>
+    <string name="btn_close">閉じる</string>
     <string name="readme_version_format">Version %1$s</string>
-    <string name="readme_help_hint">使い方・主要機能・推奨環境・グランプリ集計の手順などは、下の「📖 使い方はこちら」からブラウザで開く公開ヘルプに掲載しています。</string>
-    <string name="readme_content">
-        【アプリ概要】\n
-        本アプリはドラクエウォークの「なかまモンスター」戦闘画面をリアルタイムで解析し、自分と相手のモンスターおよび勝敗を自動的に記録する「非公式」の分析ツールです。ファンコミュニティの活動をサポートし、より楽しいゲーム体験を提供することを目的としています。\n\n
+    <string name="about_requirements">Android 15 以上を推奨</string>
+    <string name="about_store_check">↗ Google Play で最新版を確認</string>
+    <string name="readme_help_hint">使い方・主要機能・推奨環境・グランプリ集計の手順などは、ブラウザで開く公開ヘルプに掲載しています。</string>
+    <string name="msg_no_browser">ブラウザを開けませんでした</string>
 
-        【注意事項】\n
-        ・本アプリはファンによって制作された非公式のアプリであり、株式会社スクウェア・エニックスを代表とする公式とは直接の関係はありません。\n
-        ・公式からの協賛や提供を受けておらず、公式のサポートやアップデートは保証されていません。\n
-        ・本アプリは画面キャプチャ権限を必要とします。\n
-        ・Android標準の画面録画機能や他のキャプチャアプリと同時に使用することはできません。\n
-        ・バックグラウンドで画像解析を行うため、バッテリー消費にご注意ください。\n
-        ・正確な識別のために、必ずご使用の端末に合わせた「校正」を行ってください。\n
-        ・ゲーム中の「移動速度が速いためプレイを制限しています。」ダイアログとVSロゴなどが重なると、戦闘開始を正常に検知できない可能性があります。\n\n
+    <!-- About 画面の各セクション (iOS HelpView と同一文面) -->
+    <string name="about_title_overview">【アプリ概要】</string>
+    <string name="about_overview">本アプリはドラクエウォークの「なかまモンスター」戦闘画面をリアルタイムで解析し、自分と相手のモンスターおよび勝敗を自動的に記録する「非公式」の分析ツールです。ファンコミュニティの活動をサポートし、より楽しいゲーム体験を提供することを目的としています。</string>
 
-        【不具合・ご要望について】\n
-        動作しない場合や改善のご要望がありましたら、GitHubのIssueまたはSNSにてお知らせください。その際、ご使用の端末名（例：Pixel 9）を併記いただけますと幸いです。皆様のフィードバックがアプリの改善に繋がります。\n
-        GitHub Issues: https://github.com/0xDEADBEEF10AF/NakamonRec/issues\n\n
+    <string name="about_title_cautions">【注意事項】</string>
+    <string name="about_cautions">・本アプリはファンによって制作された非公式のアプリであり、株式会社スクウェア・エニックスを代表とする公式とは直接の関係はありません。\n・公式からの協賛や提供を受けておらず、公式のサポートやアップデートは保証されていません。\n・本アプリは画面キャプチャ権限を必要とします。\n・Android標準の画面録画機能や他のキャプチャアプリと同時に使用することはできません。\n・バックグラウンドで画像解析を行うため、バッテリー消費にご注意ください。\n・正確な識別のために、必ずご使用の端末に合わせた「校正」を行ってください。\n・ゲーム中の「移動速度が速いためプレイを制限しています。」ダイアログとVSロゴなどが重なると、戦闘開始を正常に検知できない可能性があります。</string>
 
-        【著作権表記】\n
-        このアプリで利用している株式会社スクウェア・エニックスを代表とする共同著作者が権利を所有する画像の転載・配布は禁止いたします。\n
-        © ARMOR PROJECT/BIRD STUDIO/SQUARE ENIX All Rights Reserved.
-    </string>
+    <string name="about_title_feedback">【不具合・ご要望について】</string>
+    <string name="about_feedback">動作しない場合や改善のご要望がありましたら、GitHubのIssueまたはSNSにてお知らせください。その際、ご使用の端末名（例：Pixel 9）を併記いただけますと幸いです。皆様のフィードバックがアプリの改善に繋がります。\nGitHub Issues: https://github.com/0xDEADBEEF10AF/NakamonRec/issues</string>
+
+    <string name="about_title_copyright">【著作権表記】</string>
+    <string name="about_copyright">このアプリで利用している株式会社スクウェア・エニックスを代表とする共同著作者が権利を所有する画像の転載・配布は禁止いたします。\n© ARMOR PROJECT/BIRD STUDIO/SQUARE ENIX All Rights Reserved.</string>
 </resources>

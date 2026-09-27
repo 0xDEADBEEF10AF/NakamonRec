@@ -43,4 +43,39 @@
     <style name="NakamonRec.Dialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
         <item name="android:textColor">#FFFFFF</item>
     </style>
+
+    <!-- About 画面のカード群 (iOS HelpView と同じ見え方: 角丸 10dp / #2E2E2E / 間隔 18dp) -->
+    <style name="NakamonRec.AboutCard" parent="Widget.Material3.CardView.Filled">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">18dp</item>
+        <item name="cardCornerRadius">10dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="cardBackgroundColor">#2E2E2E</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <style name="NakamonRec.AboutSection" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">14dp</item>
+    </style>
+
+    <style name="NakamonRec.AboutSectionTitle" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">#F09199</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="NakamonRec.AboutSectionBody" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:lineSpacingExtra">4dp</item>
+    </style>
 </resources>
