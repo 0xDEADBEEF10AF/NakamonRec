@@ -4,7 +4,7 @@ import NakamonREC_Shared
 
 /// グランプリ集計画面。読込中ファイルの grandPrixRecords を、自分のレーティング折れ線 +
 /// ボーダー折れ線で表示(グラフ既定)。トグルでテキスト(レコード一覧)に切替でき、
-/// レコードをタップすると操作メニュー(編集/削除/次に追加)。
+/// レコードを長押しすると操作メニュー(編集/削除/次に追加)。
 /// 「1 ファイル = 1 グランプリ」前提。
 struct GrandPrixStatsView: View {
     @State private var records: [GrandPrixRecord] = []
@@ -304,12 +304,13 @@ struct GrandPrixStatsView: View {
         Section {
             VStack(spacing: 6) {
                 ForEach(Array(sorted.enumerated().reversed()), id: \.element.id) { idx, r in
-                    Button { editing = r } label: {
-                        recordRow(r, battleNo: idx + 1, delta: delta(at: idx))
-                            .background(Color.cardBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
+                    // 操作メニューは長押しで開く (メイン戦績の BattleRecordRow / Android と同じ作法。
+                    // 26.9.1 まではタップだったが両OS統一のため 26.10.1 で長押しに変更)
+                    recordRow(r, battleNo: idx + 1, delta: delta(at: idx))
+                        .background(Color.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .contentShape(Rectangle())
+                        .onLongPressGesture(minimumDuration: 0.4) { editing = r }
                 }
             }
         } header: {

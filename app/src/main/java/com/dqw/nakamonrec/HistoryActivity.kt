@@ -720,7 +720,7 @@ class HistoryActivity : AppCompatActivity() {
 
     /**
      * グランプリ集計: 最高レーティング (目立つ) + グラフ(既定) / テキスト一覧 の切替表示。
-     * テキスト一覧はレコードをタップで手動編集 (OCR 誤認の訂正)。「1 ファイル = 1 グランプリ」前提。
+     * テキスト一覧はレコードを長押しで手動編集 (OCR 誤認の訂正、iOS と同じ作法)。「1 ファイル = 1 グランプリ」前提。
      */
     private fun showGrandPrixDialog() {
         if (dataManager.loadGrandPrixRecords().isEmpty()) {
