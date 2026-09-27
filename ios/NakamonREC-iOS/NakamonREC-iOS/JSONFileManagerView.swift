@@ -235,8 +235,11 @@ struct JSONFileManagerView: View {
             errorMessage = "CSV ファイルを読み込めませんでした。"
             return
         }
-        let records = CSVSupport.decode(text)
-        guard !records.isEmpty else {
+        // 戦績と GP 記録を両方読む (26.10.1〜)。どちらか 1 件でもあれば取り込む
+        let decoded = CSVSupport.decodeAll(text)
+        let records = decoded.records
+        let gpRecords = decoded.grandPrixRecords
+        guard !records.isEmpty || !gpRecords.isEmpty else {
             errorMessage = "CSV から戦績を 1 件も読み取れませんでした。"
             return
         }
@@ -253,13 +256,15 @@ struct JSONFileManagerView: View {
         }
         var history = BattleHistory()
         history.records = records
+        history.grandPrixRecords = gpRecords.isEmpty ? nil : gpRecords
         history.recomputeTotals()
         BattleHistoryStore.shared.save(history, fileName: "\(target).json")
         BattleHistoryStore.shared.activeFileName = "\(target).json"
         activeName = "\(target).json"
         reload()
         onChange()
-        infoMessage = "CSV から \(records.count) 件のレコードを読み込み、新規ファイル「\(target)」を作成しました。"
+        let gpNote = gpRecords.isEmpty ? "" : " (グランプリ記録 \(gpRecords.count) 件を含む)"
+        infoMessage = "CSV から \(records.count) 件のレコードを読み込み\(gpNote)、新規ファイル「\(target)」を作成しました。"
     }
 }
 

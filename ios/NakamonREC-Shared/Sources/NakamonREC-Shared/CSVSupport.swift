@@ -12,8 +12,30 @@ import Foundation
 /// "戦闘終了時刻","勝敗","選択パーティ","自分1",..."自分4","相手1",..."相手4"
 /// "2026-05-10 16:35:32","WIN","パーティ2","デスタムーア",..."ハーゴン"
 /// ...
+/// (空行)                                  ← 以下 26.10.1 で追加。GP 記録が 1 件以上あるときだけ出力
+/// グランプリ戦績,X件
+/// "日時","勝敗","レーティング","必要レーティング","ランク帯"
+/// "2026-11-07 21:02:11","WIN","2208.1","270.2","マスター1"
 /// ```
+///
+/// グランプリ (GP) セクションの設計 (2026-09-02 ビーフ承認):
+/// - 戦績と GP は 1 対 1 対応しない (手動追加/日時編集/読取失敗で非対称) ため、
+///   JSON が別配列なのと同じく CSV でも独立セクションとして扱う。マージしない。
+/// - **GP セクションの列数は将来も 10 列以下を維持すること。** 旧バージョンのインポータ
+///   (iOS: cells.count >= 11 / Android: parts.size >= 11) は GP 行を自然にスキップするため、
+///   これが後方互換の根拠になっている (旧版に新形式を読ませても戦績だけ正常に取り込める)。
+/// - インポートはヘッダ行探索方式: 「戦闘終了時刻」を含む行 → 戦績 / 先頭セル「日時」かつ
+///   「レーティング」を含む行 → GP。行の順序や固定オフセットには依存しない。
 public enum CSVSupport {
+
+    /// GP セクションのカラムヘッダー (両OS同一。**10 列以下を維持**)
+    static let grandPrixColumns = ["日時", "勝敗", "レーティング", "必要レーティング", "ランク帯"]
+
+    /// decode 結果 (戦績 + GP 記録)
+    public struct Decoded {
+        public var records: [BattleRecord]
+        public var grandPrixRecords: [GrandPrixRecord]
+    }
 
     // MARK: - Encode (BattleHistory → CSV)
 
@@ -58,13 +80,41 @@ public enum CSVSupport {
             lines.append(cells.map(quoted).joined(separator: ","))
         }
 
+        // グランプリセクション (記録があるときだけ。無ければ従来と完全に同じ出力)
+        let gp = history.grandPrixRecords ?? []
+        if !gp.isEmpty {
+            lines.append("")
+            lines.append("グランプリ戦績,\(gp.count)件")
+            lines.append(grandPrixColumns.map(quoted).joined(separator: ","))
+            for r in gp {
+                let cells = [
+                    r.timestamp,
+                    r.result,
+                    formatRating(r.currentRating),
+                    r.neededRating.map(formatRating) ?? "",
+                    r.rankTier ?? ""
+                ]
+                lines.append(cells.map(quoted).joined(separator: ","))
+            }
+        }
+
         return lines.joined(separator: "\r\n") + "\r\n"
     }
 
-    // MARK: - Decode (CSV → [BattleRecord])
+    /// レーティングは小数 1 桁・カンマなし (画面表記と同じ。Android は String.format(Locale.US, "%.1f"))
+    private static func formatRating(_ v: Double) -> String {
+        String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), v)
+    }
 
-    /// CSV 文字列を BattleRecord 配列に変換。識別不能な行はスキップ
+    // MARK: - Decode (CSV → 戦績 / GP 記録)
+
+    /// CSV 文字列を BattleRecord 配列に変換。識別不能な行はスキップ (GP 記録は無視する後方互換 API)
     public static func decode(_ csv: String) -> [BattleRecord] {
+        decodeAll(csv).records
+    }
+
+    /// CSV 文字列から 戦績 + GP 記録 の両方を読む。どちらのセクションも無ければ空配列
+    public static func decodeAll(_ csv: String) -> Decoded {
         // BOM を除去
         var text = csv
         if text.hasPrefix("\u{FEFF}") {
@@ -72,6 +122,11 @@ public enum CSVSupport {
         }
         // CRLF / LF 両対応
         let rawLines = text.components(separatedBy: CharacterSet.newlines)
+        return Decoded(records: decodeBattleRecords(rawLines),
+                       grandPrixRecords: decodeGrandPrixRecords(rawLines))
+    }
+
+    private static func decodeBattleRecords(_ rawLines: [String]) -> [BattleRecord] {
         // 「戦闘終了時刻」を含む行を見つけて、その次の行から記録開始
         guard let headerIdx = rawLines.firstIndex(where: { $0.contains("戦闘終了時刻") }) else {
             return []
@@ -81,6 +136,7 @@ public enum CSVSupport {
             let line = rawLines[i].trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
             let cells = parseRow(line)
+            // 11 列未満 (GP セクションの行や集計行) はスキップ = GP セクションとの共存の根拠
             guard cells.count >= 11 else { continue }
 
             let timestamp = cells[0]
@@ -108,6 +164,37 @@ public enum CSVSupport {
             records.append(record)
         }
         return records
+    }
+
+    /// GP セクション: 先頭セル「日時」かつ「レーティング」を含むヘッダ行の次から、
+    /// 3 列以上 10 列以下の行を読む。レーティングが数値でない行はスキップ
+    private static func decodeGrandPrixRecords(_ rawLines: [String]) -> [GrandPrixRecord] {
+        guard let headerIdx = rawLines.firstIndex(where: { line in
+            line.contains("レーティング") && parseRow(line).first == "日時"
+        }) else {
+            return []
+        }
+        var result: [GrandPrixRecord] = []
+        for i in (headerIdx + 1)..<rawLines.count {
+            let line = rawLines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty { continue }
+            let cells = parseRow(line)
+            guard cells.count >= 3, cells.count <= 10 else { continue }
+            guard let current = Double(cells[2].trimmingCharacters(in: .whitespaces)) else { continue }
+            let needed = cells.count > 3 ? Double(cells[3].trimmingCharacters(in: .whitespaces)) : nil
+            let tierRaw = cells.count > 4 ? cells[4] : ""
+            let tier = GrandPrixRecord.rankTiers.contains(tierRaw) ? tierRaw : nil
+            let resultStr = cells[1] == "LOSE" ? "LOSE" : "WIN"
+            result.append(GrandPrixRecord(
+                timestamp: cells[0],
+                result: resultStr,
+                currentRating: current,
+                neededRating: needed,
+                isRankUp: false,
+                rankTier: tier
+            ))
+        }
+        return result
     }
 
     // MARK: - Helpers

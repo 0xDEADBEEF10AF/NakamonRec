@@ -386,24 +386,33 @@ class MainActivity : AppCompatActivity() {
     private fun performMerge(selectedFiles: List<String>, newName: String) {
         thread {
             try {
+                // 戦績・GP 記録とも timestamp 重複はスキップ (iOS FileMergeView と同方式に統一、26.10.1)
                 val allRecords = mutableListOf<BattleRecord>()
+                val seenTimestamps = HashSet<String>()
+                val allGP = mutableListOf<GrandPrixRecord>()
+                val seenGPTimestamps = HashSet<String>()
                 val gson = Gson()
                 selectedFiles.forEach { fileName ->
                     val file = File(filesDir, "$fileName.json")
                     if (file.exists()) {
                         val json = file.readText()
                         val history = gson.fromJson(json, BattleHistory::class.java)
-                        allRecords.addAll(history.records)
+                        history.records.forEach { if (seenTimestamps.add(it.timestamp)) allRecords.add(it) }
+                        // GP 記録もマージ対象 (26.9.1 までは records しか集めず GP が消えていた)。
+                        // 複数大会の合流はユーザー意図として許容し、大会間ギャップを含む 1 本の時系列になる
+                        history.grandPrixRecords?.forEach { if (seenGPTimestamps.add(it.timestamp)) allGP.add(it) }
                     }
                 }
 
                 // 時系列（timestamp）でソート
                 allRecords.sortBy { it.timestamp }
+                allGP.sortBy { it.timestamp }
 
                 val newHistory = BattleHistory(
                     totalWins = allRecords.count { it.result == "WIN" },
                     totalLosses = allRecords.count { it.result == "LOSE" },
-                    records = allRecords.toMutableList()
+                    records = allRecords.toMutableList(),
+                    grandPrixRecords = if (allGP.isEmpty()) null else allGP.toMutableList()
                 )
 
                 val newFile = File(filesDir, "$newName.json")
@@ -430,24 +439,24 @@ class MainActivity : AppCompatActivity() {
                 if (cursor.moveToFirst()) csvFileName = cursor.getString(nameIndex).substringBeforeLast(".")
             }
             val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return
-            val lines = content.split(Regex("\\r?\\n")).filter { it.isNotBlank() }
-            if (lines.size <= 6) return 
+            // ヘッダ行探索方式 (iOS と同一)。旧実装の drop(5) 固定オフセットは撤去 (26.10.1)。
+            // 戦績と GP 記録の両方を読み、どちらか 1 件でもあれば取り込む
+            val decoded = CsvSupport.decodeAll(content)
+            if (decoded.records.isEmpty() && decoded.grandPrixRecords.isEmpty()) {
+                showTopToast("CSV から戦績を 1 件も読み取れませんでした", true); return
+            }
 
             val dm = dataManager.apply { currentFileName = csvFileName; resetHistory() }
-            var importedCount = 0
-            lines.drop(5).forEach { line ->
-                val parts = line.split(",").map { it.trim().removeSurrounding("\"") }
-                if (parts.size >= 11) {
-                    val timestamp = parts[0]; val result = parts[1]; val partyName = parts[2]
-                    val partyIndex = partyName.replace(Regex("[^0-9]"), "").toIntOrNull()?.minus(1) ?: 0
-                    val myParty = listOf(parts[3], parts[4], parts[5], parts[6]); val enemyParty = listOf(parts[7], parts[8], parts[9], parts[10])
-                    dm.history.records.add(BattleRecord(timestamp, result, partyIndex, myParty, enemyParty))
-                    if (result == "WIN") dm.history.totalWins++ else dm.history.totalLosses++
-                    importedCount++
-                }
+            decoded.records.forEach { r ->
+                dm.history.records.add(r)
+                if (r.result == "WIN") dm.history.totalWins++ else dm.history.totalLosses++
+            }
+            if (decoded.grandPrixRecords.isNotEmpty()) {
+                dm.history.grandPrixRecords = decoded.grandPrixRecords.toMutableList()
             }
             dm.saveHistory(); saveCurrentFileName(csvFileName); refreshServiceAndUI()
-            showTopToast("「$csvFileName.json」として${importedCount}件をインポートしました", true)
+            val gpNote = if (decoded.grandPrixRecords.isEmpty()) "" else " (グランプリ記録 ${decoded.grandPrixRecords.size} 件を含む)"
+            showTopToast("「$csvFileName.json」として${decoded.records.size}件をインポートしました$gpNote", true)
         } catch (e: Exception) { showTopToast("インポートに失敗しました: ${e.message}", true) }
     }
 
@@ -463,18 +472,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun exportHistoryToCsv(fileName: String) {
         val dm = dataManager.apply { loadHistory(fileName) }
-        val csvBuilder = StringBuilder()
-        csvBuilder.appendLine("総合戦績,${dm.history.records.size}戦 ${dm.history.totalWins}勝 ${dm.history.totalLosses}敗")
-        (0..2).forEach { idx ->
-            val pRecs = dm.history.records.filter { it.partyIndex == idx }
-            val pWins = pRecs.count { it.result == "WIN" }
-            csvBuilder.appendLine("パーティ${idx + 1}戦績,${pRecs.size}戦 ${pWins}勝 ${pRecs.size - pWins}敗")
-        }
-        csvBuilder.appendLine("\n\"戦闘終了時刻\",\"勝敗\",\"選択パーティ\",\"自分1\",\"自分2\",\"自分3\",\"自分4\",\"相手1\",\"相手2\",\"相手3\",\"相手4\"")
-        dm.history.records.forEach { r ->
-            csvBuilder.appendLine("\"${r.timestamp}\",\"${r.result}\",\"パーティ${r.partyIndex + 1}\",\"${r.myParty.getOrElse(0){""}}\",\"${r.myParty.getOrElse(1){""}}\",\"${r.myParty.getOrElse(2){""}}\",\"${r.myParty.getOrElse(3){""}}\",\"${r.enemyParty.getOrElse(0){""}}\",\"${r.enemyParty.getOrElse(1){""}}\",\"${r.enemyParty.getOrElse(2){""}}\",\"${r.enemyParty.getOrElse(3){""}}\"")
-        }
-        csvContentToSave = csvBuilder.toString(); createDocumentLauncher.launch("${fileName}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.csv")
+        // フォーマットは CsvSupport に集約 (GP セクション対応、26.10.1)
+        csvContentToSave = CsvSupport.encode(dm.history); createDocumentLauncher.launch("${fileName}_${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}.csv")
     }
 
     private fun showCalibrationSelectorDialog() {

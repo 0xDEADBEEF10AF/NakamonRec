@@ -112,23 +112,35 @@ struct FileMergeView: View {
             errorMessage = "同名のファイル「\(stripExtension(target))」が既に存在します。"
             return
         }
+        // 戦績・GP 記録とも timestamp 重複はスキップ (Android も同方式に統一、26.10.1)
         var seenTimestamps = Set<String>()
         var mergedRecords: [BattleRecord] = []
+        var seenGPTimestamps = Set<String>()
+        var mergedGP: [GrandPrixRecord] = []
         for name in selected {
             let history = BattleHistoryStore.shared.load(fileName: name)
             for r in history.records where !seenTimestamps.contains(r.timestamp) {
                 seenTimestamps.insert(r.timestamp)
                 mergedRecords.append(r)
             }
+            // GP 記録もマージ対象 (26.9.1 までは records しか集めず GP が消えていた)。
+            // 複数大会の合流はユーザー意図として許容し、大会間ギャップを含む 1 本の時系列になる
+            for g in history.grandPrixRecords ?? [] where !seenGPTimestamps.contains(g.timestamp) {
+                seenGPTimestamps.insert(g.timestamp)
+                mergedGP.append(g)
+            }
         }
         // timestamp 昇順 (古い順)
         mergedRecords.sort { $0.timestamp < $1.timestamp }
+        mergedGP.sort { $0.timestamp < $1.timestamp }
         var newHistory = BattleHistory()
         newHistory.records = mergedRecords
+        newHistory.grandPrixRecords = mergedGP.isEmpty ? nil : mergedGP
         newHistory.recomputeTotals()
         BattleHistoryStore.shared.save(newHistory, fileName: target)
         onComplete(target)
-        infoMessage = "\(selected.count) ファイルから \(mergedRecords.count) 件をマージし、「\(stripExtension(target))」を作成しました。"
+        let gpNote = mergedGP.isEmpty ? "" : " (グランプリ記録 \(mergedGP.count) 件を含む)"
+        infoMessage = "\(selected.count) ファイルから \(mergedRecords.count) 件をマージし\(gpNote)、「\(stripExtension(target))」を作成しました。"
     }
 
     private func stripExtension(_ name: String) -> String {
