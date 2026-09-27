@@ -90,11 +90,11 @@ class HistoryActivity : AppCompatActivity() {
         historyAdapter = BattleHistoryAdapter(
             mutableListOf(),
             dataManager.monsterMaster,
-            onLongClick = { position ->
-                val allRecords = dataManager.history.records
-                val filtered = getFilteredRecords(allRecords)
-                val realIndex = allRecords.indexOf(filtered[position])
-                showEditRecordDialog(realIndex)
+            onLongClick = { rec ->
+                // Adapter から渡されたレコード実体を、全件リスト上の実インデックスに引き直す。
+                // 識別子は DiffUtil と同じ timestamp。見つからなければ何もしない (別レコードを触らない)。
+                val realIndex = dataManager.history.records.indexOfFirst { it.timestamp == rec.timestamp }
+                if (realIndex >= 0) showEditRecordDialog(realIndex)
             },
             onResultClick = { tappedResult ->
                 // iOS と同じ動作: タップした WIN/LOSE をフィルタに「追加」のみ。
@@ -2066,7 +2066,8 @@ class HistoryActivity : AppCompatActivity() {
     )
 
     private fun showEditRecordDialog(position: Int) {
-        val record = dataManager.history.records[position]
+        // 範囲外ガード (呼び出し元の index 解決が失敗した場合に別レコードを操作/クラッシュしない)
+        val record = dataManager.history.records.getOrNull(position) ?: return
         val options = arrayOf(
             getString(R.string.edit_option_toggle_result, if (record.result == "WIN") "→LOSE" else "→WIN"),
             getString(R.string.edit_option_change_party, record.partyIndex + 1),
@@ -2363,7 +2364,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun deleteRecord(position: Int) {
-        val record = dataManager.history.records[position]
+        val record = dataManager.history.records.getOrNull(position) ?: return
         if (record.result == "WIN") dataManager.history.totalWins-- else dataManager.history.totalLosses--
         dataManager.history.records.removeAt(position)
         dataManager.saveHistory()

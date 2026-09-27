@@ -16,7 +16,14 @@ import androidx.recyclerview.widget.RecyclerView
 class BattleHistoryAdapter(
     private var records: MutableList<BattleRecord>,
     private val monsterMaster: List<MonsterData>,
-    private val onLongClick: (Int) -> Unit,
+    /**
+     * 長押しされた行の「レコード実体」を渡す (position ではない)。
+     * 旧実装は onBindViewHolder 時の position をリスナーに捕捉していたが、DiffUtil 更新では
+     * 内容不変の行が再バインドされず position が陳腐化し、フィルタ中に別レコードを編集/削除する
+     * (静かなデータ破壊) か IndexOutOfBounds でクラッシュする実害があった (2026-09-02 ビーフ確認)。
+     * iOS (ForEach がレコード実体を渡す) と同じ設計に揃え、呼び出し側は timestamp で実インデックスを引き直す。
+     */
+    private val onLongClick: (BattleRecord) -> Unit,
     val onResultClick: (String) -> Unit,   // 引数: タップされた行の result ("WIN" or "LOSE")
     private val onMonsterClick: (String, Boolean) -> Unit
 ) : RecyclerView.Adapter<BattleHistoryAdapter.ViewHolder>() {
@@ -76,20 +83,30 @@ class BattleHistoryAdapter(
         // スコア表示
         holder.vsScore.visibility = View.GONE
 
-        // モードに応じたクリック設定
-        if (isFilterMode) {
-            holder.result.setOnClickListener { onResultClick(record.result) }
-            holder.itemView.setOnLongClickListener(null)
-        } else {
-            holder.result.setOnClickListener(null)
-            holder.itemView.setOnLongClickListener {
-                onLongClick(position)
-                true
-            }
+        // クリック設定はモードに依らず常に張り、モード判定と対象レコードの解決は「クリック時」に行う。
+        // - バインド時の position/record を捕捉しない (DiffUtil 部分更新で陳腐化するため)
+        // - bindingAdapterPosition は NO_POSITION (削除アニメーション中など) を弾く
+        holder.result.setOnClickListener {
+            if (!isFilterMode) return@setOnClickListener
+            val rec = recordAt(holder) ?: return@setOnClickListener
+            onResultClick(rec.result)
+        }
+        holder.itemView.setOnLongClickListener {
+            if (isFilterMode) return@setOnLongClickListener false
+            val rec = recordAt(holder) ?: return@setOnLongClickListener false
+            onLongClick(rec)
+            true
         }
 
         setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, record.myPartyScores, isFilterMode, false)
         setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, record.enemyPartyScores, isFilterMode, true)
+    }
+
+    /** クリック時点の adapter position から現在のレコードを取得する (陳腐化・範囲外は null) */
+    private fun recordAt(holder: ViewHolder): BattleRecord? {
+        val pos = holder.bindingAdapterPosition
+        if (pos == RecyclerView.NO_POSITION) return null
+        return records.getOrNull(pos)
     }
 
     private fun setupMonsterIcons(
