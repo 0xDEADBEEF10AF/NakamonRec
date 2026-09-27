@@ -155,7 +155,6 @@
     <string name="readme_title">NakamonREC について</string>
     <string name="help_url" translatable="false">https://0xdeadbeef10af.github.io/NakamonRec/help.html</string>
     <string name="btn_open_help">📖 使い方はこちら</string>
-    <string name="btn_close">閉じる</string>
     <string name="readme_version_format">Version %1$s</string>
     <string name="about_requirements">Android 15 以上を推奨</string>
     <string name="about_store_check">↗ Google Play で最新版を確認</string>
