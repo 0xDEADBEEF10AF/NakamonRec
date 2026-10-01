@@ -124,5 +124,6 @@
   { "name": "ハーゴン", "fileName": "id10014.png" },
   { "name": "やかんのまじん", "fileName": "id10015.png" },
   { "name": "エリー", "fileName": "id10016.png", "isWall": true },
-  { "name": "オルゴ・デミーラ", "fileName": "id10017.png" }
+  { "name": "オルゴ・デミーラ", "fileName": "id10017.png" },
+  { "name": "ラプソーン", "fileName": "id10018.png" }
 ]
