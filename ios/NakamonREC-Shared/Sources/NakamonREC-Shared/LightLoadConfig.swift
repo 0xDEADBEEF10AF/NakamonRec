@@ -19,10 +19,10 @@ public enum LightLoadConfig {
         "id046", "id047", "id050", "id058", "id059", "id070",
         "id072", "id076", "id077", "id082", "id083", "id087",
         "id088", "id094", "id095", "id100", "id101", "id102",
-        "id105",
+        "id105", "id110", "id111",
         "id10002", "id10003", "id10006", "id10008", "id10009",
         "id10011", "id10012", "id10013", "id10014", "id10015",
-        "id10017"
+        "id10017", "id10018"
     ]
 
     public enum Mode: String {

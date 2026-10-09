@@ -24,6 +24,8 @@
   { "name": "妖魔ジュリアンテ", "fileName": "id101.png" },
   { "name": "ハーゴンのきし", "fileName": "id102.png" },
   { "name": "メイデンドール", "fileName": "id105.png" },
+  { "name": "レジェンドホース", "fileName": "id110.png" },
+  { "name": "怪蟲アラグネ", "fileName": "id111.png" },
   { "name": "てんどうしし", "fileName": "id10002.png" },
   { "name": "りゅうおう", "fileName": "id10003.png" },
   { "name": "デスピサロ", "fileName": "id10006.png" },
@@ -34,5 +36,6 @@
   { "name": "冥王ネルゲル", "fileName": "id10013.png" },
   { "name": "ハーゴン", "fileName": "id10014.png" },
   { "name": "やかんのまじん", "fileName": "id10015.png" },
-  { "name": "オルゴ・デミーラ", "fileName": "id10017.png" }
+  { "name": "オルゴ・デミーラ", "fileName": "id10017.png" },
+  { "name": "ラプソーン", "fileName": "id10018.png" }
 ]
