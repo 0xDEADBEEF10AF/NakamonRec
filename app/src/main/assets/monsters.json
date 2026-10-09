@@ -108,6 +108,12 @@
   { "name": "ダッシュラン", "fileName": "id107.png" },
   { "name": "コロネホワイト", "fileName": "id108.png" },
   { "name": "スライムコロネ", "fileName": "id109.png" },
+  { "name": "レジェンドホース", "fileName": "id110.png" },
+  { "name": "怪蟲アラグネ", "fileName": "id111.png" },
+  { "name": "ライオンヘッド", "fileName": "id112.png" },
+  { "name": "ダークスライム", "fileName": "id113.png" },
+  { "name": "ましょうぐも", "fileName": "id114.png" },
+  { "name": "しりょうのきし", "fileName": "id115.png" },
   { "name": "わたぼう", "fileName": "id10001.png" },
   { "name": "てんどうしし", "fileName": "id10002.png" },
   { "name": "りゅうおう", "fileName": "id10003.png" },
@@ -125,5 +131,5 @@
   { "name": "やかんのまじん", "fileName": "id10015.png" },
   { "name": "エリー", "fileName": "id10016.png", "isWall": true },
   { "name": "オルゴ・デミーラ", "fileName": "id10017.png" },
-  { "name": "ラプソーン", "fileName": "id10018.png" }
+  { "name": "ラプソーン", "fileName": "id10018.png", "isWall": true }
 ]
