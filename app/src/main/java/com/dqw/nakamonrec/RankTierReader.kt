@@ -69,8 +69,12 @@ object RankTierReader {
         }
     }
 
-    /** ランク帯を識別する。識別できなければ null。戻り値は GrandPrixRecord.rankTiers のいずれか */
-    fun read(context: Context, bmp: Bitmap): String? {
+    /**
+     * ランク帯を識別する。識別できなければ null。戻り値は GrandPrixRecord.rankTiers のいずれか。
+     * @param rowOffsetY RatingPanelReader が実際に使った行オフセット (1080 基準 px)。
+     *   パネル全体が同じ量だけずれているので、エンブレム探索帯も追従させる (0 = 従来どおり)。
+     */
+    fun read(context: Context, bmp: Bitmap, rowOffsetY: Int = 0): String? {
         ensureAnchors(context)
         val master = anchors?.get("master") ?: return null
         val grand = anchors?.get("grand") ?: return null
@@ -80,8 +84,8 @@ object RankTierReader {
         bmp.getPixels(pixels, 0, w, 0, 0, w, h)
         val s = w / BASE_WIDTH
 
-        val bandM = canonicalBand(pixels, w, h, s, MASTER_THR)
-        val bandG = canonicalBand(pixels, w, h, s, GRAND_THR)
+        val bandM = canonicalBand(pixels, w, h, s, MASTER_THR, rowOffsetY)
+        val bandG = canonicalBand(pixels, w, h, s, GRAND_THR, rowOffsetY)
         val m = slideMatch(master, bandM)
         val g = slideMatch(grand, bandG)
 
@@ -115,10 +119,10 @@ object RankTierReader {
     }
 
     /** 探索帯を 1080 基準サイズで二値化 (非1080幅は nearest neighbor で吸収) */
-    private fun canonicalBand(pixels: IntArray, w: Int, h: Int, scale: Double, thr: Int): Bin {
+    private fun canonicalBand(pixels: IntArray, w: Int, h: Int, scale: Double, thr: Int, offsetY: Int): Bin {
         val bits = BooleanArray(BAND_W * BAND_H)
         for (cy in 0 until BAND_H) {
-            val sy = ((BAND_Y + cy) * scale).toInt()
+            val sy = ((BAND_Y + offsetY + cy) * scale).toInt()
             for (cx in 0 until BAND_W) {
                 val sx = ((BAND_X + cx) * scale).toInt()
                 bits[cy * BAND_W + cx] = isInk(pixels, w, h, sx, sy, thr)

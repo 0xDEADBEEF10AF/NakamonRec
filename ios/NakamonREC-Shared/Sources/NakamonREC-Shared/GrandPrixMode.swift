@@ -14,4 +14,20 @@ public enum GrandPrixMode {
         get { UserDefaults(suiteName: appGroupID)?.bool(forKey: key) ?? false }
         set { UserDefaults(suiteName: appGroupID)?.set(newValue, forKey: key) }
     }
+
+    /// レーティングパネル行の学習済み縦オフセット (1080 基準 px、nil = 未学習)。
+    /// RatingPanelReader がアンカー探索で見つけた端末固有のずれを保存し、次回以降は探索なしで
+    /// 固定バンドをこの量だけずらして読む (ユーザー操作なしの自動校正)。
+    /// Android GrandPrixMode.learnedRowOffsetY と対応。
+    private static let rowOffsetKey = "grandPrixRowOffsetY"
+    public static var learnedRowOffsetY: Int? {
+        get {
+            guard let d = UserDefaults(suiteName: appGroupID), d.object(forKey: rowOffsetKey) != nil else { return nil }
+            return d.integer(forKey: rowOffsetKey)
+        }
+        set {
+            guard let d = UserDefaults(suiteName: appGroupID) else { return }
+            if let v = newValue { d.set(v, forKey: rowOffsetKey) } else { d.removeObject(forKey: rowOffsetKey) }
+        }
+    }
 }

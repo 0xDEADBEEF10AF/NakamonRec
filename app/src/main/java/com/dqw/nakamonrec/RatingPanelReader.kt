@@ -3,6 +3,7 @@ package com.dqw.nakamonrec
 import android.content.Context
 import android.graphics.Bitmap
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * グランプリの勝敗画面に重なる「レーティングパネル」から、現在のレーティングと
@@ -10,14 +11,24 @@ import org.json.JSONObject
  *
  * - 数字はゲームの固定ビットマップフォント。0〜9・小数点のグリフを assets の
  *   grandprix_glyphs.json (24×36 二値) として同梱し、切り出した桁を 24×36 に正規化して分類。
- * - 行位置は 1080×2364 基準の固定バンドを画面幅でスケール (UI は幅アンカー+上寄せ)。
+ * - 行位置は 1080×2364 基準の固定バンドを画面幅でスケール (UI は幅アンカー+上寄せ) するのが
+ *   高速パス。ただし固定バンドは縦 ±5px しか許容しないため (2026-10-12 YouTube 素材で
+ *   約 60px のずれが判明)、読めないフレームでは **ラベルアンカー探索** に落ちる:
+ *   「現在の」(現在のレーティング行の先頭) をダイス係数で中央帯から探し、見つかった行を
+ *   基準に数字を読む。成功したオフセットは GrandPrixMode.learnedRowOffsetY に学習し、
+ *   次回以降は探索なしで即読みする (端末ごとのパネル位置は一定という前提)。
  * - 現在レーティング行は白のみ。必要レーティングは「あと」ラベルと隣接するため、
  *   右詰め run から桁幅 (<=20px 相当) のボックスだけ採用して数値部を切り出す。
  * - 変動レーティングは読まない (連続する現在値の差分で導出できるため)。
+ * - 「無警告誤記録をしない」: アンカー不一致 / 桁一致率不足 / 妥当性外はすべて null。
  */
 object RatingPanelReader {
 
-    data class Reading(val currentRating: Double, val neededRating: Double?) {
+    /**
+     * 読み取り結果。rowOffsetY = 実際に使った行オフセット (1080 基準 px、0 = 固定バンドそのまま)。
+     * RankTierReader にも同じオフセットを渡してエンブレム帯を追従させる。
+     */
+    data class Reading(val currentRating: Double, val neededRating: Double?, val rowOffsetY: Int = 0) {
         val borderRating: Double? get() = neededRating?.let { currentRating + it }
     }
 
@@ -37,7 +48,31 @@ object RatingPanelReader {
      */
     private const val MIN_AGREEMENT = 0.82
 
+    /**
+     * 小数点ルール: この幅 (1080 基準 px) 以下の箱は分類結果に関わらず「.」とみなし一致率ゲートを免除。
+     * 実機では「.」8px に対して最細の数字「1」が 14px (現在行) なので誤判定の余地がない。
+     * 低画質入力では小数点だけ潰れて一致率 0.79 程度に落ち全体が棄却されるため (2026-10-12 実測)。
+     */
+    private const val DOT_MAX_W_CUR = 10.0
+    private const val DOT_MAX_W_NEED = 7.0   // 必要行は数字が小さい (「.」~5px / 「1」~9px)
+
+    // ラベルアンカー探索 (1080 基準)
+    private const val ANCHOR_CUR_BASE_Y = 1165      // 「現在の」の基準上端 (r3 実測、x=87)
+    private const val ANCHOR_NEED_BASE_Y = 1437     // 「必要」の基準上端 (x=450)
+    private const val SEARCH_Y_MIN_RATIO = 0.35; private const val SEARCH_Y_MAX_RATIO = 0.65   // 中央帯
+    private const val SEARCH_X_MAX = 320            // ラベルは左寄せ
+    private const val NEED_SEARCH_DY = 40; private const val NEED_SEARCH_X0 = 400; private const val NEED_SEARCH_W = 160
+    private const val ANCHOR_THRESHOLD = 0.72       // 実測: 実機 0.99〜1.00 / 低画質動画 0.77〜0.88 / 非パネル ≤0.61
+    private const val COARSE_STEP_Y = 4; private const val COARSE_STEP_X = 2; private const val REFINE_RADIUS = 4
+
+    /** 直近の read() の診断文字列 (フライトログ用)。タイムアウト時に原因を切り分けるために残す */
+    @Volatile var lastDiagnostic: String = ""
+        private set
+
+    private class Bin(val bits: BooleanArray, val w: Int, val h: Int)
+
     @Volatile private var glyphTable: Map<Char, BooleanArray>? = null
+    @Volatile private var anchors: Map<String, Bin>? = null
 
     /** assets からグリフ辞書をロード (初回のみ)。char → 24×36 二値 */
     fun ensureGlyphs(context: Context) {
@@ -66,9 +101,37 @@ object RatingPanelReader {
         }
     }
 
+    /** assets からラベルアンカー (「現在の」= current /「必要」= need) をロード (初回のみ) */
+    private fun ensureAnchors(context: Context) {
+        if (anchors != null) return
+        synchronized(this) {
+            if (anchors != null) return
+            val map = HashMap<String, Bin>()
+            try {
+                val json = context.assets.open("grandprix_label_anchors.json").bufferedReader().use { it.readText() }
+                val obj = JSONObject(json)
+                for (key in obj.keys()) {
+                    val rows = obj.getJSONArray(key)
+                    if (rows.length() == 0) continue
+                    val w = rows.getString(0).length; val h = rows.length()
+                    val bits = BooleanArray(w * h)
+                    var i = 0
+                    for (r in 0 until h) {
+                        val row = rows.getString(r)
+                        for (c in row) { if (i < bits.size) bits[i] = (c == '#'); i++ }
+                    }
+                    if (i == w * h) map[key] = Bin(bits, w, h)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("RatingPanelReader", "anchor load failed: ${e.message}")
+            }
+            anchors = map
+        }
+    }
+
     /** 勝敗画面 (レーティングパネル表示中) の Bitmap から読み取る。妥当でなければ null */
     fun read(context: Context, bmp: Bitmap): Reading? {
-        ensureGlyphs(context)
+        ensureGlyphs(context); ensureAnchors(context)
         val table = glyphTable ?: return null
         if (table.isEmpty()) return null
         val w = bmp.width; val h = bmp.height
@@ -76,30 +139,82 @@ object RatingPanelReader {
         val pixels = IntArray(w * h)
         bmp.getPixels(pixels, 0, w, 0, 0, w, h)
         val s = w / BASE_WIDTH
+        val diag = ArrayList<String>()
 
+        // 1) 高速パス: 固定バンド (Pixel 系 19.5:9〜20:9 はここで読める)
+        readRows(pixels, w, h, s, 0, 0, table, diag)?.let { lastDiagnostic = ""; return it }
+
+        // 2) 学習済みオフセット (以前アンカー探索で見つけた端末固有のずれ)
+        val learned = GrandPrixMode.learnedRowOffsetY(context)
+        if (learned != null && learned != 0) {
+            readRows(pixels, w, h, s, learned, learned, table, diag)?.let { lastDiagnostic = ""; return it }
+        }
+
+        // 3) アンカー探索: 「現在の」を中央帯から探し、その行を基準に読む
+        val anchorCur = anchors?.get("current") ?: run { lastDiagnostic = "アンカー資源なし"; return null }
+        val canonH = (h / s).toInt()
+        val by0 = (canonH * SEARCH_Y_MIN_RATIO).toInt(); val by1 = (canonH * SEARCH_Y_MAX_RATIO).toInt()
+        val band = canonicalBand(pixels, w, h, s, 0, by0, SEARCH_X_MAX, maxOf(0, by1 - by0))
+        val m = slideMatch(anchorCur, band, COARSE_STEP_X, COARSE_STEP_Y, REFINE_RADIUS)
+        if (m.score < ANCHOR_THRESHOLD) {
+            diag.add(String.format(Locale.US, "アンカー: %.2f@y%d (しきい値 %.2f 未満)", m.score, by0 + m.y, ANCHOR_THRESHOLD))
+            lastDiagnostic = diag.joinToString(" / "); return null
+        }
+        val offsetY = (by0 + m.y) - ANCHOR_CUR_BASE_Y
+        // 必要行は第 2 アンカー「必要」で行位置を補正 (見つからなければ現在行と同じオフセット)
+        var needOffsetY = offsetY
+        anchors?.get("need")?.let { anchorNeed ->
+            val ny0 = ANCHOR_NEED_BASE_Y + offsetY - NEED_SEARCH_DY
+            val band2 = canonicalBand(pixels, w, h, s, NEED_SEARCH_X0, ny0, NEED_SEARCH_W, NEED_SEARCH_DY * 2 + anchorNeed.h)
+            val m2 = slideMatch(anchorNeed, band2, 1, 1, 0)
+            if (m2.score >= ANCHOR_THRESHOLD) needOffsetY = (ny0 + m2.y) - ANCHOR_NEED_BASE_Y
+        }
+        diag.add(String.format(Locale.US, "アンカー: %.2f Δy%+d", m.score, offsetY))
+        val r = readRows(pixels, w, h, s, offsetY, needOffsetY, table, diag)
+            ?: run { lastDiagnostic = diag.joinToString(" / "); return null }
+        // 端末固有のずれとして学習 (次回以降は探索なしで読める)
+        GrandPrixMode.setLearnedRowOffsetY(context, offsetY)
+        lastDiagnostic = ""
+        return r
+    }
+
+    /** 固定バンドを offsetY (1080 基準 px) だけ縦にずらして読む */
+    private fun readRows(pixels: IntArray, w: Int, h: Int, s: Double, offsetY: Int, needOffsetY: Int,
+                         table: Map<Char, BooleanArray>, diag: MutableList<String>): Reading? {
         fun sx(v: Double) = (v * s).toInt()
         fun sy(v: Double) = (v * s).toInt()
+        val label = if (offsetY == 0) "固定帯域" else String.format(Locale.US, "帯域Δ%+d", offsetY)
 
         // 現在のレーティング。低信頼度の桁があれば読み取り全体を破棄
-        val curBoxes = numberBoxes(pixels, w, h, sy(CUR_Y_TOP), sy(CUR_Y_BOT), sx(CUR_X_MIN), sx(CUR_X_MAX))
-        val curGlyphs = curBoxes.map {
-            classify(bitmap(pixels, w, h, it, sy(CUR_Y_TOP), sy(CUR_Y_BOT)), table)
-        }
-        if (curGlyphs.any { it.second < MIN_AGREEMENT }) return null
-        val curStr = curGlyphs.joinToString("") { it.first.toString() }
-        val current = curStr.toDoubleOrNull() ?: return null
+        val cyTop = sy(CUR_Y_TOP + offsetY); val cyBot = sy(CUR_Y_BOT + offsetY)
+        val curBoxes = numberBoxes(pixels, w, h, cyTop, cyBot, sx(CUR_X_MIN), sx(CUR_X_MAX))
+        if (curBoxes.isEmpty()) { diag.add("$label: 箱なし"); return null }
+        val curStr = readDigits(pixels, w, h, curBoxes, cyTop, cyBot, s, DOT_MAX_W_CUR, table)
+        val current = curStr?.toDoubleOrNull()
+        if (current == null) { diag.add("$label: 桁一致率不足 (箱${curBoxes.size})"); return null }
 
         // 必要レーティング (桁幅で「あと」かなを除外 + 妥当性ゲート)。
         // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する
-        val needRun = neededBoxes(pixels, w, h, sy(NEED_Y_TOP), sy(NEED_Y_BOT), sx(NEED_X_MIN), sx(NEED_X_MAX), s)
-        val needGlyphs = needRun.map {
-            classify(bitmap(pixels, w, h, it, sy(NEED_Y_TOP), sy(NEED_Y_BOT)), table)
-        }
-        val needStr = if (needGlyphs.all { it.second >= MIN_AGREEMENT })
-            needGlyphs.joinToString("") { it.first.toString() } else ""
+        val nyTop = sy(NEED_Y_TOP + needOffsetY); val nyBot = sy(NEED_Y_BOT + needOffsetY)
+        val needRun = neededBoxes(pixels, w, h, nyTop, nyBot, sx(NEED_X_MIN), sx(NEED_X_MAX), s)
+        val needStr = readDigits(pixels, w, h, needRun, nyTop, nyBot, s, DOT_MAX_W_NEED, table) ?: ""
         val needed: Double? = if (needStr.any { it.isDigit() }) needStr.toDoubleOrNull() else null
 
-        return Reading(current, needed)
+        return Reading(current, needed, offsetY)
+    }
+
+    /** 箱列を文字列化。細い箱は小数点、それ以外は一致率ゲート付きで分類。1 桁でも不合格なら null */
+    private fun readDigits(pixels: IntArray, w: Int, h: Int, boxes: List<IntArray>, yTop: Int, yBot: Int,
+                           s: Double, dotMaxWidth: Double, table: Map<Char, BooleanArray>): String? {
+        val sb = StringBuilder()
+        for (box in boxes) {
+            val wCanon = (box[1] - box[0] + 1) / s
+            if (wCanon <= dotMaxWidth) { sb.append('.'); continue }
+            val g = classify(bitmap(pixels, w, h, box, yTop, yBot), table)
+            if (g.second < MIN_AGREEMENT) return null
+            sb.append(g.first)
+        }
+        return sb.toString()
     }
 
     // 白インク判定 (レーティング値は白。色つき紙吹雪を拾わないよう白のみ)
@@ -186,5 +301,60 @@ object RatingPanelReader {
         }
         val rate = if (bm.isEmpty()) 0.0 else bestScore.toDouble() / bm.size
         return best to rate
+    }
+
+    // ---- アンカー探索 (二値ビットマップ + ダイス係数) ----
+
+    /** 画像の一部を 1080 基準の canonical 座標で二値化 (白インク、nearest neighbor)。画像外は false */
+    private fun canonicalBand(pixels: IntArray, w: Int, h: Int, s: Double, x0: Int, y0: Int, cw: Int, ch: Int): Bin {
+        val bits = BooleanArray(maxOf(0, cw * ch))
+        for (cy in 0 until ch) {
+            val sy = ((y0 + cy) * s).toInt()
+            for (cx in 0 until cw) bits[cy * cw + cx] = isInk(pixels, w, h, ((x0 + cx) * s).toInt(), sy)
+        }
+        return Bin(bits, cw, ch)
+    }
+
+    private class MatchResult(val score: Double, val x: Int, val y: Int)
+
+    /**
+     * 粗 (stepY/stepX) → 密 (±refine, 1px) の 2 段スライド照合。
+     * 各窓のインク量を行プレフィックス和で見積もり、テンプレのインク量とかけ離れた窓
+     * (背景のみ / 真っ白) はダイス計算をスキップする (処理時間を約 1/2〜1/3 に短縮)。
+     */
+    private fun slideMatch(tpl: Bin, band: Bin, stepX: Int, stepY: Int, refine: Int): MatchResult {
+        var best = MatchResult(0.0, 0, 0)
+        val tplInk = tpl.bits.count { it }
+        if (tplInk == 0 || band.w < tpl.w || band.h < tpl.h) return best
+        val stride = band.w + 1
+        val pre = IntArray(band.h * stride)
+        for (y in 0 until band.h) {
+            var acc = 0; val base = y * stride
+            for (x in 0 until band.w) { if (band.bits[y * band.w + x]) acc++; pre[base + x + 1] = acc }
+        }
+        val lo = tplInk * 2 / 5; val hi = tplInk * 5 / 2
+        fun eval(ox: Int, oy: Int) {
+            var wink = 0
+            for (ty in 0 until tpl.h) { val base = (oy + ty) * stride; wink += pre[base + ox + tpl.w] - pre[base + ox] }
+            if (wink < lo || wink > hi) return
+            var inter = 0; var bandInk = 0
+            for (ty in 0 until tpl.h) {
+                val brow = (oy + ty) * band.w + ox; val trow = ty * tpl.w
+                for (tx in 0 until tpl.w) {
+                    if (band.bits[brow + tx]) { bandInk++; if (tpl.bits[trow + tx]) inter++ }
+                }
+            }
+            val dice = 2.0 * inter / (tplInk + bandInk)
+            if (dice > best.score) best = MatchResult(dice, ox, oy)
+        }
+        var oy = 0
+        while (oy <= band.h - tpl.h) { var ox = 0; while (ox <= band.w - tpl.w) { eval(ox, oy); ox += maxOf(1, stepX) }; oy += maxOf(1, stepY) }
+        if (refine > 0) {
+            val c = best
+            for (ry in maxOf(0, c.y - refine)..minOf(band.h - tpl.h, c.y + refine)) {
+                for (rx in maxOf(0, c.x - refine)..minOf(band.w - tpl.w, c.x + refine)) eval(rx, ry)
+            }
+        }
+        return best
     }
 }

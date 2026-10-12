@@ -18,7 +18,8 @@ let package = Package(
             resources: [
                 .process("Resources/monsters.json"),
                 .process("Resources/grandprix_glyphs.json"),
-                .process("Resources/grandprix_rank_anchors.json")
+                .process("Resources/grandprix_rank_anchors.json"),
+                .process("Resources/grandprix_label_anchors.json")
             ]
         ),
     ],

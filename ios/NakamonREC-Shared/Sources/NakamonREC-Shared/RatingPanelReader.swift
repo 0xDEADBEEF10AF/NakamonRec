@@ -4,20 +4,27 @@ import CoreGraphics
 /// グランプリの勝敗画面に重なる「レーティングパネル」から、現在のレーティングと
 /// 必要レーティング(あと)を読み取る。純 Swift / CoreGraphics 実装 (OpenCV 非依存)。
 ///
-/// 手法 (プロトタイプで実スクショ 6 枚 12/12 検証済み):
 /// - 数字はゲームの固定ビットマップフォント。0〜9・小数点のグリフを Resource
-///   (grandprix_glyphs.json、24×36 二値) として同梱し、切り出した桁を 24×36 に
-///   正規化して pixel 一致率で分類する。
-/// - 行位置は 1080×2364 基準の固定バンドを画面幅でスケール (UI は幅アンカー+上寄せ)。
+///   (grandprix_glyphs.json、24×36 二値) として同梱し、切り出した桁を 24×36 に正規化して分類。
+/// - 行位置は 1080×2364 基準の固定バンドを画面幅でスケール (UI は幅アンカー+上寄せ) するのが
+///   高速パス。ただし固定バンドは縦 ±5px しか許容しないため (2026-10-12 YouTube 素材で
+///   約 60px のずれが判明)、読めないフレームでは **ラベルアンカー探索** に落ちる:
+///   「現在の」(現在のレーティング行の先頭) をダイス係数で中央帯から探し、見つかった行を
+///   基準に数字を読む。成功したオフセットは `GrandPrixMode.learnedRowOffsetY` に学習し、
+///   次回以降は探索なしで即読みする (端末ごとのパネル位置は一定という前提)。
 /// - 現在レーティング行は白のみ。必要レーティングは「あと」ラベルと隣接するため、
-///   右詰め run から桁幅 (<=20px 相当) のボックスだけを採用して数値部を切り出す。
+///   右詰め run から桁幅 (<=20px 相当) のボックスだけ採用して数値部を切り出す。
 /// - 変動レーティングは読まない (連続する現在値の差分で導出できるため)。
+/// - 「無警告誤記録をしない」: アンカー不一致 / 桁一致率不足 / 妥当性外はすべて nil。
 public enum RatingPanelReader {
 
     /// 読み取り結果
     public struct Reading: Equatable, Sendable {
         public let currentRating: Double
         public let neededRating: Double?   // ランクアップ戦 / GM 帯では nil
+        /// 実際に使った行オフセット (1080 基準 px、0 = 固定バンドそのまま)。
+        /// RankTierReader にも同じオフセットを渡してエンブレム帯を追従させる。
+        public let rowOffsetY: Int
         public var borderRating: Double? { neededRating.map { currentRating + $0 } }
     }
 
@@ -35,32 +42,120 @@ public enum RatingPanelReader {
     /// (例 2208.1→7705.1) が妥当性ゲートを通過するのをここで防ぐ。
     private static let minAgreement = 0.82
 
+    /// 小数点ルール: この幅 (1080 基準 px) 以下の箱は分類結果に関わらず「.」とみなし一致率ゲートを免除する。
+    /// 実機では「.」8px に対して最細の数字「1」が 14px (現在行) なので誤判定の余地がない。
+    /// 低画質入力では小数点だけ潰れて一致率 0.79 程度に落ち全体が棄却されるため (2026-10-12 実測)。
+    private static let dotMaxWidthCur = 10.0
+    private static let dotMaxWidthNeed = 7.0    // 必要行は数字が小さい (「.」~5px / 「1」~9px)
+
+    // MARK: - ラベルアンカー探索 (1080 基準)
+    /// 「現在の」アンカーの基準左上 (r3 実測)。探索で見つかった y との差が行オフセット。
+    private static let anchorCurBaseX = 87, anchorCurBaseY = 1165
+    /// 「必要」アンカーの基準左上。現在行からの相対 +272 で第 2 探索する。
+    private static let anchorNeedBaseX = 450, anchorNeedBaseY = 1437
+    /// 探索帯: 縦は画面高の 35〜65% (パネルは必ず中央に寄る)、横は左端〜320px (ラベルは左寄せ)
+    private static let searchYMinRatio = 0.35, searchYMaxRatio = 0.65
+    private static let searchXMax = 320
+    /// 第 2 アンカーの探索窓 (現在行基準 +272 ± 40、x 400〜560)
+    private static let needSearchDY = 40, needSearchX0 = 400, needSearchW = 160
+    /// ダイス係数しきい値。実測: 実機 0.99〜1.00 / 低画質動画 0.77〜0.88 / 非パネル画面 ≤0.61
+    private static let anchorThreshold = 0.72
+    /// 粗探索の刻み (y 4px / x 2px) と密探索の半径
+    private static let coarseStepY = 4, coarseStepX = 2, refineRadius = 4
+
+    /// 直近の read() の診断文字列 (フライトログ用)。タイムアウト時に原因を切り分けるために残す。
+    /// 例: "固定帯域: 箱なし / アンカー: 0.58@y1390 (しきい値未満)"
+    nonisolated(unsafe) public static var lastDiagnostic: String = ""
+
+    // MARK: - 読み取り (公開 API)
+
     /// 勝敗画面 (レーティングパネル表示中) の CGImage から読み取る。
     /// パネルが見つからない/数値が妥当でない/分類の信頼度が低い場合は nil。
     public static func read(_ image: CGImage) -> Reading? {
         guard let px = Pixels(image) else { return nil }
         let s = Double(image.width) / baseWidth        // 幅スケール
+        var diag: [String] = []
+
+        // 1) 高速パス: 固定バンド (Pixel 系 19.5:9〜20:9 はここで読める)
+        if let r = readRows(px, scale: s, offsetY: 0, needOffsetY: 0, diag: &diag) { lastDiagnostic = ""; return r }
+
+        // 2) 学習済みオフセット (以前アンカー探索で見つけた端末固有のずれ)
+        if let learned = GrandPrixMode.learnedRowOffsetY, learned != 0,
+           let r = readRows(px, scale: s, offsetY: learned, needOffsetY: learned, diag: &diag) {
+            lastDiagnostic = ""
+            return r
+        }
+
+        // 3) アンカー探索: 「現在の」を中央帯から探し、その行を基準に読む
+        guard let anchorCur = anchors["current"] else { lastDiagnostic = "アンカー資源なし"; return nil }
+        let canonH = Int(Double(image.height) / s)
+        let by0 = Int(Double(canonH) * searchYMinRatio), by1 = Int(Double(canonH) * searchYMaxRatio)
+        let band = canonicalBand(px, scale: s, x0: 0, y0: by0, w: searchXMax, h: max(0, by1 - by0))
+        let m = slideMatch(anchorCur, in: band, stepX: coarseStepX, stepY: coarseStepY, refine: refineRadius)
+        guard m.score >= anchorThreshold else {
+            diag.append(String(format: "アンカー: %.2f@y%d (しきい値 %.2f 未満)", m.score, by0 + m.y, anchorThreshold))
+            lastDiagnostic = diag.joined(separator: " / "); return nil
+        }
+        let offsetY = (by0 + m.y) - anchorCurBaseY
+        // 必要行は第 2 アンカー「必要」で行位置を補正 (見つからなければ現在行と同じオフセット)
+        var needOffsetY = offsetY
+        if let anchorNeed = anchors["need"] {
+            let ny0 = anchorNeedBaseY + offsetY - needSearchDY
+            let band2 = canonicalBand(px, scale: s, x0: needSearchX0, y0: ny0, w: needSearchW,
+                                      h: needSearchDY * 2 + anchorNeed.h)
+            let m2 = slideMatch(anchorNeed, in: band2, stepX: 1, stepY: 1, refine: 0)
+            if m2.score >= anchorThreshold { needOffsetY = (ny0 + m2.y) - anchorNeedBaseY }
+        }
+        diag.append(String(format: "アンカー: %.2f Δy%+d", m.score, offsetY))
+        guard let r = readRows(px, scale: s, offsetY: offsetY, needOffsetY: needOffsetY, diag: &diag) else {
+            lastDiagnostic = diag.joined(separator: " / "); return nil
+        }
+        // 端末固有のずれとして学習 (次回以降は探索なしで読める)
+        GrandPrixMode.learnedRowOffsetY = offsetY
+        lastDiagnostic = ""
+        return r
+    }
+
+    // MARK: - 行の読み取り (オフセット指定)
+
+    /// 固定バンドを offsetY (1080 基準 px) だけ縦にずらして読む。
+    private static func readRows(_ px: Pixels, scale s: Double, offsetY: Int, needOffsetY: Int,
+                                 diag: inout [String]) -> Reading? {
         func scaleY(_ v: Double) -> Int { Int(v * s) }
         func scaleX(_ v: Double) -> Int { Int(v * s) }
+        let label = offsetY == 0 ? "固定帯域" : "帯域Δ\(offsetY >= 0 ? "+" : "")\(offsetY)"
 
         // 現在のレーティング (白のみ、右詰め run)。低信頼度の桁があれば読み取り全体を破棄
-        let curBoxes = numberBoxes(px, yTop: scaleY(curYTop), yBot: scaleY(curYBot),
-                                   xMin: scaleX(curXMin), xMax: scaleX(curXMax), allowColor: false)
-        let curGlyphs = curBoxes.map { classify(bitmap(px, box: $0, yTop: scaleY(curYTop), yBot: scaleY(curYBot), allowColor: false)) }
-        guard curGlyphs.allSatisfy({ $0.agreement >= minAgreement }) else { return nil }
-        let curStr = String(curGlyphs.map(\.ch))
-        guard let current = Double(curStr) else { return nil }
+        let cyTop = scaleY(curYTop + Double(offsetY)), cyBot = scaleY(curYBot + Double(offsetY))
+        let curBoxes = numberBoxes(px, yTop: cyTop, yBot: cyBot, xMin: scaleX(curXMin), xMax: scaleX(curXMax), allowColor: false)
+        guard !curBoxes.isEmpty else { diag.append("\(label): 箱なし"); return nil }
+        guard let curStr = readDigits(px, boxes: curBoxes, yTop: cyTop, yBot: cyBot, scale: s, dotMaxWidth: dotMaxWidthCur),
+              let current = Double(curStr) else {
+            diag.append("\(label): 桁一致率不足 (箱\(curBoxes.count))"); return nil
+        }
 
         // 必要レーティング (白、桁幅で「あと」かなを除外、妥当性ゲート)。
         // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する
-        let needRun = neededBoxes(px, yTop: scaleY(needYTop), yBot: scaleY(needYBot),
-                                  xMin: scaleX(needXMin), xMax: scaleX(needXMax), scale: s)
-        let needGlyphs = needRun.map { classify(bitmap(px, box: $0, yTop: scaleY(needYTop), yBot: scaleY(needYBot), allowColor: false)) }
-        let needStr = needGlyphs.allSatisfy({ $0.agreement >= minAgreement })
-            ? String(needGlyphs.map(\.ch)) : ""
+        let nyTop = scaleY(needYTop + Double(needOffsetY)), nyBot = scaleY(needYBot + Double(needOffsetY))
+        let needRun = neededBoxes(px, yTop: nyTop, yBot: nyBot, xMin: scaleX(needXMin), xMax: scaleX(needXMax), scale: s)
+        let needStr = readDigits(px, boxes: needRun, yTop: nyTop, yBot: nyBot, scale: s, dotMaxWidth: dotMaxWidthNeed) ?? ""
         let needed: Double? = (needStr.contains(where: { $0.isNumber }) ? Double(needStr) : nil)
 
-        return Reading(currentRating: current, neededRating: needed)
+        return Reading(currentRating: current, neededRating: needed, rowOffsetY: offsetY)
+    }
+
+    /// 箱列を文字列化。細い箱は小数点、それ以外は一致率ゲート付きで分類。1 桁でも不合格なら nil
+    private static func readDigits(_ px: Pixels, boxes: [(x0: Int, x1: Int)], yTop: Int, yBot: Int,
+                                   scale s: Double, dotMaxWidth: Double) -> String? {
+        var out = ""
+        for box in boxes {
+            let wCanon = Double(box.x1 - box.x0 + 1) / s
+            if wCanon <= dotMaxWidth { out.append("."); continue }
+            let g = classify(bitmap(px, box: box, yTop: yTop, yBot: yBot, allowColor: false))
+            guard g.agreement >= minAgreement else { return nil }
+            out.append(g.ch)
+        }
+        return out
     }
 
     // MARK: - ピクセルバッファ
@@ -169,7 +264,66 @@ public enum RatingPanelReader {
         return (best, bm.isEmpty ? 0 : Double(bestScore) / Double(bm.count))
     }
 
-    // MARK: - グリフ辞書 (Resource からロード、char → 24×36 二値)
+    // MARK: - アンカー探索 (二値ビットマップ + ダイス係数)
+
+    private struct Bin { var bits: [Bool]; var w: Int; var h: Int }
+
+    /// 画像の一部を 1080 基準の canonical 座標で二値化 (白インク、nearest neighbor)。
+    /// 画像外は false。
+    private static func canonicalBand(_ px: Pixels, scale s: Double, x0: Int, y0: Int, w: Int, h: Int) -> Bin {
+        var bits = [Bool](repeating: false, count: max(0, w * h))
+        for cy in 0..<h {
+            let sy = Int(Double(y0 + cy) * s)
+            for cx in 0..<w {
+                bits[cy * w + cx] = px.isInk(Int(Double(x0 + cx) * s), sy, allowColor: false)
+            }
+        }
+        return Bin(bits: bits, w: w, h: h)
+    }
+
+    /// 粗 (stepY/stepX) → 密 (±refine, 1px) の 2 段スライド照合。
+    /// 各窓のインク量を行プレフィックス和で見積もり、テンプレのインク量とかけ離れた窓
+    /// (背景のみ / 真っ白) はダイス計算をスキップする (処理時間を約 1/2〜1/3 に短縮)。
+    private static func slideMatch(_ tpl: Bin, in band: Bin, stepX: Int, stepY: Int, refine: Int)
+        -> (score: Double, x: Int, y: Int) {
+        var best = (score: 0.0, x: 0, y: 0)
+        let tplInk = tpl.bits.lazy.filter { $0 }.count
+        guard tplInk > 0, band.w >= tpl.w, band.h >= tpl.h else { return best }
+        let stride = band.w + 1
+        var pre = [Int](repeating: 0, count: band.h * stride)
+        for y in 0..<band.h {
+            var acc = 0; let base = y * stride
+            for x in 0..<band.w { if band.bits[y * band.w + x] { acc += 1 }; pre[base + x + 1] = acc }
+        }
+        let lo = tplInk * 2 / 5, hi = tplInk * 5 / 2
+        func eval(_ ox: Int, _ oy: Int) {
+            var wink = 0
+            for ty in 0..<tpl.h { let base = (oy + ty) * stride; wink += pre[base + ox + tpl.w] - pre[base + ox] }
+            guard wink >= lo && wink <= hi else { return }
+            var inter = 0, bandInk = 0
+            for ty in 0..<tpl.h {
+                let brow = (oy + ty) * band.w + ox, trow = ty * tpl.w
+                for tx in 0..<tpl.w where band.bits[brow + tx] {
+                    bandInk += 1
+                    if tpl.bits[trow + tx] { inter += 1 }
+                }
+            }
+            let dice = 2.0 * Double(inter) / Double(tplInk + bandInk)
+            if dice > best.score { best = (dice, ox, oy) }
+        }
+        for oy in Swift.stride(from: 0, through: band.h - tpl.h, by: max(1, stepY)) {
+            for ox in Swift.stride(from: 0, through: band.w - tpl.w, by: max(1, stepX)) { eval(ox, oy) }
+        }
+        if refine > 0 {
+            let c = best
+            for oy in max(0, c.y - refine)...min(band.h - tpl.h, c.y + refine) {
+                for ox in max(0, c.x - refine)...min(band.w - tpl.w, c.x + refine) { eval(ox, oy) }
+            }
+        }
+        return best
+    }
+
+    // MARK: - グリフ辞書 / アンカー (Resource からロード)
 
     private static let glyphTable: [Character: [Bool]] = {
         guard let url = Bundle.module.url(forResource: "grandprix_glyphs", withExtension: "json"),
@@ -179,10 +333,28 @@ public enum RatingPanelReader {
         }
         var table: [Character: [Bool]] = [:]
         for (key, rows) in raw {
-            let ch: Character = (key == "dot") ? "." : Character(key)
+            let ch: Character = (key == "dot") ? "." : (key.first ?? "?")
             var bits = [Bool](); bits.reserveCapacity(glyphW * glyphH)
             for row in rows { for c in row { bits.append(c == "#") } }
             if bits.count == glyphW * glyphH { table[ch] = bits }
+        }
+        return table
+    }()
+
+    /// ラベルアンカー (「現在の」= current 156×52 /「必要」= need 54×31)。ゲームフォントの字形のみ。
+    private static let anchors: [String: Bin] = {
+        guard let url = Bundle.module.url(forResource: "grandprix_label_anchors", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let raw = try? JSONDecoder().decode([String: [String]].self, from: data) else {
+            return [:]
+        }
+        var table: [String: Bin] = [:]
+        for (key, rows) in raw {
+            guard let firstRow = rows.first, !firstRow.isEmpty else { continue }
+            let w = firstRow.count, h = rows.count
+            var bits = [Bool](); bits.reserveCapacity(w * h)
+            for row in rows { for c in row { bits.append(c == "#") } }
+            if bits.count == w * h { table[key] = Bin(bits: bits, w: w, h: h) }
         }
         return table
     }()

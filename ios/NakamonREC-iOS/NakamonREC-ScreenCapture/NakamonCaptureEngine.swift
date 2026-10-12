@@ -274,10 +274,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         }
 
         // グランプリ: WIN/LOSE 後のレーティング画面待ち (大会モード時のみ発生)。
-        // 待機中は新規 VS/パーティ探索を止め、パネル読み取りに専念する。
+        // 待機中も次の戦闘のパーティ選択/VS 探索は止めない (26.10.2)。26.10.1 までは待機中に
+        // return していたため、せっかちなユーザーが 20 秒以内に次戦へ進むとパーティや戦闘開始を
+        // 取りこぼしていた。VS 検知 (= 次戦開始) 時は scanForVS 側で待機を打ち切る。
         if grandPrixWait != nil {
             handleGrandPrixWait(uiImage, now: currentTime)
-            return
         }
 
         if !isBattleInProgress {
@@ -297,14 +298,18 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         guard let wait = grandPrixWait else { return }
         if now > wait.deadline {
             grandPrixWait = nil
-            BattleLogger.append("グランプリ: レーティング画面の検出タイムアウト (記録なし)")
+            // 直近フレームの診断 (固定帯域/学習オフセット/アンカー探索のどこで落ちたか) を残す
+            let diag = RatingPanelReader.lastDiagnostic
+            BattleLogger.append("グランプリ: レーティング画面の検出タイムアウト (記録なし)"
+                                + (diag.isEmpty ? "" : " — 直近: \(diag)"))
             return
         }
         guard let cg = scene.cgImage, let reading = RatingPanelReader.read(cg) else { return }
         // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
         guard reading.currentRating >= 100, reading.currentRating <= 99_999 else { return }
-        // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は nil = 記録は続行)
-        let rankTier = RankTierReader.read(cg)
+        // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は nil = 記録は続行)。
+        // 行オフセットを渡し、パネルがずれている端末でもエンブレム帯を追従させる
+        let rankTier = RankTierReader.read(cg, rowOffsetY: reading.rowOffsetY)
         let record = GrandPrixRecord(timestamp: wait.timestamp,
                                      result: wait.result,
                                      currentRating: reading.currentRating,
@@ -312,11 +317,12 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                      rankTier: rankTier)
         BattleHistoryStore.shared.appendGrandPrix(record)
         grandPrixWait = nil
-        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@",
+        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@%@",
                                    reading.currentRating,
                                    reading.neededRating.map { String(format: "%.1f", $0) } ?? "—",
                                    reading.borderRating.map { String(format: "%.1f", $0) } ?? "—",
-                                   rankTier ?? "—"))
+                                   rankTier ?? "—",
+                                   reading.rowOffsetY == 0 ? "" : " (行Δ\(reading.rowOffsetY >= 0 ? "+" : "")\(reading.rowOffsetY)px)"))
     }
 
     // MARK: - Party Selection (戦闘開始前のパーティ選択画面)
@@ -445,6 +451,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // VS 検知閾値はユーザー可変 (DetectionThresholdsConfig, デフォルト 0.5、範囲 0.4〜0.8)
         if score > DetectionThresholdsConfig.vsThreshold {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
+            // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
+            if grandPrixWait != nil {
+                grandPrixWait = nil
+                BattleLogger.append("グランプリ: 次の戦闘開始により待機終了 (記録なし)")
+            }
             BattleLogger.rotate()
             if lastDetectedPartyIndex >= 0 {
                 BattleLogger.append(String(format: "パーティ P[%d] で戦闘開始", lastDetectedPartyIndex + 1))

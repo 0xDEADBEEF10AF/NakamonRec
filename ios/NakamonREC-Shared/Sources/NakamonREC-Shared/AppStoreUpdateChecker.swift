@@ -15,12 +15,14 @@ public struct AppStoreUpdateInfo: Sendable {
 /// GitHub Releases チェックはストア一本化 (2026-08-15, 案B) で廃止した。
 /// Android 側は Play In-App Update API で同等の機能を提供する。
 public enum AppStoreUpdateChecker {
-    /// 最新バージョンとストアページ URL を取得する。
-    /// 注意: Lookup API にはキャッシュがあり、審査承認直後は反映まで最大1日程度
-    /// 遅れることがある (更新通知用途では許容)。失敗時は nil。
+    /// 最新バージョンとストアページ URL を取得する。失敗時は nil。
+    /// Lookup API は CDN キャッシュが効き、同じ URL だと審査承認後も丸 1 日古い版を返すことがある
+    /// (26.10.1 公開日に実測: bundleId 指定の素の URL は 26.9.1、ダミーパラメータ付きは 26.10.1)。
+    /// 公開直後から更新通知が出るよう、無視されるダミーパラメータに現在時刻を付けてキャッシュを避ける。
     public static func fetch() async -> AppStoreUpdateInfo? {
+        let cacheBuster = Int(Date().timeIntervalSince1970)
         guard let bundleID = Bundle.main.bundleIdentifier,
-              let url = URL(string: "https://itunes.apple.com/lookup?bundleId=\(bundleID)&country=jp") else {
+              let url = URL(string: "https://itunes.apple.com/lookup?bundleId=\(bundleID)&country=jp&_=\(cacheBuster)") else {
             return nil
         }
         guard let (data, _) = try? await URLSession.shared.data(from: url),

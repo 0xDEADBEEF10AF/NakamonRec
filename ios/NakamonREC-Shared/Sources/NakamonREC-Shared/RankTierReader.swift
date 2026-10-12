@@ -31,13 +31,15 @@ public enum RankTierReader {
 
     /// ランク帯を識別する。識別できなければ nil。
     /// 戻り値は `GrandPrixRecord.rankTiers` のいずれか。
-    public static func read(_ image: CGImage) -> String? {
+    /// - Parameter rowOffsetY: RatingPanelReader が実際に使った行オフセット (1080 基準 px)。
+    ///   パネル全体が同じ量だけずれているので、エンブレム探索帯も追従させる (0 = 従来どおり)。
+    public static func read(_ image: CGImage, rowOffsetY: Int = 0) -> String? {
         guard let px = Pixels(image) else { return nil }
         let s = Double(image.width) / baseWidth
 
         // 探索帯を 1080 基準の canonical 座標で二値化 (nearest neighbor サンプリング)
-        let bandM = canonicalBand(px, scale: s, thr: masterThr)
-        let bandG = canonicalBand(px, scale: s, thr: grandThr)
+        let bandM = canonicalBand(px, scale: s, thr: masterThr, offsetY: rowOffsetY)
+        let bandG = canonicalBand(px, scale: s, thr: grandThr, offsetY: rowOffsetY)
         guard let master = anchors["master"], let grand = anchors["grand"] else { return nil }
 
         let m = slideMatch(master, in: bandM)
@@ -94,10 +96,10 @@ public enum RankTierReader {
     }
 
     /// 探索帯を 1080 基準サイズで二値化 (非1080幅は nearest neighbor で吸収)
-    private static func canonicalBand(_ px: Pixels, scale: Double, thr: Int) -> Bin {
+    private static func canonicalBand(_ px: Pixels, scale: Double, thr: Int, offsetY: Int) -> Bin {
         var bits = [Bool](repeating: false, count: bandW * bandH)
         for cy in 0..<bandH {
-            let sy = Int(Double(bandY + cy) * scale)
+            let sy = Int(Double(bandY + offsetY + cy) * scale)
             for cx in 0..<bandW {
                 let sx = Int(Double(bandX + cx) * scale)
                 bits[cy * bandW + cx] = px.isInk(sx, sy, thr: thr)

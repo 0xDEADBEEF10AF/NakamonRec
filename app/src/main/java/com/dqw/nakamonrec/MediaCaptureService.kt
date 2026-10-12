@@ -453,6 +453,10 @@ class MediaCaptureService : Service() {
         
         val vsKind = analyzer.detectVsTemplate(bitmap)
         if (vsKind != null) {
+            // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
+            if (currentState == State.AWAITING_RATING) {
+                dataManager.appendFlightLog("グランプリ: 次の戦闘開始により待機終了 (記録なし)")
+            }
             dataManager.rotateFlightLog()
 
             // 大会 VS で始まったか (二段ゲート1段目)。custom は大会用校正時のみ大会扱い。
@@ -562,14 +566,26 @@ class MediaCaptureService : Service() {
     private fun handleAwaitingRating(bitmap: Bitmap) {
         if (System.currentTimeMillis() > grandPrixDeadline) {
             currentState = State.IDLE
-            dataManager.appendFlightLog("グランプリ: レーティング画面の検出タイムアウト (記録なし)")
+            // 直近フレームの診断 (固定帯域/学習オフセット/アンカー探索のどこで落ちたか) を残す
+            val diag = RatingPanelReader.lastDiagnostic
+            dataManager.appendFlightLog("グランプリ: レーティング画面の検出タイムアウト (記録なし)" +
+                if (diag.isEmpty()) "" else " — 直近: $diag")
             return
         }
-        val reading = RatingPanelReader.read(this, bitmap) ?: return
+        val reading = RatingPanelReader.read(this, bitmap)
+        if (reading == null) {
+            // 待機中も次の戦闘のパーティ選択/VS 探索は止めない (26.10.2)。26.10.1 までは待機中に
+            // idle 探索を呼ばなかったため、せっかちなユーザーが 20 秒以内に次戦へ進むとパーティや
+            // 戦闘開始を取りこぼしていた。VS 検知 (= 次戦開始) 時は handleIdleState 側で IN_BATTLE に遷移し、
+            // 待機は自然に終了する (ログは handleIdleState で残す)。
+            handleIdleState(bitmap)
+            return
+        }
         // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
         if (reading.currentRating < 100 || reading.currentRating > 99_999) return
-        // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は null = 記録は続行)
-        val rankTier = RankTierReader.read(this, bitmap)
+        // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は null = 記録は続行)。
+        // 行オフセットを渡し、パネルがずれている端末でもエンブレム帯を追従させる
+        val rankTier = RankTierReader.read(this, bitmap, reading.rowOffsetY)
         synchronized(this) {
             if (currentState != State.AWAITING_RATING) return
             dataManager.appendGrandPrix(
@@ -585,8 +601,9 @@ class MediaCaptureService : Service() {
         }
         val borderStr = reading.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
         val neededStr = reading.neededRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
-        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s ランク%s",
-            reading.currentRating, neededStr, borderStr, rankTier ?: "—"))
+        val offsetStr = if (reading.rowOffsetY == 0) "" else String.format(Locale.US, " (行Δ%+dpx)", reading.rowOffsetY)
+        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s ランク%s%s",
+            reading.currentRating, neededStr, borderStr, rankTier ?: "—", offsetStr))
         // A 方針: レーティング値のみの記録確認通知
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses,
             String.format(Locale.US, "🎖 GP記録 %.1f", reading.currentRating))

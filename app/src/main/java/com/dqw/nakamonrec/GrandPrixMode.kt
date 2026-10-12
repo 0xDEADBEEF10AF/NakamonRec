@@ -22,4 +22,22 @@ object GrandPrixMode {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY, enabled).apply()
     }
+
+    /**
+     * レーティングパネル行の学習済み縦オフセット (1080 基準 px、null = 未学習)。
+     * RatingPanelReader がアンカー探索で見つけた端末固有のずれを保存し、次回以降は探索なしで
+     * 固定バンドをこの量だけずらして読む (ユーザー操作なしの自動校正)。iOS と対応。
+     */
+    private const val KEY_ROW_OFFSET = "grandPrixRowOffsetY"
+
+    fun learnedRowOffsetY(context: Context): Int? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_ROW_OFFSET)) prefs.getInt(KEY_ROW_OFFSET, 0) else null
+    }
+
+    fun setLearnedRowOffsetY(context: Context, offsetY: Int?) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (offsetY == null) editor.remove(KEY_ROW_OFFSET) else editor.putInt(KEY_ROW_OFFSET, offsetY)
+        editor.apply()
+    }
 }
