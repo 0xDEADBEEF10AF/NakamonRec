@@ -30,7 +30,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         let deadline: TimeInterval  // これを過ぎたら諦める
     }
     private var grandPrixWait: GrandPrixWait?
-    private let grandPrixWaitTimeout: TimeInterval = 20
+    /// レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通、
+    /// 配信動画で確認) ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の
+    /// 検知で打ち切るので、長くしても取りこぼしは増えない。
+    private let grandPrixWaitTimeout: TimeInterval = 120
 
     // テンプレートキャッシュ
     // VS は BASE 2 種 (FM=フレンドマッチング, MG=大会用) + カスタムテンプレ対応。
@@ -377,6 +380,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 上書きしないことで、後続の VS 検知時に正しいパーティ識別スコアが残る。
         if bestScore >= 0.7 {
             lastPartySelectScores = allScores
+            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る
+            if grandPrixWait != nil {
+                grandPrixWait = nil
+                BattleLogger.append("グランプリ: パーティ選択へ進んだため待機終了 (記録なし)")
+            }
         }
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {

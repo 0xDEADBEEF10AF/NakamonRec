@@ -45,7 +45,9 @@ class MediaCaptureService : Service() {
     private var grandPrixDeadline = 0L
     private var grandPrixTimestamp = ""
     private var grandPrixResult = ""
-    private val grandPrixWaitTimeoutMs = 20_000L
+    // レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通)
+    // ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の検知で打ち切る。
+    private val grandPrixWaitTimeoutMs = 120_000L
     private var lastAnalysisTime = 0L
     private var lastBitmapUpdateTime = 0L
     private var latestBitmap: Bitmap? = null
@@ -431,8 +433,13 @@ class MediaCaptureService : Service() {
 
     private fun handleIdleState(bitmap: Bitmap) {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
-        
+
         if (detected != -1) {
+            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る
+            if (currentState == State.AWAITING_RATING) {
+                currentState = State.IDLE
+                dataManager.appendFlightLog("グランプリ: パーティ選択へ進んだため待機終了 (記録なし)")
+            }
             if (lastDetectedPartyIndex != detected) {
                 dataManager.appendFlightLog("パーティ選択検知 P[${detected + 1}] Score ${String.format(Locale.US, "%.3f", scores[detected])}")
                 // マッチングスコア詳細用に 3 枚セットで保存。パーティ変化時のみ実行することで

@@ -41,6 +41,10 @@ public enum RatingPanelReader {
     /// (異アスペクト端末のスクショ紙芝居等) での誤分類 ≤0.74 — もっともらしい偽値
     /// (例 2208.1→7705.1) が妥当性ゲートを通過するのをここで防ぐ。
     private static let minAgreement = 0.82
+    /// 低画質入力の救済 (2026-10-14 実測): 一致率が 0.78〜0.82 でも、2 位候補との差 (マージン) が
+    /// 十分大きければ正読とみなす。正しい桁はマージン ≥0.08、帯域ずれの誤読は 1 位 ≤0.73 または
+    /// マージン ≤0.05 に分布しており、この 2 条件で分離できる。
+    private static let relaxedAgreement = 0.78, relaxedMargin = 0.12
 
     /// 小数点ルール: この幅 (1080 基準 px) 以下の箱は分類結果に関わらず「.」とみなし一致率ゲートを免除する。
     /// 実機では「.」8px に対して最細の数字「1」が 14px (現在行) なので誤判定の余地がない。
@@ -129,30 +133,70 @@ public enum RatingPanelReader {
         let cyTop = scaleY(curYTop + Double(offsetY)), cyBot = scaleY(curYBot + Double(offsetY))
         let curBoxes = numberBoxes(px, yTop: cyTop, yBot: cyBot, xMin: scaleX(curXMin), xMax: scaleX(curXMax), allowColor: false)
         guard !curBoxes.isEmpty else { diag.append("\(label): 箱なし"); return nil }
-        guard let curStr = readDigits(px, boxes: curBoxes, yTop: cyTop, yBot: cyBot, scale: s, dotMaxWidth: dotMaxWidthCur),
-              let current = Double(curStr) else {
+        guard let curStr = readDigits(px, boxes: curBoxes, yTop: cyTop, yBot: cyBot, scale: s, dotMaxWidth: dotMaxWidthCur) else {
             diag.append("\(label): 桁一致率不足 (箱\(curBoxes.count))"); return nil
         }
+        // 表示形式の検証: ゲームは常に「整数部 + 小数 1 桁」(例 2208.1)。桁の融合や run の途切れで
+        // 一部だけ読めた文字列 (例 "8" / ".8") を妥当な数値として通さないためのゲート
+        guard isValidRatingText(curStr, minIntDigits: 3), let current = Double(curStr) else {
+            diag.append("\(label): 数値形式不正 \"\(curStr)\""); return nil
+        }
 
-        // 必要レーティング (白、桁幅で「あと」かなを除外、妥当性ゲート)。
+        // 必要レーティング (白、桁幅で「あと」かなを除外、形式ゲート)。
         // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する
         let nyTop = scaleY(needYTop + Double(needOffsetY)), nyBot = scaleY(needYBot + Double(needOffsetY))
         let needRun = neededBoxes(px, yTop: nyTop, yBot: nyBot, xMin: scaleX(needXMin), xMax: scaleX(needXMax), scale: s)
         let needStr = readDigits(px, boxes: needRun, yTop: nyTop, yBot: nyBot, scale: s, dotMaxWidth: dotMaxWidthNeed) ?? ""
-        let needed: Double? = (needStr.contains(where: { $0.isNumber }) ? Double(needStr) : nil)
+        let needed: Double? = isValidRatingText(needStr, minIntDigits: 1) ? Double(needStr) : nil
 
         return Reading(currentRating: current, neededRating: needed, rowOffsetY: offsetY)
     }
 
-    /// 箱列を文字列化。細い箱は小数点、それ以外は一致率ゲート付きで分類。1 桁でも不合格なら nil
+    /// 「整数部 (minIntDigits〜5 桁) + '.' + 小数 1 桁」の形式か。
+    /// 2026-10-14: 低画質動画で「あと300.8」の「00」が 1 箱に融合 → 桁幅超で run が切れ、
+    /// 残った "8" を必要値 8.0 として通してしまったのを機に追加 (26.10.1 以前は ".8"→0.8 の潜在リスク)。
+    private static func isValidRatingText(_ s: String, minIntDigits: Int) -> Bool {
+        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        let intPart = parts[0], frac = parts[1]
+        guard intPart.count >= minIntDigits, intPart.count <= 5, frac.count == 1 else { return false }
+        return intPart.allSatisfy(\.isNumber) && frac.allSatisfy(\.isNumber)
+    }
+
+    /// 箱列を文字列化。細い箱は小数点、それ以外は一致率ゲート付きで分類。1 桁でも不合格なら nil。
+    ///
+    /// 細い箱 (幅 ≤ dotMaxWidth @1080) の扱い (2026-10-14 低画質動画の実測で追加):
+    /// - 隣接する細い箱 (隙間 ≤3px) は圧縮で割れた 1 つの小数点として統合する
+    /// - 先頭/末尾の細い箱は捨てる (数値は「.」で始まらず終わらない = 数字の縁や背景の光のノイズ)
+    /// - 残った細い箱が 2 個以上なら読み取り不能 (nil)
     private static func readDigits(_ px: Pixels, boxes: [(x0: Int, x1: Int)], yTop: Int, yBot: Int,
                                    scale s: Double, dotMaxWidth: Double) -> String? {
-        var out = ""
+        let maxDotPx = Int(dotMaxWidth * s)
+        let mergeGap = Int(3.0 * s)
+        // 1) 細い箱の統合
+        var merged: [(x0: Int, x1: Int, thin: Bool)] = []
         for box in boxes {
-            let wCanon = Double(box.x1 - box.x0 + 1) / s
-            if wCanon <= dotMaxWidth { out.append("."); continue }
-            let g = classify(bitmap(px, box: box, yTop: yTop, yBot: yBot, allowColor: false))
-            guard g.agreement >= minAgreement else { return nil }
+            let thin = (box.x1 - box.x0 + 1) <= maxDotPx
+            if thin, let last = merged.last, last.thin, box.x0 - last.x1 - 1 <= mergeGap {
+                merged[merged.count - 1] = (last.x0, box.x1, true)
+            } else {
+                merged.append((box.x0, box.x1, thin))
+            }
+        }
+        // 2) 先頭/末尾の細い箱を捨てる
+        while let f = merged.first, f.thin { merged.removeFirst() }
+        while let l = merged.last, l.thin { merged.removeLast() }
+        guard !merged.isEmpty else { return nil }
+        // 3) 小数点は最大 1 個
+        guard merged.filter({ $0.thin }).count <= 1 else { return nil }
+        // 4) 桁分類
+        var out = ""
+        for b in merged {
+            if b.thin { out.append("."); continue }
+            let g = classify(bitmap(px, box: (b.x0, b.x1), yTop: yTop, yBot: yBot, allowColor: false))
+            let accepted = g.agreement >= minAgreement
+                || (g.agreement >= relaxedAgreement && g.agreement - g.second >= relaxedMargin)
+            guard accepted else { return nil }
             out.append(g.ch)
         }
         return out
@@ -254,14 +298,17 @@ public enum RatingPanelReader {
 
     // MARK: - 分類 (同梱グリフとの pixel 一致率)
 
-    private static func classify(_ bm: [Bool]) -> (ch: Character, agreement: Double) {
-        var best: Character = "?"; var bestScore = -1
+    /// 最良一致の文字と一致率、および 2 位の一致率 (マージン判定用) を返す
+    private static func classify(_ bm: [Bool]) -> (ch: Character, agreement: Double, second: Double) {
+        var best: Character = "?"; var bestScore = -1; var secondScore = -1
         for (ch, glyph) in glyphTable {
             var agree = 0
             for i in 0..<bm.count where bm[i] == glyph[i] { agree += 1 }
-            if agree > bestScore { bestScore = agree; best = ch }
+            if agree > bestScore { secondScore = bestScore; bestScore = agree; best = ch }
+            else if agree > secondScore { secondScore = agree }
         }
-        return (best, bm.isEmpty ? 0 : Double(bestScore) / Double(bm.count))
+        let n = Double(max(bm.count, 1))
+        return (best, bm.isEmpty ? 0 : Double(bestScore) / n, secondScore < 0 ? 0 : Double(secondScore) / n)
     }
 
     // MARK: - アンカー探索 (二値ビットマップ + ダイス係数)

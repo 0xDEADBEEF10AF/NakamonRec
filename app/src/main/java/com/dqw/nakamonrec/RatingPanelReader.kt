@@ -47,6 +47,12 @@ object RatingPanelReader {
      * (例 2208.1→7705.1) が妥当性ゲートを通過するのをここで防ぐ。iOS と同一。
      */
     private const val MIN_AGREEMENT = 0.82
+    /**
+     * 低画質入力の救済 (2026-10-14 実測): 一致率が 0.78〜0.82 でも、2 位候補との差 (マージン) が
+     * 十分大きければ正読とみなす。正しい桁はマージン >=0.08、帯域ずれの誤読は 1 位 <=0.73 または
+     * マージン <=0.05 に分布しており、この 2 条件で分離できる。iOS と同一。
+     */
+    private const val RELAXED_AGREEMENT = 0.78; private const val RELAXED_MARGIN = 0.12
 
     /**
      * 小数点ルール: この幅 (1080 基準 px) 以下の箱は分類結果に関わらず「.」とみなし一致率ゲートを免除。
@@ -190,29 +196,73 @@ object RatingPanelReader {
         val curBoxes = numberBoxes(pixels, w, h, cyTop, cyBot, sx(CUR_X_MIN), sx(CUR_X_MAX))
         if (curBoxes.isEmpty()) { diag.add("$label: 箱なし"); return null }
         val curStr = readDigits(pixels, w, h, curBoxes, cyTop, cyBot, s, DOT_MAX_W_CUR, table)
-        val current = curStr?.toDoubleOrNull()
-        if (current == null) { diag.add("$label: 桁一致率不足 (箱${curBoxes.size})"); return null }
+        if (curStr == null) { diag.add("$label: 桁一致率不足 (箱${curBoxes.size})"); return null }
+        // 表示形式の検証: ゲームは常に「整数部 + 小数 1 桁」(例 2208.1)。桁の融合や run の途切れで
+        // 一部だけ読めた文字列 (例 "8" / ".8") を妥当な数値として通さないためのゲート
+        val current = if (isValidRatingText(curStr, 3)) curStr.toDoubleOrNull() else null
+        if (current == null) { diag.add("$label: 数値形式不正 \"$curStr\""); return null }
 
-        // 必要レーティング (桁幅で「あと」かなを除外 + 妥当性ゲート)。
+        // 必要レーティング (桁幅で「あと」かなを除外 + 形式ゲート)。
         // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する
         val nyTop = sy(NEED_Y_TOP + needOffsetY); val nyBot = sy(NEED_Y_BOT + needOffsetY)
         val needRun = neededBoxes(pixels, w, h, nyTop, nyBot, sx(NEED_X_MIN), sx(NEED_X_MAX), s)
         val needStr = readDigits(pixels, w, h, needRun, nyTop, nyBot, s, DOT_MAX_W_NEED, table) ?: ""
-        val needed: Double? = if (needStr.any { it.isDigit() }) needStr.toDoubleOrNull() else null
+        val needed: Double? = if (isValidRatingText(needStr, 1)) needStr.toDoubleOrNull() else null
 
         return Reading(current, needed, offsetY)
     }
 
-    /** 箱列を文字列化。細い箱は小数点、それ以外は一致率ゲート付きで分類。1 桁でも不合格なら null */
+    /**
+     * 「整数部 (minIntDigits〜5 桁) + '.' + 小数 1 桁」の形式か。
+     * 2026-10-14: 低画質動画で「あと300.8」の「00」が 1 箱に融合 → 桁幅超で run が切れ、
+     * 残った "8" を必要値 8.0 として通してしまったのを機に追加 (26.10.1 以前は ".8"→0.8 の潜在リスク)。
+     */
+    private fun isValidRatingText(s: String, minIntDigits: Int): Boolean {
+        val parts = s.split('.')
+        if (parts.size != 2) return false
+        val intPart = parts[0]; val frac = parts[1]
+        if (intPart.length < minIntDigits || intPart.length > 5 || frac.length != 1) return false
+        return intPart.all { it.isDigit() } && frac.all { it.isDigit() }
+    }
+
+    /**
+     * 箱列を文字列化。細い箱は小数点、それ以外は一致率ゲート付きで分類。1 桁でも不合格なら null。
+     *
+     * 細い箱 (幅 <= dotMaxWidth @1080) の扱い (2026-10-14 低画質動画の実測で追加):
+     * - 隣接する細い箱 (隙間 <=3px) は圧縮で割れた 1 つの小数点として統合する
+     * - 先頭/末尾の細い箱は捨てる (数値は「.」で始まらず終わらない = 数字の縁や背景の光のノイズ)
+     * - 残った細い箱が 2 個以上なら読み取り不能 (null)
+     */
     private fun readDigits(pixels: IntArray, w: Int, h: Int, boxes: List<IntArray>, yTop: Int, yBot: Int,
                            s: Double, dotMaxWidth: Double, table: Map<Char, BooleanArray>): String? {
-        val sb = StringBuilder()
+        val maxDotPx = (dotMaxWidth * s).toInt()
+        val mergeGap = (3.0 * s).toInt()
+        // 1) 細い箱の統合 — 要素: [x0, x1, thin(1/0)]
+        val merged = ArrayList<IntArray>()
         for (box in boxes) {
-            val wCanon = (box[1] - box[0] + 1) / s
-            if (wCanon <= dotMaxWidth) { sb.append('.'); continue }
-            val g = classify(bitmap(pixels, w, h, box, yTop, yBot), table)
-            if (g.second < MIN_AGREEMENT) return null
-            sb.append(g.first)
+            val thin = (box[1] - box[0] + 1) <= maxDotPx
+            val last = merged.lastOrNull()
+            if (thin && last != null && last[2] == 1 && box[0] - last[1] - 1 <= mergeGap) {
+                last[1] = box[1]
+            } else {
+                merged.add(intArrayOf(box[0], box[1], if (thin) 1 else 0))
+            }
+        }
+        // 2) 先頭/末尾の細い箱を捨てる
+        while (merged.isNotEmpty() && merged.first()[2] == 1) merged.removeAt(0)
+        while (merged.isNotEmpty() && merged.last()[2] == 1) merged.removeAt(merged.size - 1)
+        if (merged.isEmpty()) return null
+        // 3) 小数点は最大 1 個
+        if (merged.count { it[2] == 1 } > 1) return null
+        // 4) 桁分類
+        val sb = StringBuilder()
+        for (b in merged) {
+            if (b[2] == 1) { sb.append('.'); continue }
+            val g = classify(bitmap(pixels, w, h, intArrayOf(b[0], b[1]), yTop, yBot), table)
+            val accepted = g.agreement >= MIN_AGREEMENT ||
+                (g.agreement >= RELAXED_AGREEMENT && g.agreement - g.second >= RELAXED_MARGIN)
+            if (!accepted) return null
+            sb.append(g.ch)
         }
         return sb.toString()
     }
@@ -291,16 +341,19 @@ object RatingPanelReader {
         return out
     }
 
-    /** 最良一致の文字と一致率 (0..1) を返す */
-    private fun classify(bm: BooleanArray, table: Map<Char, BooleanArray>): Pair<Char, Double> {
-        var best = '?'; var bestScore = -1
+    private class Glyph(val ch: Char, val agreement: Double, val second: Double)
+
+    /** 最良一致の文字と一致率 (0..1)、および 2 位の一致率 (マージン判定用) を返す */
+    private fun classify(bm: BooleanArray, table: Map<Char, BooleanArray>): Glyph {
+        var best = '?'; var bestScore = -1; var secondScore = -1
         for ((ch, glyph) in table) {
             var agree = 0
             for (i in bm.indices) if (bm[i] == glyph[i]) agree++
-            if (agree > bestScore) { bestScore = agree; best = ch }
+            if (agree > bestScore) { secondScore = bestScore; bestScore = agree; best = ch }
+            else if (agree > secondScore) secondScore = agree
         }
-        val rate = if (bm.isEmpty()) 0.0 else bestScore.toDouble() / bm.size
-        return best to rate
+        val n = maxOf(bm.size, 1).toDouble()
+        return Glyph(best, if (bm.isEmpty()) 0.0 else bestScore / n, if (secondScore < 0) 0.0 else secondScore / n)
     }
 
     // ---- アンカー探索 (二値ビットマップ + ダイス係数) ----
