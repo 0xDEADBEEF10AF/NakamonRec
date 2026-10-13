@@ -1095,13 +1095,15 @@ class HistoryActivity : AppCompatActivity() {
                         initialBorder = record.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "",
                         initialTier = record.rankTier
                     ) { ts, rating, needed, tier ->
-                        dataManager.updateGrandPrix(record.timestamp, record.copy(
-                            timestamp = ts, currentRating = rating, neededRating = needed, rankTier = tier))
+                        mutateHistory {
+                            dataManager.updateGrandPrix(record.timestamp, record.copy(
+                                timestamp = ts, currentRating = rating, neededRating = needed, rankTier = tier))
+                        }
                         onDone()
                     }
                     1 -> AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
                         .setMessage("このレコードを削除しますか?")
-                        .setPositiveButton("削除") { _, _ -> dataManager.deleteGrandPrix(record.timestamp); onDone() }
+                        .setPositiveButton("削除") { _, _ -> mutateHistory { dataManager.deleteGrandPrix(record.timestamp) }; onDone() }
                         .setNegativeButton("キャンセル", null)
                         .show()
                     2 -> {
@@ -1122,9 +1124,36 @@ class HistoryActivity : AppCompatActivity() {
             title = "グランプリ記録の追加",
             initialTs = initialTs, initialRating = "", initialBorder = "", initialTier = initialTier
         ) { ts, rating, needed, tier ->
-            dataManager.appendGrandPrix(GrandPrixRecord(timestamp = ts, result = "WIN",
-                currentRating = rating, neededRating = needed, rankTier = tier))
+            mutateHistory {
+                dataManager.appendGrandPrix(GrandPrixRecord(timestamp = ts, result = "WIN",
+                    currentRating = rating, neededRating = needed, rankTier = tier))
+            }
             onDone()
+        }
+    }
+
+    /**
+     * 戦績ファイルを手動で変更するときの共通手順 (26.10.2 修正):
+     * 1. ディスクから読み直す — REC 中にキャプチャサービスが追記した記録を、この画面の古いメモリ上の
+     *    履歴で上書きして消さないため。
+     * 2. 変更を適用して保存する。
+     * 3. キャプチャサービスへ ACTION_RELOAD_HISTORY を送る — サービス側のメモリ上の履歴が古いままだと、
+     *    次の戦闘記録時にファイル全体を上書きして手動の変更が消える (26.10.1 まで GP 記録の
+     *    追加/編集/削除でこの通知が漏れており、REC 中に編集した GP 記録が次の戦闘で消えていた)。
+     * 戦績レコードの編集 (updateAndSave 等) は従来から 3 を行っていたため、GP 側を同じ作法に揃えた。
+     */
+    private fun mutateHistory(block: () -> Unit) {
+        dataManager.loadHistory(dataManager.currentFileName)
+        block()
+        notifyServiceHistoryChanged()
+    }
+
+    /** 保存後にキャプチャサービスへ再読込を指示 (REC 中のみ) */
+    private fun notifyServiceHistoryChanged() {
+        if (MediaCaptureService.isRunning) {
+            startService(Intent(this, MediaCaptureService::class.java).apply {
+                action = MediaCaptureService.ACTION_RELOAD_HISTORY
+            })
         }
     }
 
@@ -2351,14 +2380,13 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun updateAndSave(position: Int, newRecord: BattleRecord) {
+        // 編集前にディスクから読み直す (REC 中にサービスが追記した記録を上書きで消さないため)。
+        // サービスは末尾に追記するだけなので、既存レコードの position はそのまま有効
+        dataManager.loadHistory(dataManager.currentFileName)
+        if (position !in dataManager.history.records.indices) return
         dataManager.history.records[position] = newRecord
         dataManager.saveHistory()
-        if (MediaCaptureService.isRunning) {
-            val intent = Intent(this, MediaCaptureService::class.java).apply {
-                action = MediaCaptureService.ACTION_RELOAD_HISTORY
-            }
-            startService(intent)
-        }
+        notifyServiceHistoryChanged()
         setupUI()
     }
 
@@ -2374,16 +2402,12 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun deleteRecord(position: Int) {
+        dataManager.loadHistory(dataManager.currentFileName)   // REC 中の追記を消さないよう読み直し
         val record = dataManager.history.records.getOrNull(position) ?: return
         if (record.result == "WIN") dataManager.history.totalWins-- else dataManager.history.totalLosses--
         dataManager.history.records.removeAt(position)
         dataManager.saveHistory()
-        if (MediaCaptureService.isRunning) {
-            val intent = Intent(this, MediaCaptureService::class.java).apply {
-                action = MediaCaptureService.ACTION_RELOAD_HISTORY
-            }
-            startService(intent)
-        }
+        notifyServiceHistoryChanged()
         setupUI()
     }
 
@@ -2408,17 +2432,13 @@ class HistoryActivity : AppCompatActivity() {
                     myParty = latestPartyForIndex,
                     enemyParty = listOf("?", "?", "?", "?")
                 )
-                
-                dataManager.history.records.add(position + 1, newRecord)
+
+                dataManager.loadHistory(dataManager.currentFileName)   // REC 中の追記を消さないよう読み直し
+                val insertAt = (position + 1).coerceIn(0, dataManager.history.records.size)
+                dataManager.history.records.add(insertAt, newRecord)
                 dataManager.history.totalWins++
                 dataManager.saveHistory()
-                
-                if (MediaCaptureService.isRunning) {
-                    val intent = Intent(this, MediaCaptureService::class.java).apply {
-                        action = MediaCaptureService.ACTION_RELOAD_HISTORY
-                    }
-                    startService(intent)
-                }
+                notifyServiceHistoryChanged()
                 setupUI()
                 binding.recyclerViewHistory.smoothScrollToPosition(position + 1)
                 showEditRecordDialog(position + 1)
