@@ -19,6 +19,9 @@ struct ContentView: View {
     @State private var showClearConfirm = false
     @State private var activeFileName: String = BattleHistoryStore.shared.activeFileName
     @State private var lastSeenRecordTimestamp: String = BroadcastStatus.lastRecordTimestamp
+    // グランプリモード ON のときは REC ボタン周りの弧文字を NAKAMON → MONSTER (上) / GRANDPRIX (下) に切り替える
+    // (モードの入れ忘れ・切り忘れをメイン画面で一目で分かるようにする、26.10.2)
+    @State private var isGrandPrixMode: Bool = GrandPrixMode.isEnabled
 
     // App Store 更新通知 (1日1回チェック、バージョン単位で抑止可能)
     @State private var availableUpdate: AppStoreUpdateInfo? = nil
@@ -85,6 +88,7 @@ struct ContentView: View {
             .navigationBarHidden(true)
             .onAppear {
                 reloadHistory()
+                isGrandPrixMode = GrandPrixMode.isEnabled
                 playLogoIntroIfNeeded()
                 // ハートビート鮮度込みの実効状態 (Extension が finished を呼べず死んだ
                 // 場合の STOP 表示残留を自動修復する)
@@ -135,7 +139,10 @@ struct ContentView: View {
             }
             .presentationDetents([.fraction(0.5), .large])
         }
-        .sheet(isPresented: $showUserSettings) {
+        .sheet(isPresented: $showUserSettings, onDismiss: {
+            // 設定シートでグランプリモードを切り替えた直後に弧文字へ反映
+            isGrandPrixMode = GrandPrixMode.isEnabled
+        }) {
             UserSettingsSheet()
         }
         .sheet(isPresented: $showHelp) {
@@ -224,13 +231,36 @@ struct ContentView: View {
 
     private var centerBlock: some View {
         ZStack {
-            CurvedText(
-                text: "NAKAMON",
-                radius: 112,
-                spread: .degrees(120),
-                font: .system(size: 34, weight: .bold, design: .default),
-                color: Color.white   // #FFFFFF (フル不透明)
-            )
+            Group {
+                if isGrandPrixMode {
+                    // グランプリモード: 上弧 MONSTER / 下弧 GRANDPRIX。どちらも REC ボタンと同心・同じ半径で、
+                    // 文字のボタン側の縁がボタン外周から等距離になる (上は基線側、下は文字の天側が内側)。
+                    // 1 文字あたり 18° の等角配置 (NAKAMON の 20° より少し詰めて 9 文字の GRANDPRIX を収める)
+                    CurvedText(
+                        text: "MONSTER",
+                        radius: 112,
+                        spread: .degrees(18 * 6),
+                        font: .system(size: 32, weight: .bold, design: .default),
+                        color: Color.white
+                    )
+                    CurvedText(
+                        text: "GRANDPRIX",
+                        radius: 112,
+                        spread: .degrees(18 * 8),
+                        font: .system(size: 32, weight: .bold, design: .default),
+                        color: Color.white,
+                        placement: .bottom
+                    )
+                } else {
+                    CurvedText(
+                        text: "NAKAMON",
+                        radius: 112,
+                        spread: .degrees(120),
+                        font: .system(size: 34, weight: .bold, design: .default),
+                        color: Color.white   // #FFFFFF (フル不透明)
+                    )
+                }
+            }
             .rotationEffect(.degrees(nakamonRotation))
 
             BroadcastButton(isBroadcasting: isBroadcasting)
@@ -309,22 +339,29 @@ struct ContentView: View {
 
 /// 円弧に沿って文字を配置するテキスト
 struct CurvedText: View {
+    /// 弧の位置。`.top` は円の上側 (文字の天が外向き)、`.bottom` は円の下側 (文字の天が中心向き = 正立のまま読める)
+    enum Placement { case top, bottom }
+
     let text: String
     let radius: CGFloat
     let spread: Angle
     let font: Font
     let color: Color
+    var placement: Placement = .top
 
     var body: some View {
         ZStack {
             let chars = Array(text)
             ForEach(0..<chars.count, id: \.self) { idx in
                 let progress: Double = chars.count == 1 ? 0.5 : Double(idx) / Double(chars.count - 1)
-                let angle = Angle(degrees: spread.degrees * (progress - 0.5))
+                // 上弧は左→右が時計回り (正の角度)、下弧は左→右が反時計回りなので符号を反転する。
+                // 文字自体も同じ角度で回るため、下弧では各文字の天が常に円の中心を向く
+                let direction: Double = placement == .top ? 1 : -1
+                let angle = Angle(degrees: direction * spread.degrees * (progress - 0.5))
                 Text(String(chars[idx]))
                     .font(font)
                     .foregroundColor(color)
-                    .offset(y: -radius)
+                    .offset(y: placement == .top ? -radius : radius)
                     .rotationEffect(angle)
             }
         }

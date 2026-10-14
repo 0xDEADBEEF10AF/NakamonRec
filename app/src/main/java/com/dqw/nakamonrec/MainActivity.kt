@@ -776,7 +776,12 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() { super.onStop(); unregisterReceiver(serviceStopReceiver) }
     private fun startCaptureService(resultCode: Int, data: Intent, reset: Boolean) { val serviceIntent = Intent(this, MediaCaptureService::class.java).apply { putExtra("RESULT_CODE", resultCode); putExtra("DATA", data); putExtra("RESET_STATS", reset) }; ContextCompat.startForegroundService(this, serviceIntent); updateUI(true) }
     private fun stopCaptureService() { stopService(Intent(this, MediaCaptureService::class.java)); updateUI(false) }
-    override fun onResume() { super.onResume(); updateUI(MediaCaptureService.isRunning) }
+    override fun onResume() {
+        super.onResume()
+        updateUI(MediaCaptureService.isRunning)
+        // グランプリモードの ON/OFF を弧文字 (NAKAMON ⇔ MONSTER / GRANDPRIX) に反映。設定画面から戻ったときも更新される
+        binding.arcTitle.grandPrixMode = GrandPrixMode.isEnabled(this)
+    }
     private fun generateDefaultFileName(): String = "record_${SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault()).format(Date())}"
 
     private var pulseAnimation: ObjectAnimator? = null
