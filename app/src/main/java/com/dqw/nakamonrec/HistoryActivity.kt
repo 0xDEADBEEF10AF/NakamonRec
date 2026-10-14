@@ -808,10 +808,12 @@ class HistoryActivity : AppCompatActivity() {
         }
         fun rebuild() {
             val records = currentRecords()
-            val maxRec = records.maxByOrNull { it.currentRating }
+            // サマリはレーティングが読めているレコードだけ (未取得レコードは対象外)
+            val readable = records.filter { !it.isUnread }
+            val maxRec = readable.maxByOrNull { it.currentRating }
             maxRatingView.text = maxRec?.let { String.format(Locale.US, "%.1f", it.currentRating) } ?: "—"
             bindEmblem(maxEmblemView, maxRec?.rankTier)
-            val curRec = records.lastOrNull()
+            val curRec = readable.lastOrNull()
             curRatingView.text = curRec?.let { String.format(Locale.US, "%.1f", it.currentRating) } ?: "—"
             bindEmblem(curEmblemView, curRec?.rankTier)
             contentFrame.removeAllViews()
@@ -851,10 +853,14 @@ class HistoryActivity : AppCompatActivity() {
         fun dp(v: Int) = (v * density).toInt()
         val sdfIn = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val sdfOut = SimpleDateFormat("M/d HH:mm", Locale.US)  // 例: 8/23 18:00
-        val points = records.map { r ->
+        // 未取得レコード (lowConfidence) はプロットしない。戦闘番号 (battleLabel) は全レコード中の位置で
+        // テキスト一覧の「戦」と一致させる (プロットの等間隔は崩さない)
+        val points = records.mapIndexedNotNull { idx, r ->
+            if (r.isUnread) return@mapIndexedNotNull null
             val date = try { sdfIn.parse(r.timestamp) } catch (_: Exception) { null }
             val label = date?.let { sdfOut.format(it) } ?: r.timestamp.takeLast(5)
-            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier, date?.time ?: 0L)
+            GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier, date?.time ?: 0L,
+                battleLabel = "${idx + 1}")
         }
         // 大会中は4桁レコードになり得るため、全体表示 (既定) と
         // 直近N戦ズーム+横スクロールをトグルで切替できるようにする
@@ -978,9 +984,14 @@ class HistoryActivity : AppCompatActivity() {
         // 日時はメイン戦績と同じ 2 行表示 (2026.08.29 / 22:05)
         val sdfDate = SimpleDateFormat("yyyy.MM.dd", Locale.US)
         val sdfTime = SimpleDateFormat("HH:mm", Locale.US)
-        // 変動 = 前戦との差 (時系列)
+        // 変動 = 直前の「読めている」レコードとの差 (時系列)。未取得レコードは飛ばす
         val deltas = HashMap<String, Double>()
-        for (i in 1 until records.size) deltas[records[i].timestamp] = records[i].currentRating - records[i - 1].currentRating
+        var prevReadable: GrandPrixRecord? = null
+        for (r in records) {
+            if (r.isUnread) continue
+            prevReadable?.let { deltas[r.timestamp] = r.currentRating - it.currentRating }
+            prevReadable = r
+        }
 
         fun cell(text: String, color: Int, size: Float, weight: Float, gravityRight: Boolean, bold: Boolean = false): android.widget.TextView =
             android.widget.TextView(this).apply {
@@ -1061,7 +1072,9 @@ class HistoryActivity : AppCompatActivity() {
                 addView(timeCell)
                 addView(rankCell)
                 addView(cell("$battleNo", "#888888".toColorInt(), 12f, 1.0f, true))
-                addView(cell(String.format(Locale.US, "%.1f", r.currentRating), android.graphics.Color.WHITE, 14f, 1.8f, true, bold = true))
+                // レーティング未取得 (待機タイムアウト等) は値の代わりに「未取得」。長押し → 編集で補完できる
+                if (r.isUnread) addView(cell("未取得", "#FFB74D".toColorInt(), 11f, 1.8f, true, bold = true))
+                else addView(cell(String.format(Locale.US, "%.1f", r.currentRating), android.graphics.Color.WHITE, 14f, 1.8f, true, bold = true))
                 addView(cell(deltaStr, deltaColor, 12f, 1.1f, true))
                 addView(cell(borderStr, "#90D7EC".toColorInt(), 12f, 1.3f, true))
                 setOnLongClickListener { onRowLongClick(r); true }
@@ -1091,13 +1104,14 @@ class HistoryActivity : AppCompatActivity() {
                     0 -> showGrandPrixFormDialog(
                         title = "グランプリ記録の編集",
                         initialTs = record.timestamp,
-                        initialRating = String.format(Locale.US, "%.1f", record.currentRating),
+                        initialRating = if (record.isUnread) "" else String.format(Locale.US, "%.1f", record.currentRating),
                         initialBorder = record.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "",
                         initialTier = record.rankTier
                     ) { ts, rating, needed, tier ->
                         mutateHistory {
                             dataManager.updateGrandPrix(record.timestamp, record.copy(
-                                timestamp = ts, currentRating = rating, neededRating = needed, rankTier = tier))
+                                timestamp = ts, currentRating = rating, neededRating = needed, rankTier = tier,
+                                lowConfidence = false))   // 値を入れたら「未取得」解除
                         }
                         onDone()
                     }

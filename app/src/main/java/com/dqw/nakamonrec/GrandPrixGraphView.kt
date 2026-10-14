@@ -22,7 +22,8 @@ class GrandPrixGraphView @JvmOverloads constructor(
 
     data class RatingPoint(
         val rating: Double, val border: Double?, val dateLabel: String, val rankTier: String? = null,
-        val epochMillis: Long = 0L   // 日時軸モードでの X 位置に使う (0 = 不明、その場合は等間隔扱い)
+        val epochMillis: Long = 0L,   // 日時軸モードでの X 位置に使う (0 = 不明、その場合は等間隔扱い)
+        val battleLabel: String = ""  // 戦闘数軸モードの X 軸ラベル (戦闘番号。空なら dateLabel を使う)
     )
 
     private var dataPoints: List<RatingPoint> = emptyList()
@@ -204,11 +205,12 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 if (pathBorder.isEmpty) pathBorder.moveTo(x, yB) else pathBorder.lineTo(x, yB)
             }
 
-            // X軸ラベル（前ラベルと重ならない範囲で描画）
-            val textW = textPaint.measureText(data.dateLabel)
+            // X軸ラベル（前ラベルと重ならない範囲で描画）。戦闘数軸では戦闘番号、日時軸では日時 (iOS と統一)
+            val labelText = if (!timeAxis && data.battleLabel.isNotEmpty()) data.battleLabel else data.dateLabel
+            val textW = textPaint.measureText(labelText)
             val left = x - textW / 2
             if (left > lastLabelRight + labelGap && x + textW / 2 <= w - paddingRight) {
-                canvas.drawText(data.dateLabel, left, h - 10f, textPaint)
+                canvas.drawText(labelText, left, h - 10f, textPaint)
                 lastLabelRight = x + textW / 2
             }
         }

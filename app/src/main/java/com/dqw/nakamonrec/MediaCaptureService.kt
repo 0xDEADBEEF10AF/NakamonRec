@@ -45,6 +45,8 @@ class MediaCaptureService : Service() {
     private var grandPrixDeadline = 0L
     private var grandPrixTimestamp = ""
     private var grandPrixResult = ""
+    private var grandPrixAttempts = 0                                 // 読み取りを試したフレーム数 (診断用)
+    private val grandPrixFailures = HashMap<String, Int>()            // 失敗分類ごとの件数
     // レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通)
     // ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の検知で打ち切る。
     private val grandPrixWaitTimeoutMs = 120_000L
@@ -436,10 +438,7 @@ class MediaCaptureService : Service() {
 
         if (detected != -1) {
             // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る
-            if (currentState == State.AWAITING_RATING) {
-                currentState = State.IDLE
-                dataManager.appendFlightLog("グランプリ: パーティ選択へ進んだため待機終了 (記録なし)")
-            }
+            endGrandPrixWaitUnread("パーティ選択へ進んだため待機終了")
             if (lastDetectedPartyIndex != detected) {
                 dataManager.appendFlightLog("パーティ選択検知 P[${detected + 1}] Score ${String.format(Locale.US, "%.3f", scores[detected])}")
                 // マッチングスコア詳細用に 3 枚セットで保存。パーティ変化時のみ実行することで
@@ -461,9 +460,7 @@ class MediaCaptureService : Service() {
         val vsKind = analyzer.detectVsTemplate(bitmap)
         if (vsKind != null) {
             // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
-            if (currentState == State.AWAITING_RATING) {
-                dataManager.appendFlightLog("グランプリ: 次の戦闘開始により待機終了 (記録なし)")
-            }
+            endGrandPrixWaitUnread("次の戦闘開始により待機終了")
             dataManager.rotateFlightLog()
 
             // 大会 VS で始まったか (二段ゲート1段目)。custom は大会用校正時のみ大会扱い。
@@ -551,6 +548,8 @@ class MediaCaptureService : Service() {
                 grandPrixTimestamp = recordTs
                 grandPrixResult = result
                 grandPrixDeadline = System.currentTimeMillis() + grandPrixWaitTimeoutMs
+                grandPrixAttempts = 0
+                grandPrixFailures.clear()
                 currentState = State.AWAITING_RATING
                 dataManager.appendFlightLog("グランプリ: レーティング画面を待機中…")
             } else {
@@ -570,17 +569,36 @@ class MediaCaptureService : Service() {
      * RatingPanelReader で読み、成功したら GrandPrixRecord を保存して IDLE に戻る。
      * タイムアウトで諦める。GrandPrixMode OFF / 通常戦ではこの状態に入らない。
      */
+    /**
+     * レーティングを読めないまま待機を終える (タイムアウト / 次戦のパーティ選択・VS 検知)。
+     * 26.10.2: 「日時 + 勝敗だけの未取得レコード」を残す。グラフ・サマリには載らず、テキスト一覧で
+     * 「未取得」と出るので手動補完しやすい。あわせて待機中の失敗分類の集計をログに残す。
+     */
+    private fun endGrandPrixWaitUnread(reason: String) {
+        if (currentState != State.AWAITING_RATING) return
+        currentState = State.IDLE
+        val summary = grandPrixFailures.entries.sortedByDescending { it.value }
+            .joinToString(" / ") { "${it.key}×${it.value}" }
+        val lastDiag = RatingPanelReader.lastDiagnostic
+        dataManager.appendFlightLog("グランプリ: $reason — レーティング未取得として記録 (試行${grandPrixAttempts}フレーム" +
+            (if (summary.isEmpty()) "" else ": $summary") + ")" +
+            (if (lastDiag.isEmpty()) "" else " 直近: $lastDiag"))
+        dataManager.appendGrandPrix(GrandPrixRecord.unread(grandPrixTimestamp, grandPrixResult))
+        // A 方針の通知: 値は出さず「検知はしたが未取得」だけ伝える (手動補完の促し)
+        updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses, "🎖 GP戦を検知 (レーティング未取得)")
+    }
+
     private fun handleAwaitingRating(bitmap: Bitmap) {
         if (System.currentTimeMillis() > grandPrixDeadline) {
-            currentState = State.IDLE
-            // 直近フレームの診断 (固定帯域/学習オフセット/アンカー探索のどこで落ちたか) を残す
-            val diag = RatingPanelReader.lastDiagnostic
-            dataManager.appendFlightLog("グランプリ: レーティング画面の検出タイムアウト (記録なし)" +
-                if (diag.isEmpty()) "" else " — 直近: $diag")
+            endGrandPrixWaitUnread("レーティング画面の検出タイムアウト")
             return
         }
         val reading = RatingPanelReader.read(this, bitmap)
         if (reading == null) {
+            // 失敗分類を集計 (待機終了時にまとめてログへ)
+            grandPrixAttempts++
+            val cat = RatingPanelReader.lastFailureCategory.ifEmpty { "不明" }
+            grandPrixFailures[cat] = (grandPrixFailures[cat] ?: 0) + 1
             // 待機中も次の戦闘のパーティ選択/VS 探索は止めない (26.10.2)。26.10.1 までは待機中に
             // idle 探索を呼ばなかったため、せっかちなユーザーが 20 秒以内に次戦へ進むとパーティや
             // 戦闘開始を取りこぼしていた。VS 検知 (= 次戦開始) 時は handleIdleState 側で IN_BATTLE に遷移し、

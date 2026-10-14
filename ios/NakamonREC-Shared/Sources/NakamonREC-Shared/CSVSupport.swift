@@ -87,10 +87,11 @@ public enum CSVSupport {
             lines.append("グランプリ戦績,\(gp.count)件")
             lines.append(grandPrixColumns.map(quoted).joined(separator: ","))
             for r in gp {
+                // レーティング未取得レコード (lowConfidence) はレーティング列を空欄で書き出す
                 let cells = [
                     r.timestamp,
                     r.result,
-                    formatRating(r.currentRating),
+                    r.isUnread ? "" : formatRating(r.currentRating),
                     r.neededRating.map(formatRating) ?? "",
                     r.rankTier ?? ""
                 ]
@@ -180,11 +181,18 @@ public enum CSVSupport {
             if line.isEmpty { continue }
             let cells = parseRow(line)
             guard cells.count >= 3, cells.count <= 10 else { continue }
-            guard let current = Double(cells[2].trimmingCharacters(in: .whitespaces)) else { continue }
+            let resultStr = cells[1] == "LOSE" ? "LOSE" : "WIN"
+            let ratingText = cells[2].trimmingCharacters(in: .whitespaces)
+            // レーティング列が空欄 = 未取得レコード (日時 + 勝敗だけ)。日時らしさの最低限チェックのみ
+            if ratingText.isEmpty {
+                guard cells[0].count >= 10 else { continue }
+                result.append(GrandPrixRecord.unread(timestamp: cells[0], result: resultStr))
+                continue
+            }
+            guard let current = Double(ratingText) else { continue }
             let needed = cells.count > 3 ? Double(cells[3].trimmingCharacters(in: .whitespaces)) : nil
             let tierRaw = cells.count > 4 ? cells[4] : ""
             let tier = GrandPrixRecord.rankTiers.contains(tierRaw) ? tierRaw : nil
-            let resultStr = cells[1] == "LOSE" ? "LOSE" : "WIN"
             result.append(GrandPrixRecord(
                 timestamp: cells[0],
                 result: resultStr,

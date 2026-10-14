@@ -74,6 +74,12 @@ object RatingPanelReader {
     /** 直近の read() の診断文字列 (フライトログ用)。タイムアウト時に原因を切り分けるために残す */
     @Volatile var lastDiagnostic: String = ""
         private set
+    /**
+     * 直近の read() が失敗した段階の粗い分類 (待機中の集計用)。成功時は ""。
+     * 値: "箱なし" / "桁一致率不足" / "数値形式不正" / "アンカー未検出" / "アンカー資源なし"
+     */
+    @Volatile var lastFailureCategory: String = ""
+        private set
 
     private class Bin(val bits: BooleanArray, val w: Int, val h: Int)
 
@@ -148,23 +154,23 @@ object RatingPanelReader {
         val diag = ArrayList<String>()
 
         // 1) 高速パス: 固定バンド (Pixel 系 19.5:9〜20:9 はここで読める)
-        readRows(pixels, w, h, s, 0, 0, table, diag)?.let { lastDiagnostic = ""; return it }
+        readRows(pixels, w, h, s, 0, 0, table, diag)?.let { lastDiagnostic = ""; lastFailureCategory = ""; return it }
 
         // 2) 学習済みオフセット (以前アンカー探索で見つけた端末固有のずれ)
         val learned = GrandPrixMode.learnedRowOffsetY(context)
         if (learned != null && learned != 0) {
-            readRows(pixels, w, h, s, learned, learned, table, diag)?.let { lastDiagnostic = ""; return it }
+            readRows(pixels, w, h, s, learned, learned, table, diag)?.let { lastDiagnostic = ""; lastFailureCategory = ""; return it }
         }
 
         // 3) アンカー探索: 「現在の」を中央帯から探し、その行を基準に読む
-        val anchorCur = anchors?.get("current") ?: run { lastDiagnostic = "アンカー資源なし"; return null }
+        val anchorCur = anchors?.get("current") ?: run { lastDiagnostic = "アンカー資源なし"; lastFailureCategory = "アンカー資源なし"; return null }
         val canonH = (h / s).toInt()
         val by0 = (canonH * SEARCH_Y_MIN_RATIO).toInt(); val by1 = (canonH * SEARCH_Y_MAX_RATIO).toInt()
         val band = canonicalBand(pixels, w, h, s, 0, by0, SEARCH_X_MAX, maxOf(0, by1 - by0))
         val m = slideMatch(anchorCur, band, COARSE_STEP_X, COARSE_STEP_Y, REFINE_RADIUS)
         if (m.score < ANCHOR_THRESHOLD) {
             diag.add(String.format(Locale.US, "アンカー: %.2f@y%d (しきい値 %.2f 未満)", m.score, by0 + m.y, ANCHOR_THRESHOLD))
-            lastDiagnostic = diag.joinToString(" / "); return null
+            lastDiagnostic = diag.joinToString(" / "); lastFailureCategory = "アンカー未検出"; return null
         }
         val offsetY = (by0 + m.y) - ANCHOR_CUR_BASE_Y
         // 必要行は第 2 アンカー「必要」で行位置を補正 (見つからなければ現在行と同じオフセット)
@@ -177,10 +183,10 @@ object RatingPanelReader {
         }
         diag.add(String.format(Locale.US, "アンカー: %.2f Δy%+d", m.score, offsetY))
         val r = readRows(pixels, w, h, s, offsetY, needOffsetY, table, diag)
-            ?: run { lastDiagnostic = diag.joinToString(" / "); return null }
+            ?: run { lastDiagnostic = diag.joinToString(" / "); return null }   // 分類は readRows が設定済み
         // 端末固有のずれとして学習 (次回以降は探索なしで読める)
         GrandPrixMode.setLearnedRowOffsetY(context, offsetY)
-        lastDiagnostic = ""
+        lastDiagnostic = ""; lastFailureCategory = ""
         return r
     }
 
@@ -194,13 +200,13 @@ object RatingPanelReader {
         // 現在のレーティング。低信頼度の桁があれば読み取り全体を破棄
         val cyTop = sy(CUR_Y_TOP + offsetY); val cyBot = sy(CUR_Y_BOT + offsetY)
         val curBoxes = numberBoxes(pixels, w, h, cyTop, cyBot, sx(CUR_X_MIN), sx(CUR_X_MAX))
-        if (curBoxes.isEmpty()) { diag.add("$label: 箱なし"); return null }
+        if (curBoxes.isEmpty()) { diag.add("$label: 箱なし"); lastFailureCategory = "箱なし"; return null }
         val curStr = readDigits(pixels, w, h, curBoxes, cyTop, cyBot, s, DOT_MAX_W_CUR, table)
-        if (curStr == null) { diag.add("$label: 桁一致率不足 (箱${curBoxes.size})"); return null }
+        if (curStr == null) { diag.add("$label: 桁一致率不足 (箱${curBoxes.size})"); lastFailureCategory = "桁一致率不足"; return null }
         // 表示形式の検証: ゲームは常に「整数部 + 小数 1 桁」(例 2208.1)。桁の融合や run の途切れで
         // 一部だけ読めた文字列 (例 "8" / ".8") を妥当な数値として通さないためのゲート
         val current = if (isValidRatingText(curStr, 3)) curStr.toDoubleOrNull() else null
-        if (current == null) { diag.add("$label: 数値形式不正 \"$curStr\""); return null }
+        if (current == null) { diag.add("$label: 数値形式不正 \"$curStr\""); lastFailureCategory = "数値形式不正"; return null }
 
         // 必要レーティング (桁幅で「あと」かなを除外 + 形式ゲート)。
         // 低信頼度の桁があれば「必要値なし」として現在値のみ記録する

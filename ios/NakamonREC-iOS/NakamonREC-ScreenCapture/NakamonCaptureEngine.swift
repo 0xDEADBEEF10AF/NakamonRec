@@ -28,6 +28,8 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         let timestamp: String       // 対応する BattleRecord と揃える (pending.startedAt)
         let result: String          // "WIN" / "LOSE"
         let deadline: TimeInterval  // これを過ぎたら諦める
+        var attempts = 0                       // 読み取りを試したフレーム数 (診断用)
+        var failures: [String: Int] = [:]      // 失敗分類ごとの件数 (RatingPanelReader.lastFailureCategory)
     }
     private var grandPrixWait: GrandPrixWait?
     /// レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通、
@@ -300,14 +302,17 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     private func handleGrandPrixWait(_ scene: UIImage, now: TimeInterval) {
         guard let wait = grandPrixWait else { return }
         if now > wait.deadline {
-            grandPrixWait = nil
-            // 直近フレームの診断 (固定帯域/学習オフセット/アンカー探索のどこで落ちたか) を残す
-            let diag = RatingPanelReader.lastDiagnostic
-            BattleLogger.append("グランプリ: レーティング画面の検出タイムアウト (記録なし)"
-                                + (diag.isEmpty ? "" : " — 直近: \(diag)"))
+            endGrandPrixWaitUnread(reason: "レーティング画面の検出タイムアウト")
             return
         }
-        guard let cg = scene.cgImage, let reading = RatingPanelReader.read(cg) else { return }
+        guard let cg = scene.cgImage else { return }
+        guard let reading = RatingPanelReader.read(cg) else {
+            // 失敗分類を集計 (待機終了時にまとめてログへ)
+            grandPrixWait?.attempts += 1
+            let cat = RatingPanelReader.lastFailureCategory.isEmpty ? "不明" : RatingPanelReader.lastFailureCategory
+            grandPrixWait?.failures[cat, default: 0] += 1
+            return
+        }
         // 妥当性: レーティングは概ね数百〜数千。範囲外は誤読とみなし待機継続。
         guard reading.currentRating >= 100, reading.currentRating <= 99_999 else { return }
         // 同一フレームのエンブレム文字帯からランク帯を識別 (失敗時は nil = 記録は続行)。
@@ -381,10 +386,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         if bestScore >= 0.7 {
             lastPartySelectScores = allScores
             // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る
-            if grandPrixWait != nil {
-                grandPrixWait = nil
-                BattleLogger.append("グランプリ: パーティ選択へ進んだため待機終了 (記録なし)")
-            }
+            endGrandPrixWaitUnread(reason: "パーティ選択へ進んだため待機終了")
         }
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
@@ -460,10 +462,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         if score > DetectionThresholdsConfig.vsThreshold {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
-            if grandPrixWait != nil {
-                grandPrixWait = nil
-                BattleLogger.append("グランプリ: 次の戦闘開始により待機終了 (記録なし)")
-            }
+            endGrandPrixWaitUnread(reason: "次の戦闘開始により待機終了")
             BattleLogger.rotate()
             if lastDetectedPartyIndex >= 0 {
                 BattleLogger.append(String(format: "パーティ P[%d] で戦闘開始", lastDetectedPartyIndex + 1))
@@ -737,6 +736,22 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     /// 大会モード時のみ、WIN/LOSE 検知直後にレーティング画面待ちを開始する。
     /// timestamp は対応する BattleRecord と揃えるため pending.startedAt から取得
     /// (recordBattleResult が pending を finalize/クリアする前に呼ぶこと)。
+    /// レーティングを読めないまま待機を終える (タイムアウト / 次戦のパーティ選択・VS 検知)。
+    /// 26.10.2: 「日時 + 勝敗だけの未取得レコード」を残す。グラフ・サマリには載らず、テキスト一覧で
+    /// 「未取得」と出るので手動補完しやすい。あわせて待機中の失敗分類の集計をログに残す
+    /// (例: 試行23フレーム: 箱なし×15 / アンカー未検出×6 / 桁一致率不足×2)。
+    private func endGrandPrixWaitUnread(reason: String) {
+        guard let wait = grandPrixWait else { return }
+        grandPrixWait = nil
+        let summary = wait.failures.sorted { $0.value > $1.value }
+            .map { "\($0.key)×\($0.value)" }.joined(separator: " / ")
+        let lastDiag = RatingPanelReader.lastDiagnostic
+        BattleLogger.append("グランプリ: \(reason) — レーティング未取得として記録 (試行\(wait.attempts)フレーム"
+                            + (summary.isEmpty ? "" : ": \(summary)") + ")"
+                            + (lastDiag.isEmpty ? "" : " 直近: \(lastDiag)"))
+        BattleHistoryStore.shared.appendGrandPrix(GrandPrixRecord.unread(timestamp: wait.timestamp, result: wait.result))
+    }
+
     private func startGrandPrixWaitIfNeeded(result: String) {
         guard GrandPrixMode.isEnabled else { return }
         pendingLock.lock()

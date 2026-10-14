@@ -54,6 +54,16 @@ public struct GrandPrixRecord: Codable, Identifiable, Hashable {
     /// id は timestamp ベース (対応する BattleRecord と揃える)
     public var id: String { timestamp }
 
+    /// レーティング未取得レコードか (26.10.2)。GP 戦を検知したがレーティング画面を読めずに待機が終わった
+    /// 戦闘を「日時 + 勝敗だけ」で残すためのもの。`lowConfidence == true` で表し、currentRating は 0 を入れる。
+    /// グラフ・サマリ・変動計算の対象外。テキスト一覧では「未取得」と表示し、編集で値を入れると通常レコードになる。
+    public var isUnread: Bool { lowConfidence }
+
+    /// レーティング未取得レコードを生成する (待機タイムアウト / 次戦開始で打ち切られたとき)
+    public static func unread(timestamp: String, result: String) -> GrandPrixRecord {
+        GrandPrixRecord(timestamp: timestamp, result: result, currentRating: 0, lowConfidence: true)
+    }
+
     /// ボーダー (次ランク到達ライン) = 現在のレーティング + 必要レーティングあと。
     /// 必要レーティングが無い (GM 帯 / ランクアップ戦) 場合は nil。
     public var borderRating: Double? {

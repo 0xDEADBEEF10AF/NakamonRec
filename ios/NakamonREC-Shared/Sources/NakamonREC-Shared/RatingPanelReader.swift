@@ -70,6 +70,9 @@ public enum RatingPanelReader {
     /// 直近の read() の診断文字列 (フライトログ用)。タイムアウト時に原因を切り分けるために残す。
     /// 例: "固定帯域: 箱なし / アンカー: 0.58@y1390 (しきい値未満)"
     nonisolated(unsafe) public static var lastDiagnostic: String = ""
+    /// 直近の read() が失敗した段階の粗い分類 (待機中の集計用)。成功時は ""。
+    /// 値: "箱なし" / "桁一致率不足" / "数値形式不正" / "アンカー未検出" / "アンカー資源なし"
+    nonisolated(unsafe) public static var lastFailureCategory: String = ""
 
     // MARK: - 読み取り (公開 API)
 
@@ -81,24 +84,24 @@ public enum RatingPanelReader {
         var diag: [String] = []
 
         // 1) 高速パス: 固定バンド (Pixel 系 19.5:9〜20:9 はここで読める)
-        if let r = readRows(px, scale: s, offsetY: 0, needOffsetY: 0, diag: &diag) { lastDiagnostic = ""; return r }
+        if let r = readRows(px, scale: s, offsetY: 0, needOffsetY: 0, diag: &diag) { lastDiagnostic = ""; lastFailureCategory = ""; return r }
 
         // 2) 学習済みオフセット (以前アンカー探索で見つけた端末固有のずれ)
         if let learned = GrandPrixMode.learnedRowOffsetY, learned != 0,
            let r = readRows(px, scale: s, offsetY: learned, needOffsetY: learned, diag: &diag) {
-            lastDiagnostic = ""
+            lastDiagnostic = ""; lastFailureCategory = ""
             return r
         }
 
         // 3) アンカー探索: 「現在の」を中央帯から探し、その行を基準に読む
-        guard let anchorCur = anchors["current"] else { lastDiagnostic = "アンカー資源なし"; return nil }
+        guard let anchorCur = anchors["current"] else { lastDiagnostic = "アンカー資源なし"; lastFailureCategory = "アンカー資源なし"; return nil }
         let canonH = Int(Double(image.height) / s)
         let by0 = Int(Double(canonH) * searchYMinRatio), by1 = Int(Double(canonH) * searchYMaxRatio)
         let band = canonicalBand(px, scale: s, x0: 0, y0: by0, w: searchXMax, h: max(0, by1 - by0))
         let m = slideMatch(anchorCur, in: band, stepX: coarseStepX, stepY: coarseStepY, refine: refineRadius)
         guard m.score >= anchorThreshold else {
             diag.append(String(format: "アンカー: %.2f@y%d (しきい値 %.2f 未満)", m.score, by0 + m.y, anchorThreshold))
-            lastDiagnostic = diag.joined(separator: " / "); return nil
+            lastDiagnostic = diag.joined(separator: " / "); lastFailureCategory = "アンカー未検出"; return nil
         }
         let offsetY = (by0 + m.y) - anchorCurBaseY
         // 必要行は第 2 アンカー「必要」で行位置を補正 (見つからなければ現在行と同じオフセット)
@@ -112,11 +115,12 @@ public enum RatingPanelReader {
         }
         diag.append(String(format: "アンカー: %.2f Δy%+d", m.score, offsetY))
         guard let r = readRows(px, scale: s, offsetY: offsetY, needOffsetY: needOffsetY, diag: &diag) else {
+            // readRows が分類を設定済み (箱なし / 桁一致率不足 / 数値形式不正)
             lastDiagnostic = diag.joined(separator: " / "); return nil
         }
         // 端末固有のずれとして学習 (次回以降は探索なしで読める)
         GrandPrixMode.learnedRowOffsetY = offsetY
-        lastDiagnostic = ""
+        lastDiagnostic = ""; lastFailureCategory = ""
         return r
     }
 
@@ -132,14 +136,14 @@ public enum RatingPanelReader {
         // 現在のレーティング (白のみ、右詰め run)。低信頼度の桁があれば読み取り全体を破棄
         let cyTop = scaleY(curYTop + Double(offsetY)), cyBot = scaleY(curYBot + Double(offsetY))
         let curBoxes = numberBoxes(px, yTop: cyTop, yBot: cyBot, xMin: scaleX(curXMin), xMax: scaleX(curXMax), allowColor: false)
-        guard !curBoxes.isEmpty else { diag.append("\(label): 箱なし"); return nil }
+        guard !curBoxes.isEmpty else { diag.append("\(label): 箱なし"); lastFailureCategory = "箱なし"; return nil }
         guard let curStr = readDigits(px, boxes: curBoxes, yTop: cyTop, yBot: cyBot, scale: s, dotMaxWidth: dotMaxWidthCur) else {
-            diag.append("\(label): 桁一致率不足 (箱\(curBoxes.count))"); return nil
+            diag.append("\(label): 桁一致率不足 (箱\(curBoxes.count))"); lastFailureCategory = "桁一致率不足"; return nil
         }
         // 表示形式の検証: ゲームは常に「整数部 + 小数 1 桁」(例 2208.1)。桁の融合や run の途切れで
         // 一部だけ読めた文字列 (例 "8" / ".8") を妥当な数値として通さないためのゲート
         guard isValidRatingText(curStr, minIntDigits: 3), let current = Double(curStr) else {
-            diag.append("\(label): 数値形式不正 \"\(curStr)\""); return nil
+            diag.append("\(label): 数値形式不正 \"\(curStr)\""); lastFailureCategory = "数値形式不正"; return nil
         }
 
         // 必要レーティング (白、桁幅で「あと」かなを除外、形式ゲート)。

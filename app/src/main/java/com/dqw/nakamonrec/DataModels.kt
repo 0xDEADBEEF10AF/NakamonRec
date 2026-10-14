@@ -50,7 +50,18 @@ data class GrandPrixRecord(
     val borderRating: Double?
         get() = neededRating?.let { currentRating + it }
 
+    /**
+     * レーティング未取得レコードか (26.10.2)。GP 戦を検知したがレーティング画面を読めずに待機が終わった
+     * 戦闘を「日時 + 勝敗だけ」で残すためのもの。lowConfidence == true で表し、currentRating は 0。
+     * グラフ・サマリ・変動計算の対象外。テキスト一覧では「未取得」と表示し、編集で値を入れると通常レコードになる。
+     */
+    val isUnread: Boolean get() = lowConfidence
+
     companion object {
+        /** レーティング未取得レコードを生成する (待機タイムアウト / 次戦開始で打ち切られたとき) */
+        fun unread(timestamp: String, result: String) =
+            GrandPrixRecord(timestamp = timestamp, result = result, currentRating = 0.0, lowConfidence = true)
+
         /** ランク帯の選択肢 (低い順)。レーティングを記録する区間のみ (マスター3〜GM)。iOS と同一。 */
         val rankTiers: List<String> = listOf(
             "マスター3", "マスター2", "マスター1", "グランドマスター"

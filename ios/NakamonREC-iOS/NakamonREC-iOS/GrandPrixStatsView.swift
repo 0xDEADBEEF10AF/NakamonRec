@@ -34,8 +34,10 @@ struct GrandPrixStatsView: View {
     private var showDots: Bool { chartZoomed || sorted.count <= dotLimit }
     @Environment(\.dismiss) private var dismiss
 
-    private var currentRecord: GrandPrixRecord? { sorted.last }
-    private var maxRecord: GrandPrixRecord? { sorted.max { $0.currentRating < $1.currentRating } }
+    /// レーティングが読めているレコードだけ (未取得レコードはサマリ・グラフ・変動計算の対象外)
+    private var readable: [GrandPrixRecord] { sorted.filter { !$0.isUnread } }
+    private var currentRecord: GrandPrixRecord? { readable.last }
+    private var maxRecord: GrandPrixRecord? { readable.max { $0.currentRating < $1.currentRating } }
 
     /// ストアから読み直し、並べ替え・日時・グラフ点をまとめて再計算する (編集/追加/削除後にも呼ぶ)
     private func reload() {
@@ -45,10 +47,11 @@ struct GrandPrixStatsView: View {
             .sorted { ($0.1 ?? .distantPast) < ($1.1 ?? .distantPast) }
         sorted = paired.map { $0.0 }
         sortedDates = paired.map { $0.1 ?? .distantPast }
-        // index = 戦闘の順番 (1 始まり、テキスト一覧の「戦」と同じ番号)。日時不正の点はグラフから除外
+        // index = 戦闘の順番 (1 始まり、テキスト一覧の「戦」と同じ番号)。日時不正の点と
+        // レーティング未取得レコードはグラフから除外 (番号は飛ぶが一覧と一致させる)
         var pts: [ChartPoint] = []
         for (i, (r, d)) in paired.enumerated() {
-            guard let d else { continue }
+            guard let d, !r.isUnread else { continue }
             pts.append(ChartPoint(index: i + 1, date: d, rating: r.currentRating, series: "自分"))
             if let border = r.borderRating {
                 pts.append(ChartPoint(index: i + 1, date: d, rating: border, series: "ボーダー"))
@@ -119,7 +122,7 @@ struct GrandPrixStatsView: View {
                 GrandPrixFormSheet(
                     title: "グランプリ記録の編集",
                     initialDate: BattleTimestampFormatter.date(from: rec.timestamp) ?? Date(),
-                    initialRating: String(format: "%.1f", rec.currentRating),
+                    initialRating: rec.isUnread ? "" : String(format: "%.1f", rec.currentRating),
                     initialBorder: rec.borderRating.map { String(format: "%.1f", $0) } ?? "",
                     initialTier: rec.rankTier
                 ) { date, rating, border, tier in
@@ -128,6 +131,7 @@ struct GrandPrixStatsView: View {
                     c.currentRating = rating
                     c.neededRating = border.map { $0 - rating }
                     c.rankTier = tier
+                    c.lowConfidence = false   // 値を入れたら「未取得」解除
                     BattleHistoryStore.shared.updateGrandPrix(id: rec.id, with: c)
                     reload()
                 }
@@ -209,7 +213,7 @@ struct GrandPrixStatsView: View {
 
     /// Y レンジ = データの min..max ±10% (Android GrandPrixGraphView と同じ。0 起点だと潰れる)
     private var yDomain: ClosedRange<Double> {
-        let vals = sorted.flatMap { [$0.currentRating] + ($0.borderRating.map { [$0] } ?? []) }
+        let vals = readable.flatMap { [$0.currentRating] + ($0.borderRating.map { [$0] } ?? []) }
         guard let lo = vals.min(), let hi = vals.max() else { return 0...1 }
         let span = max(hi - lo, 1)
         return (lo - span * 0.1)...(hi + span * 0.1)
@@ -277,10 +281,14 @@ struct GrandPrixStatsView: View {
         HStack(spacing: 8) {
             if let sel = selectedRecord {
                 RankBadge(tier: sel.rankTier, height: 20)
-                Text("R:" + String(format: "%.1f", sel.currentRating))
-                    .font(.footnote.bold()).foregroundStyle(Color.recCoral)
-                Text("B:" + (sel.borderRating.map { String(format: "%.1f", $0) } ?? "—"))
-                    .font(.footnote.bold()).foregroundStyle(.cyan)
+                if sel.isUnread {
+                    Text("レーティング未取得").font(.footnote.bold()).foregroundStyle(.orange)
+                } else {
+                    Text("R:" + String(format: "%.1f", sel.currentRating))
+                        .font(.footnote.bold()).foregroundStyle(Color.recCoral)
+                    Text("B:" + (sel.borderRating.map { String(format: "%.1f", $0) } ?? "—"))
+                        .font(.footnote.bold()).foregroundStyle(.cyan)
+                }
                 Text(shortDateTime(sel.timestamp)).font(.caption2).foregroundStyle(.gray)
             }
             Spacer()
@@ -311,24 +319,26 @@ struct GrandPrixStatsView: View {
                     .symbol(.circle)
                     .symbolSize(showDots ? 24 : 0)
             }
-            // 選択点: 縦ルーラー + 白い強調点 (Android のインジケーターと同じ)
+            // 選択点: 縦ルーラー + 白い強調点 (Android のインジケーターと同じ)。未取得レコードはルーラーのみ
             if let sel = selectedRecord, let i = selectedIndex {
                 RuleMark(x: .value("戦", i))
                     .foregroundStyle(.white.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                PointMark(x: .value("戦", i), y: .value("レーティング", sel.currentRating))
-                    .foregroundStyle(.white)
-                    .symbolSize(60)
+                if !sel.isUnread {
+                    PointMark(x: .value("戦", i), y: .value("レーティング", sel.currentRating))
+                        .foregroundStyle(.white)
+                        .symbolSize(60)
+                }
             }
         }
         .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
         .chartYScale(domain: yDomain)
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+            // 戦闘数軸のラベルは戦闘番号 (テキスト一覧の「戦」と同じ)。日時は日時軸に切り替えて見る
+            AxisMarks(values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine()
-                if let i = value.as(Int.self), i >= 1, i <= sortedDates.count,
-                   sortedDates[i - 1] != .distantPast {
-                    AxisValueLabel { axisDateLabel(sortedDates[i - 1]) }
+                if let i = value.as(Int.self), i >= 1, i <= sorted.count {
+                    AxisValueLabel { Text("\(i)") }
                 }
             }
         }
@@ -355,9 +365,11 @@ struct GrandPrixStatsView: View {
                 RuleMark(x: .value("日時", d))
                     .foregroundStyle(.white.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                PointMark(x: .value("日時", d), y: .value("レーティング", sel.currentRating))
-                    .foregroundStyle(.white)
-                    .symbolSize(60)
+                if !sel.isUnread {
+                    PointMark(x: .value("日時", d), y: .value("レーティング", sel.currentRating))
+                        .foregroundStyle(.white)
+                        .symbolSize(60)
+                }
             }
         }
         .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
@@ -425,9 +437,11 @@ struct GrandPrixStatsView: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
+    /// 変動 = 直前の「読めている」レコードとの差。自分または直前が未取得なら nil
     private func delta(at idx: Int) -> Double? {
-        guard idx > 0 else { return nil }
-        return sorted[idx].currentRating - sorted[idx - 1].currentRating
+        guard idx > 0, !sorted[idx].isUnread else { return nil }
+        guard let prev = sorted[..<idx].last(where: { !$0.isUnread }) else { return nil }
+        return sorted[idx].currentRating - prev.currentRating
     }
 
     private func recordRow(_ r: GrandPrixRecord, battleNo: Int, delta: Double?) -> some View {
@@ -446,8 +460,14 @@ struct GrandPrixStatsView: View {
             }
             .frame(width: 40, alignment: .leading)
             Text("\(battleNo)").font(.caption2).foregroundStyle(.gray).frame(width: 36, alignment: .trailing)
-            Text(String(format: "%.1f", r.currentRating)).font(.subheadline.bold()).foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            if r.isUnread {
+                // レーティング未取得 (待機タイムアウト等)。長押し → 編集で値を入れると通常レコードになる
+                Text("未取得").font(.caption2.bold()).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            } else {
+                Text(String(format: "%.1f", r.currentRating)).font(.subheadline.bold()).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
             Text(delta.map { String(format: "%@%.1f", $0 >= 0 ? "+" : "", $0) } ?? "—")
                 .font(.caption2).foregroundStyle(delta.map { $0 >= 0 ? Color.recCoral : Color.cyan } ?? .gray)
                 .frame(width: 52, alignment: .trailing)

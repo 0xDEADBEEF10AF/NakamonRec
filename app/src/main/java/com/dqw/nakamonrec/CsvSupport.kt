@@ -63,10 +63,11 @@ object CsvSupport {
             sb.appendLine("グランプリ戦績,${gp.size}件")
             sb.appendLine(grandPrixColumns.joinToString(",") { quote(it) })
             gp.forEach { r ->
+                // レーティング未取得レコード (lowConfidence) はレーティング列を空欄で書き出す
                 val cells = listOf(
                     r.timestamp,
                     r.result,
-                    formatRating(r.currentRating),
+                    if (r.isUnread) "" else formatRating(r.currentRating),
                     r.neededRating?.let { formatRating(it) } ?: "",
                     r.rankTier ?: ""
                 )
@@ -120,11 +121,17 @@ object CsvSupport {
             if (line.isEmpty()) continue
             val cells = parseRow(line)
             if (cells.size < 3 || cells.size > 10) continue
-            val current = cells[2].trim().toDoubleOrNull() ?: continue
+            val result = if (cells[1] == "LOSE") "LOSE" else "WIN"
+            val ratingText = cells[2].trim()
+            // レーティング列が空欄 = 未取得レコード (日時 + 勝敗だけ)。日時らしさの最低限チェックのみ
+            if (ratingText.isEmpty()) {
+                if (cells[0].length >= 10) out.add(GrandPrixRecord.unread(cells[0], result))
+                continue
+            }
+            val current = ratingText.toDoubleOrNull() ?: continue
             val needed = cells.getOrNull(3)?.trim()?.toDoubleOrNull()
             val tierRaw = cells.getOrNull(4) ?: ""
             val tier = if (GrandPrixRecord.rankTiers.contains(tierRaw)) tierRaw else null
-            val result = if (cells[1] == "LOSE") "LOSE" else "WIN"
             out.add(
                 GrandPrixRecord(
                     timestamp = cells[0],
