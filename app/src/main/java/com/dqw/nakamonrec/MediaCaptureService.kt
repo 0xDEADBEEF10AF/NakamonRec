@@ -47,6 +47,14 @@ class MediaCaptureService : Service() {
     private var grandPrixResult = ""
     private var grandPrixAttempts = 0                                 // 読み取りを試したフレーム数 (診断用)
     private val grandPrixFailures = HashMap<String, Int>()            // 失敗分類ごとの件数
+    private var grandPrixWaitStartedAt = 0L                           // 待機開始時刻 (パーティ選択打ち切りの猶予判定)
+    private var partyCancelStreak = 0                                 // 待機中にパーティ選択を連続検知したフレーム数
+    // パーティ選択検知による待機打ち切りの誤爆対策 (2026-10-14 実例: 敗北ロゴ 1 秒後の遷移フレームで SELECT が
+    // 0.701 と判定され即打ち切り → 直後に出たレーティング画面を読めなかった)。
+    // 勝敗ロゴからパーティ選択画面に到達するには結果画面・レーティング画面を経るため 5 秒未満はあり得ない。
+    // 猶予 5 秒 + 連続 2 フレーム (0.5 秒間隔) で初めて打ち切る
+    private val partyCancelGraceMs = 5_000L
+    private val partyCancelFrames = 2
     // レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通)
     // ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の検知で打ち切る。
     private val grandPrixWaitTimeoutMs = 120_000L
@@ -437,8 +445,17 @@ class MediaCaptureService : Service() {
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
 
         if (detected != -1) {
-            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る
-            endGrandPrixWaitUnread("パーティ選択へ進んだため待機終了")
+            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る。
+            // ただし勝敗ロゴ直後の遷移フレームの誤検知 (しきい値ぎりぎり) で打ち切らないよう、猶予 + 連続検知を要求
+            if (currentState == State.AWAITING_RATING) {
+                val elapsed = System.currentTimeMillis() - grandPrixWaitStartedAt
+                if (elapsed < partyCancelGraceMs) {
+                    dataManager.appendFlightLog("グランプリ: 待機開始 ${elapsed / 1000}秒でのパーティ選択検知 (P[${detected + 1}] Score " +
+                        "${String.format(Locale.US, "%.3f", scores[detected])}) は遷移フレームとみなし無視")
+                } else if (++partyCancelStreak >= partyCancelFrames) {
+                    endGrandPrixWaitUnread("パーティ選択へ進んだため待機終了")
+                }
+            }
             if (lastDetectedPartyIndex != detected) {
                 dataManager.appendFlightLog("パーティ選択検知 P[${detected + 1}] Score ${String.format(Locale.US, "%.3f", scores[detected])}")
                 // マッチングスコア詳細用に 3 枚セットで保存。パーティ変化時のみ実行することで
@@ -455,8 +472,10 @@ class MediaCaptureService : Service() {
             }
             lastDetectedPartyIndex = detected
             lastDetectedPartyScores = scores
+        } else {
+            partyCancelStreak = 0
         }
-        
+
         val vsKind = analyzer.detectVsTemplate(bitmap)
         if (vsKind != null) {
             // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
@@ -548,6 +567,8 @@ class MediaCaptureService : Service() {
                 grandPrixTimestamp = recordTs
                 grandPrixResult = result
                 grandPrixDeadline = System.currentTimeMillis() + grandPrixWaitTimeoutMs
+                grandPrixWaitStartedAt = System.currentTimeMillis()
+                partyCancelStreak = 0
                 grandPrixAttempts = 0
                 grandPrixFailures.clear()
                 currentState = State.AWAITING_RATING

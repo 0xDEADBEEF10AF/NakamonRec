@@ -28,9 +28,17 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         let timestamp: String       // 対応する BattleRecord と揃える (pending.startedAt)
         let result: String          // "WIN" / "LOSE"
         let deadline: TimeInterval  // これを過ぎたら諦める
+        let startedAt: TimeInterval // 待機開始時刻 (パーティ選択打ち切りの猶予判定)
         var attempts = 0                       // 読み取りを試したフレーム数 (診断用)
         var failures: [String: Int] = [:]      // 失敗分類ごとの件数 (RatingPanelReader.lastFailureCategory)
+        var partyCancelStreak = 0              // パーティ選択を連続検知したフレーム数
     }
+    // パーティ選択検知による待機打ち切りの誤爆対策 (2026-10-14 Android 実例: 敗北ロゴ 1 秒後の遷移フレームで
+    // SELECT が 0.701 と判定され即打ち切り → 直後に出たレーティング画面を読めなかった)。
+    // 勝敗ロゴからパーティ選択画面に到達するには結果画面・レーティング画面を経るため 5 秒未満はあり得ない。
+    // 猶予 5 秒 + 連続 2 フレーム (0.5 秒間隔) で初めて打ち切る
+    private let partyCancelGrace: TimeInterval = 5
+    private let partyCancelFrames = 2
     private var grandPrixWait: GrandPrixWait?
     /// レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通、
     /// 配信動画で確認) ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の
@@ -385,8 +393,22 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 上書きしないことで、後続の VS 検知時に正しいパーティ識別スコアが残る。
         if bestScore >= 0.7 {
             lastPartySelectScores = allScores
-            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る
-            endGrandPrixWaitUnread(reason: "パーティ選択へ進んだため待機終了")
+            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る。
+            // ただし勝敗ロゴ直後の遷移フレームの誤検知 (しきい値ぎりぎり) で打ち切らないよう、猶予 + 連続検知を要求
+            if let wait = grandPrixWait {
+                let elapsed = CACurrentMediaTime() - wait.startedAt
+                if elapsed < partyCancelGrace {
+                    BattleLogger.append(String(format: "グランプリ: 待機開始 %.0f秒でのパーティ選択検知 (P[%d] Score %.3f) は遷移フレームとみなし無視",
+                                               elapsed, bestIndex + 1, bestScore))
+                } else {
+                    grandPrixWait?.partyCancelStreak += 1
+                    if (grandPrixWait?.partyCancelStreak ?? 0) >= partyCancelFrames {
+                        endGrandPrixWaitUnread(reason: "パーティ選択へ進んだため待機終了")
+                    }
+                }
+            }
+        } else {
+            grandPrixWait?.partyCancelStreak = 0
         }
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
@@ -762,9 +784,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // モードを切り忘れても勝利画面のダメージ数値を誤記録しない。
         guard startedTournament, let startedAt else { return }
         let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
+        let now = CACurrentMediaTime()
         grandPrixWait = GrandPrixWait(timestamp: ts,
                                       result: result,
-                                      deadline: CACurrentMediaTime() + grandPrixWaitTimeout)
+                                      deadline: now + grandPrixWaitTimeout,
+                                      startedAt: now)
         BattleLogger.append("グランプリ: レーティング画面を待機中…")
     }
 
