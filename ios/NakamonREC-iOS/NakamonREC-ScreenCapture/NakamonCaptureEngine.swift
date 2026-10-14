@@ -24,40 +24,22 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     // グランプリ: WIN/LOSE 後にレーティング画面 (ユーザーのタップで出現) を待って読む状態。
     // GrandPrixMode.isEnabled のときだけ設定される (OFF の通常運用では常に nil = 挙動不変)。
+    //
+    // 待機の終了条件はユーザー操作起点の 3 つだけ (26.10.2 ビーフ合意、タイムアウトは持たない):
+    //   (a) レーティング画面を読めた → 記録して終了
+    //   (b) 次戦の VS を検知した → 未取得レコードを残して終了
+    //   (c) STOP (broadcastFinished) → 未取得レコードを残して終了
+    // 待機中も次戦の探索 (パーティ選択/VS) は止めない。時間ベースの打ち切りは根拠のある値が定まらない
+    // (20 秒 → 120 秒 → 300 秒と迷走した) ため撤去し、読めないまま別画面へ進むケースは誤読防止の
+    // 形式ゲート/一致率条件に委ねる。パーティ選択検知による打ち切りも遷移フレームの誤検知
+    // (敗北 1 秒後に SELECT 0.701) で誤爆したため撤去した。
     private struct GrandPrixWait {
         let timestamp: String       // 対応する BattleRecord と揃える (pending.startedAt)
         let result: String          // "WIN" / "LOSE"
-        let deadline: TimeInterval  // これを過ぎたら諦める
-        let startedAt: TimeInterval // 待機開始時刻 (パーティ選択打ち切りの猶予判定)
         var attempts = 0                       // 読み取りを試したフレーム数 (診断用)
         var failures: [String: Int] = [:]      // 失敗分類ごとの件数 (RatingPanelReader.lastFailureCategory)
-        var partyCancelStreak = 0              // パーティ選択を連続検知したフレーム数
     }
-    // パーティ選択検知による待機打ち切りの誤爆対策 (2026-10-14 Android 実例: 敗北ロゴ 1 秒後の遷移フレームで
-    // SELECT が 0.701 と判定され即打ち切り → 直後に出たレーティング画面を読めなかった)。
-    // 勝敗ロゴからパーティ選択画面に到達するには結果画面・レーティング画面を経るため 5 秒未満はあり得ない。
-    // 猶予 5 秒 + 連続 2 フレーム (0.5 秒間隔) で初めて打ち切る
-    private let partyCancelGrace: TimeInterval = 5
-    private let partyCancelFrames = 2
-
-    /// レーティング記録直後にエンブレム (ランク帯) が読めなかったとき、同じ帯を数秒だけ追加探索して
-    /// 記録を補完する (26.10.2)。レーティングの数字が先に読める一方でエンブレムはまだ描画途中、
-    /// というフレームで記録が確定してしまい、ランク帯が空欄になる (体感 3 割) ことへの対策。
-    private struct PendingRankTier {
-        let recordId: String        // 補完対象の GrandPrixRecord.id (= timestamp)
-        let rowOffsetY: Int         // RatingPanelReader が使った行オフセット
-        let startedAt: TimeInterval
-        let deadline: TimeInterval
-        var attempts = 0
-    }
-    private var pendingRankTier: PendingRankTier?
-    private let rankTierFollowUp: TimeInterval = 4
     private var grandPrixWait: GrandPrixWait?
-    /// レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通、
-    /// 配信動画で確認) ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の
-    /// 検知で打ち切るので、長くしても取りこぼしは増えない。
-    /// 26.10.2 クローズドテスト: 勝敗ロゴで長く放置するユーザーで 120 秒でも未取得が出たため 300 秒に再延長。
-    private let grandPrixWaitTimeout: TimeInterval = 300
 
     // テンプレートキャッシュ
     // VS は BASE 2 種 (FM=フレンドマッチング, MG=大会用) + カスタムテンプレ対応。
@@ -305,11 +287,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // return していたため、せっかちなユーザーが 20 秒以内に次戦へ進むとパーティや戦闘開始を
         // 取りこぼしていた。VS 検知 (= 次戦開始) 時は scanForVS 側で待機を打ち切る。
         if grandPrixWait != nil {
-            handleGrandPrixWait(uiImage, now: currentTime)
-        }
-        // レーティング記録済みだがランク帯が未識別なら、数秒だけエンブレム帯を追加探索して補完
-        if pendingRankTier != nil {
-            followUpRankTier(uiImage, now: currentTime)
+            handleGrandPrixWait(uiImage)
         }
 
         if !isBattleInProgress {
@@ -324,13 +302,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
 
     /// 大会モードで WIN/LOSE 検知後に呼ぶ。レーティング画面 (勝敗ロゴの下にタップで出現) を
     /// RatingPanelReader で読み、成功したら GrandPrixRecord を保存して待機終了。
-    /// タイムアウトで諦める。GrandPrixMode OFF ではそもそも grandPrixWait が設定されないため走らない。
-    private func handleGrandPrixWait(_ scene: UIImage, now: TimeInterval) {
+    /// 読めない間は次戦の VS 検知か STOP まで待ち続ける (タイムアウトなし)。
+    /// GrandPrixMode OFF ではそもそも grandPrixWait が設定されないため走らない。
+    private func handleGrandPrixWait(_ scene: UIImage) {
         guard let wait = grandPrixWait else { return }
-        if now > wait.deadline {
-            endGrandPrixWaitUnread(reason: "レーティング画面の検出タイムアウト")
-            return
-        }
         guard let cg = scene.cgImage else { return }
         guard let reading = RatingPanelReader.read(cg) else {
             // 失敗分類を集計 (待機終了時にまとめてログへ)
@@ -359,28 +334,6 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                    rankTier ?? "—",
                                    reading.rowOffsetY == 0 ? "" : " (行Δ\(reading.rowOffsetY >= 0 ? "+" : "")\(reading.rowOffsetY)px)",
                                    tierDiag))
-        if rankTier == nil {
-            pendingRankTier = PendingRankTier(recordId: wait.timestamp, rowOffsetY: reading.rowOffsetY,
-                                              startedAt: now, deadline: now + rankTierFollowUp)
-        }
-    }
-
-    /// ランク帯の追加探索 (PendingRankTier)。識別できたら保存済みレコードを更新して終了、期限切れで諦める
-    private func followUpRankTier(_ scene: UIImage, now: TimeInterval) {
-        guard let p = pendingRankTier else { return }
-        if now > p.deadline {
-            pendingRankTier = nil
-            BattleLogger.append("ランク帯: 追加探索 \(p.attempts) フレームでも識別できず — 直近: \(RankTierReader.lastDiagnostic)")
-            return
-        }
-        guard let cg = scene.cgImage else { return }
-        pendingRankTier?.attempts += 1
-        guard let tier = RankTierReader.read(cg, rowOffsetY: p.rowOffsetY) else { return }
-        pendingRankTier = nil
-        guard var rec = BattleHistoryStore.shared.loadGrandPrixRecords().first(where: { $0.id == p.recordId }) else { return }
-        rec.rankTier = tier
-        BattleHistoryStore.shared.updateGrandPrix(rec)
-        BattleLogger.append(String(format: "🎖 ランク帯を追加探索で識別: %@ (+%.1fs, %dフレーム目)", tier, now - p.startedAt, p.attempts + 1))
     }
 
     // MARK: - Party Selection (戦闘開始前のパーティ選択画面)
@@ -435,22 +388,6 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // 上書きしないことで、後続の VS 検知時に正しいパーティ識別スコアが残る。
         if bestScore >= 0.7 {
             lastPartySelectScores = allScores
-            // 前戦のレーティング待機中にパーティ選択画面へ進んだ = レーティングパネルはもう出ないので打ち切る。
-            // ただし勝敗ロゴ直後の遷移フレームの誤検知 (しきい値ぎりぎり) で打ち切らないよう、猶予 + 連続検知を要求
-            if let wait = grandPrixWait {
-                let elapsed = CACurrentMediaTime() - wait.startedAt
-                if elapsed < partyCancelGrace {
-                    BattleLogger.append(String(format: "グランプリ: 待機開始 %.0f秒でのパーティ選択検知 (P[%d] Score %.3f) は遷移フレームとみなし無視",
-                                               elapsed, bestIndex + 1, bestScore))
-                } else {
-                    grandPrixWait?.partyCancelStreak += 1
-                    if (grandPrixWait?.partyCancelStreak ?? 0) >= partyCancelFrames {
-                        endGrandPrixWaitUnread(reason: "パーティ選択へ進んだため待機終了")
-                    }
-                }
-            }
-        } else {
-            grandPrixWait?.partyCancelStreak = 0
         }
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
@@ -527,7 +464,6 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
             endGrandPrixWaitUnread(reason: "次の戦闘開始により待機終了")
-            pendingRankTier = nil   // 前戦のランク帯追加探索も終了 (次戦画面には出ない)
             BattleLogger.rotate()
             if lastDetectedPartyIndex >= 0 {
                 BattleLogger.append(String(format: "パーティ P[%d] で戦闘開始", lastDetectedPartyIndex + 1))
@@ -827,11 +763,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         // モードを切り忘れても勝利画面のダメージ数値を誤記録しない。
         guard startedTournament, let startedAt else { return }
         let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
-        let now = CACurrentMediaTime()
-        grandPrixWait = GrandPrixWait(timestamp: ts,
-                                      result: result,
-                                      deadline: now + grandPrixWaitTimeout,
-                                      startedAt: now)
+        grandPrixWait = GrandPrixWait(timestamp: ts, result: result)
         BattleLogger.append("グランプリ: レーティング画面を待機中…")
     }
 
@@ -968,6 +900,9 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         heartbeatTimer?.cancel()
         heartbeatTimer = nil
         BroadcastStatus.setActive(false)
+        // グランプリ: レーティング画面を読めないまま STOP されたら未取得レコードを残す
+        // (最終戦は次戦の VS が来ないため、ここで書かないとレコード自体が残らない)
+        endGrandPrixWaitUnread(reason: "STOP により待機終了")
         // Android 同様、戦闘終了 (WIN/LOSE) を検知していない進行中バトルは破棄
         pendingLock.lock()
         if pending != nil {
