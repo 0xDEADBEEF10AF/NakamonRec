@@ -29,18 +29,22 @@ public enum RankTierReader {
     private static let barClusterGap = 14       // 柱同士の最大ギャップ
     private static let barFirstMaxX = 40        // 先頭柱はアンカー近傍のみ
 
+    /// 直近の read() が nil を返した理由 (フライトログ用)。成功時は ""。
+    /// 例: "マスター 0.61 / グランド 0.40 (しきい値 0.72 未満)" / "マスター一致 0.95 だが柱数 0"
+    nonisolated(unsafe) public static var lastDiagnostic: String = ""
+
     /// ランク帯を識別する。識別できなければ nil。
     /// 戻り値は `GrandPrixRecord.rankTiers` のいずれか。
     /// - Parameter rowOffsetY: RatingPanelReader が実際に使った行オフセット (1080 基準 px)。
     ///   パネル全体が同じ量だけずれているので、エンブレム探索帯も追従させる (0 = 従来どおり)。
     public static func read(_ image: CGImage, rowOffsetY: Int = 0) -> String? {
-        guard let px = Pixels(image) else { return nil }
+        guard let px = Pixels(image) else { lastDiagnostic = "画素取得失敗"; return nil }
         let s = Double(image.width) / baseWidth
 
         // 探索帯を 1080 基準の canonical 座標で二値化 (nearest neighbor サンプリング)
         let bandM = canonicalBand(px, scale: s, thr: masterThr, offsetY: rowOffsetY)
         let bandG = canonicalBand(px, scale: s, thr: grandThr, offsetY: rowOffsetY)
-        guard let master = anchors["master"], let grand = anchors["grand"] else { return nil }
+        guard let master = anchors["master"], let grand = anchors["grand"] else { lastDiagnostic = "アンカー資源なし"; return nil }
 
         let m = slideMatch(master, in: bandM)
         let g = slideMatch(grand, in: bandG)
@@ -49,14 +53,18 @@ public enum RankTierReader {
             // アンカー右端の柱カウント窓 (canonical 座標)
             let winX = m.x + master.w + barWinGap
             let winY = max(0, m.y - 2)
-            switch countBars(bandM, x: winX, y: winY, w: barWinW, h: min(barWinH, bandH - winY)) {
-            case 1: return "マスター1"
-            case 2: return "マスター2"
-            case 3: return "マスター3"
-            default: return nil
+            let bars = countBars(bandM, x: winX, y: winY, w: barWinW, h: min(barWinH, bandH - winY))
+            switch bars {
+            case 1: lastDiagnostic = ""; return "マスター1"
+            case 2: lastDiagnostic = ""; return "マスター2"
+            case 3: lastDiagnostic = ""; return "マスター3"
+            default:
+                lastDiagnostic = String(format: "マスター一致 %.2f@(%d,%d) だが柱数 %d", m.score, m.x, m.y, bars)
+                return nil
             }
         }
-        if g.score >= scoreThreshold { return "グランドマスター" }
+        if g.score >= scoreThreshold { lastDiagnostic = ""; return "グランドマスター" }
+        lastDiagnostic = String(format: "マスター %.2f / グランド %.2f (しきい値 %.2f 未満)", m.score, g.score, scoreThreshold)
         return nil
     }
 

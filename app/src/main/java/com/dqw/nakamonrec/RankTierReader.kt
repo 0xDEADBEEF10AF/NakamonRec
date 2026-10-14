@@ -3,6 +3,7 @@ package com.dqw.nakamonrec
 import android.content.Context
 import android.graphics.Bitmap
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * グランプリの勝敗画面 (レーティングパネル表示中) のエンブレム文字帯から
@@ -76,10 +77,10 @@ object RankTierReader {
      */
     fun read(context: Context, bmp: Bitmap, rowOffsetY: Int = 0): String? {
         ensureAnchors(context)
-        val master = anchors?.get("master") ?: return null
-        val grand = anchors?.get("grand") ?: return null
+        val master = anchors?.get("master") ?: run { lastDiagnostic = "アンカー資源なし"; return null }
+        val grand = anchors?.get("grand") ?: run { lastDiagnostic = "アンカー資源なし"; return null }
         val w = bmp.width; val h = bmp.height
-        if (w <= 0 || h <= 0) return null
+        if (w <= 0 || h <= 0) { lastDiagnostic = "画素取得失敗"; return null }
         val pixels = IntArray(w * h)
         bmp.getPixels(pixels, 0, w, 0, 0, w, h)
         val s = w / BASE_WIDTH
@@ -93,16 +94,28 @@ object RankTierReader {
             // アンカー右端の柱カウント窓 (canonical 座標)
             val winX = m.x + master.w + BAR_WIN_GAP
             val winY = maxOf(0, m.y - 2)
-            return when (countBars(bandM, winX, winY, BAR_WIN_W, minOf(BAR_WIN_H, BAND_H - winY))) {
-                1 -> "マスター1"
-                2 -> "マスター2"
-                3 -> "マスター3"
-                else -> null
+            val bars = countBars(bandM, winX, winY, BAR_WIN_W, minOf(BAR_WIN_H, BAND_H - winY))
+            return when (bars) {
+                1 -> { lastDiagnostic = ""; "マスター1" }
+                2 -> { lastDiagnostic = ""; "マスター2" }
+                3 -> { lastDiagnostic = ""; "マスター3" }
+                else -> {
+                    lastDiagnostic = String.format(Locale.US, "マスター一致 %.2f@(%d,%d) だが柱数 %d", m.score, m.x, m.y, bars)
+                    null
+                }
             }
         }
-        if (g.score >= SCORE_THRESHOLD) return "グランドマスター"
+        if (g.score >= SCORE_THRESHOLD) { lastDiagnostic = ""; return "グランドマスター" }
+        lastDiagnostic = String.format(Locale.US, "マスター %.2f / グランド %.2f (しきい値 %.2f 未満)", m.score, g.score, SCORE_THRESHOLD)
         return null
     }
+
+    /**
+     * 直近の read() が null を返した理由 (フライトログ用)。成功時は ""。
+     * 例: "マスター 0.61 / グランド 0.40 (しきい値 0.72 未満)" / "マスター一致 0.95 だが柱数 0"
+     */
+    @Volatile var lastDiagnostic: String = ""
+        private set
 
     /**
      * 文字インク: 明るく、かつ金色 (r-b 大: 縁・月桂樹) でない画素。

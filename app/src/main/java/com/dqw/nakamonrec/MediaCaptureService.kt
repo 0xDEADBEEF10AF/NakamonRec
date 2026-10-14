@@ -57,7 +57,17 @@ class MediaCaptureService : Service() {
     private val partyCancelFrames = 2
     // レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通)
     // ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の検知で打ち切る。
-    private val grandPrixWaitTimeoutMs = 120_000L
+    // 26.10.2 クローズドテスト: 勝敗ロゴで長く放置するユーザーで 120 秒でも未取得が出たため 300 秒に再延長。
+    private val grandPrixWaitTimeoutMs = 300_000L
+    // レーティング記録直後にエンブレム (ランク帯) が読めなかったとき、同じ帯を数秒だけ追加探索して記録を補完する
+    // (26.10.2)。レーティングの数字が先に読める一方でエンブレムはまだ描画途中、というフレームで記録が確定して
+    // しまい、ランク帯が空欄になる (体感 3 割) ことへの対策。iOS PendingRankTier と同じ。
+    private var pendingTierTimestamp: String? = null
+    private var pendingTierOffsetY = 0
+    private var pendingTierStartedAt = 0L
+    private var pendingTierDeadline = 0L
+    private var pendingTierAttempts = 0
+    private val rankTierFollowUpMs = 4_000L
     private var lastAnalysisTime = 0L
     private var lastBitmapUpdateTime = 0L
     private var latestBitmap: Bitmap? = null
@@ -441,7 +451,28 @@ class MediaCaptureService : Service() {
         }
     }
 
+    /** ランク帯の追加探索。識別できたら保存済みレコードを更新して終了、期限切れで諦める */
+    private fun followUpRankTier(bitmap: Bitmap) {
+        val ts = pendingTierTimestamp ?: return
+        val now = System.currentTimeMillis()
+        if (now > pendingTierDeadline) {
+            pendingTierTimestamp = null
+            dataManager.appendFlightLog("ランク帯: 追加探索 ${pendingTierAttempts} フレームでも識別できず — 直近: ${RankTierReader.lastDiagnostic}")
+            return
+        }
+        pendingTierAttempts++
+        val tier = RankTierReader.read(this, bitmap, pendingTierOffsetY) ?: return
+        pendingTierTimestamp = null
+        val rec = dataManager.loadGrandPrixRecords().firstOrNull { it.timestamp == ts } ?: return
+        dataManager.updateGrandPrix(ts, rec.copy(rankTier = tier))
+        dataManager.appendFlightLog(String.format(Locale.US, "🎖 ランク帯を追加探索で識別: %s (+%.1fs, %dフレーム目)",
+            tier, (now - pendingTierStartedAt) / 1000.0, pendingTierAttempts))
+    }
+
     private fun handleIdleState(bitmap: Bitmap) {
+        // レーティング記録済みだがランク帯が未識別なら、数秒だけエンブレム帯を追加探索して補完
+        if (pendingTierTimestamp != null) followUpRankTier(bitmap)
+
         val (detected, scores) = analyzer.detectSelectedParty(bitmap)
 
         if (detected != -1) {
@@ -480,6 +511,7 @@ class MediaCaptureService : Service() {
         if (vsKind != null) {
             // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
             endGrandPrixWaitUnread("次の戦闘開始により待機終了")
+            pendingTierTimestamp = null   // 前戦のランク帯追加探索も終了 (次戦画面には出ない)
             dataManager.rotateFlightLog()
 
             // 大会 VS で始まったか (二段ゲート1段目)。custom は大会用校正時のみ大会扱い。
@@ -644,12 +676,20 @@ class MediaCaptureService : Service() {
                 )
             )
             currentState = State.IDLE
+            if (rankTier == null) {
+                pendingTierTimestamp = grandPrixTimestamp
+                pendingTierOffsetY = reading.rowOffsetY
+                pendingTierStartedAt = System.currentTimeMillis()
+                pendingTierDeadline = pendingTierStartedAt + rankTierFollowUpMs
+                pendingTierAttempts = 0
+            }
         }
         val borderStr = reading.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
         val neededStr = reading.neededRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
         val offsetStr = if (reading.rowOffsetY == 0) "" else String.format(Locale.US, " (行Δ%+dpx)", reading.rowOffsetY)
-        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s ランク%s%s",
-            reading.currentRating, neededStr, borderStr, rankTier ?: "—", offsetStr))
+        val tierDiag = if (rankTier == null) " ランク診断: ${RankTierReader.lastDiagnostic}" else ""
+        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ記録 現在%.1f 必要%s ボーダー%s ランク%s%s%s",
+            reading.currentRating, neededStr, borderStr, rankTier ?: "—", offsetStr, tierDiag))
         // A 方針: レーティング値のみの記録確認通知
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses,
             String.format(Locale.US, "🎖 GP記録 %.1f", reading.currentRating))

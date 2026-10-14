@@ -39,11 +39,25 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     // 猶予 5 秒 + 連続 2 フレーム (0.5 秒間隔) で初めて打ち切る
     private let partyCancelGrace: TimeInterval = 5
     private let partyCancelFrames = 2
+
+    /// レーティング記録直後にエンブレム (ランク帯) が読めなかったとき、同じ帯を数秒だけ追加探索して
+    /// 記録を補完する (26.10.2)。レーティングの数字が先に読める一方でエンブレムはまだ描画途中、
+    /// というフレームで記録が確定してしまい、ランク帯が空欄になる (体感 3 割) ことへの対策。
+    private struct PendingRankTier {
+        let recordId: String        // 補完対象の GrandPrixRecord.id (= timestamp)
+        let rowOffsetY: Int         // RatingPanelReader が使った行オフセット
+        let startedAt: TimeInterval
+        let deadline: TimeInterval
+        var attempts = 0
+    }
+    private var pendingRankTier: PendingRankTier?
+    private let rankTierFollowUp: TimeInterval = 4
     private var grandPrixWait: GrandPrixWait?
     /// レーティング画面待ちの上限。ユーザーは勝敗ロゴの後すぐにタップするとは限らない (5〜10 秒の放置は普通、
     /// 配信動画で確認) ため 26.10.2 で 20 秒 → 120 秒に延長。待機中も次戦の探索は続き、パーティ選択/VS の
     /// 検知で打ち切るので、長くしても取りこぼしは増えない。
-    private let grandPrixWaitTimeout: TimeInterval = 120
+    /// 26.10.2 クローズドテスト: 勝敗ロゴで長く放置するユーザーで 120 秒でも未取得が出たため 300 秒に再延長。
+    private let grandPrixWaitTimeout: TimeInterval = 300
 
     // テンプレートキャッシュ
     // VS は BASE 2 種 (FM=フレンドマッチング, MG=大会用) + カスタムテンプレ対応。
@@ -293,6 +307,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         if grandPrixWait != nil {
             handleGrandPrixWait(uiImage, now: currentTime)
         }
+        // レーティング記録済みだがランク帯が未識別なら、数秒だけエンブレム帯を追加探索して補完
+        if pendingRankTier != nil {
+            followUpRankTier(uiImage, now: currentTime)
+        }
 
         if !isBattleInProgress {
             scanForPartySelect(uiImage)
@@ -333,12 +351,36 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
                                      rankTier: rankTier)
         BattleHistoryStore.shared.appendGrandPrix(record)
         grandPrixWait = nil
-        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@%@",
+        let tierDiag = rankTier == nil ? " ランク診断: \(RankTierReader.lastDiagnostic)" : ""
+        BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@%@%@",
                                    reading.currentRating,
                                    reading.neededRating.map { String(format: "%.1f", $0) } ?? "—",
                                    reading.borderRating.map { String(format: "%.1f", $0) } ?? "—",
                                    rankTier ?? "—",
-                                   reading.rowOffsetY == 0 ? "" : " (行Δ\(reading.rowOffsetY >= 0 ? "+" : "")\(reading.rowOffsetY)px)"))
+                                   reading.rowOffsetY == 0 ? "" : " (行Δ\(reading.rowOffsetY >= 0 ? "+" : "")\(reading.rowOffsetY)px)",
+                                   tierDiag))
+        if rankTier == nil {
+            pendingRankTier = PendingRankTier(recordId: wait.timestamp, rowOffsetY: reading.rowOffsetY,
+                                              startedAt: now, deadline: now + rankTierFollowUp)
+        }
+    }
+
+    /// ランク帯の追加探索 (PendingRankTier)。識別できたら保存済みレコードを更新して終了、期限切れで諦める
+    private func followUpRankTier(_ scene: UIImage, now: TimeInterval) {
+        guard let p = pendingRankTier else { return }
+        if now > p.deadline {
+            pendingRankTier = nil
+            BattleLogger.append("ランク帯: 追加探索 \(p.attempts) フレームでも識別できず — 直近: \(RankTierReader.lastDiagnostic)")
+            return
+        }
+        guard let cg = scene.cgImage else { return }
+        pendingRankTier?.attempts += 1
+        guard let tier = RankTierReader.read(cg, rowOffsetY: p.rowOffsetY) else { return }
+        pendingRankTier = nil
+        guard var rec = BattleHistoryStore.shared.loadGrandPrixRecords().first(where: { $0.id == p.recordId }) else { return }
+        rec.rankTier = tier
+        BattleHistoryStore.shared.updateGrandPrix(rec)
+        BattleLogger.append(String(format: "🎖 ランク帯を追加探索で識別: %@ (+%.1fs, %dフレーム目)", tier, now - p.startedAt, p.attempts + 1))
     }
 
     // MARK: - Party Selection (戦闘開始前のパーティ選択画面)
@@ -485,6 +527,7 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
             logger.log("✅ VS Logo Found! (Score: \(score, format: .fixed(precision: 3))). Starting burst...")
             // 前戦のレーティング待機が残っていれば、次戦開始で打ち切る (前戦のログに残してから rotate)
             endGrandPrixWaitUnread(reason: "次の戦闘開始により待機終了")
+            pendingRankTier = nil   // 前戦のランク帯追加探索も終了 (次戦画面には出ない)
             BattleLogger.rotate()
             if lastDetectedPartyIndex >= 0 {
                 BattleLogger.append(String(format: "パーティ P[%d] で戦闘開始", lastDetectedPartyIndex + 1))
