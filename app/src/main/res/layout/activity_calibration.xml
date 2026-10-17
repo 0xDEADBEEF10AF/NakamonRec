@@ -95,7 +95,7 @@
                 android:layout_weight="1"
                 android:layout_margin="2dp"
                 android:maxLines="1"
-                android:text="@string/btn_calibrate"
+                android:text="@string/btn_calib_run"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:textSize="13sp"
@@ -110,7 +110,7 @@
                 android:layout_weight="1"
                 android:layout_margin="2dp"
                 android:maxLines="1"
-                android:text="@string/btn_reset"
+                android:text="@string/btn_calib_reset"
                 android:textColor="#FFFFFF"
                 android:textSize="13sp"
                 android:backgroundTint="#444444" />

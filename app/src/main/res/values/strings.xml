@@ -36,8 +36,8 @@
     <string name="label_vs">vs</string>
     <!-- 校正画面のボタン (26.10.2: 「校正する / リセットする / 戻る」の 3 つに統一。
          自動校正の成功時に即保存するため「この位置で決定」は廃止、手動ドラッグも廃止) -->
-    <string name="btn_calibrate">校正する</string>
-    <string name="btn_reset">リセットする</string>
+    <string name="btn_calib_run">校正する</string>
+    <string name="btn_calib_reset">リセットする</string>
     <string name="btn_auto">自動校正</string>
     <string name="btn_auto_detail">詳細校正</string>
     <!-- VS 画面の「校正する」で出す方式選択ダイアログ -->
