@@ -79,15 +79,16 @@
                 android:orientation="horizontal" />
         </LinearLayout>
 
-        <!-- 右側: 日時 (2行表示想定) -->
+        <!-- 右側: 日時 (2行表示想定)。iOS 版 (BattleHistoryView: .gray / 標準ウェイト) に合わせて
+             太字・白ではなく細字・グレーにする (26.10.2) -->
         <TextView
             android:id="@+id/textTimestamp"
             android:layout_width="@dimen/battle_history_side_width_right"
             android:layout_height="wrap_content"
             android:gravity="end"
-            android:textStyle="bold"
+            android:textStyle="normal"
             android:textSize="@dimen/battle_history_text_sub"
-            android:textColor="#FFFFFF"
+            android:textColor="#8E8E93"
             android:layout_marginStart="2dp" />
 
     </LinearLayout>
