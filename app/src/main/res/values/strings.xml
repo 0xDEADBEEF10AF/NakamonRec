@@ -34,10 +34,25 @@
     <string name="btn_back">戻る</string>
     <string name="btn_analyze">分析</string>
     <string name="label_vs">vs</string>
-    <string name="btn_default">デフォルト</string>
+    <!-- 校正画面のボタン (26.10.2: 「校正する / リセットする / 戻る」の 3 つに統一。
+         自動校正の成功時に即保存するため「この位置で決定」は廃止、手動ドラッグも廃止) -->
+    <string name="btn_calibrate">校正する</string>
+    <string name="btn_reset">リセットする</string>
     <string name="btn_auto">自動校正</string>
     <string name="btn_auto_detail">詳細校正</string>
-    <string name="btn_save_calibration">この位置で決定</string>
+    <!-- VS 画面の「校正する」で出す方式選択ダイアログ -->
+    <string name="calib_method_title">校正方法を選択</string>
+    <string name="calib_method_auto_desc">スクリーンショットから VS ロゴとモンスターの位置を自動で検出します。通常はこちらで十分です。</string>
+    <string name="calib_method_detail_desc">8 体のモンスターを自分で指定し、そのテンプレートだけで位置を決めます。自動校正で位置がずれる端末向けです。</string>
+    <!-- リセット確認 -->
+    <string name="calib_reset_title">校正をリセット</string>
+    <string name="calib_reset_message">校正をリセットしてデフォルト位置に戻します。</string>
+    <string name="calib_reset_message_vs">校正をリセットしてデフォルト位置に戻します。グランプリモードも解除されます。</string>
+    <string name="btn_reset_confirm">リセット</string>
+    <!-- 自動校正の失敗 -->
+    <string name="calib_failed_title">検出できませんでした</string>
+    <string name="calib_failed_message">スクリーンショットから位置を検出できませんでした。前回の校正はそのまま残しています。\n別のスクリーンショットでお試しください。</string>
+    <string name="calib_failed_message_vs">スクリーンショットから位置を検出できませんでした。前回の校正はそのまま残しています。\n別のスクリーンショットで試すか、「校正する」→「詳細校正」をお試しください。</string>
     <string name="detail_calib_title">詳細校正：8 体のモンスターを指定</string>
     <string name="detail_calib_description">VS スクショに映っているモンスターを各スロットで選択してください。指定したモンスターのテンプレートだけを使って位置を確定します。</string>
     <string name="detail_calib_start">この内容で校正</string>
@@ -103,20 +118,18 @@
     <string name="msg_record_added">レコードを追加しました</string>
 
     <!-- 校正用ガイド -->
-    <string name="calibrate_guide_party">パーティ枠の右上角の位置に枠を合わせてください</string>
-    <string name="calibrate_guide_vs">「VS」ロゴと、各モンスターの顔の位置に枠を合わせてください</string>
-    <string name="calibrate_guide_win">「勝利」ロゴの範囲を調整してください</string>
-    <string name="calibrate_guide_lose">「ざんねん」ロゴの範囲を調整してください</string>
-    <string name="calibrate_guide_result">「勝利」や「ざんねん」のロゴの位置に枠を合わせてください</string>
-    <string name="calibrate_guide_default">枠をドラッグして位置を合わせてください</string>
+    <string name="calibrate_guide_party">「校正する」でパーティ枠の右上角 (SELECT 表示) の位置を検出し、保存します</string>
+    <string name="calibrate_guide_vs">「校正する」で「VS」ロゴと各モンスターの顔の位置を検出し、保存します</string>
+    <string name="calibrate_guide_win">「校正する」で「勝利」ロゴの位置を検出し、保存します</string>
+    <string name="calibrate_guide_lose">「校正する」で「ざんねん」ロゴの位置を検出し、保存します</string>
+    <string name="calibrate_guide_result">「校正する」で「勝利」や「ざんねん」のロゴの位置を検出し、保存します</string>
+    <string name="calibrate_guide_default">「校正する」でスクリーンショットから位置を検出し、保存します</string>
 
     <!-- メッセージ用 -->
     <string name="toast_scanning">スキャン中…</string>
     <string name="msg_analyzing">画像を解析中…\nしばらくお待ちください</string>
-    <string name="toast_auto_calibrated">位置を自動調整しました</string>
-    <string name="toast_auto_calibrate_failed">検出できませんでした</string>
+    <string name="toast_calibration_saved">校正を保存しました</string>
     <string name="toast_default_restored">デフォルト位置に戻しました</string>
-    <string name="toast_save_success">校正データを保存しました</string>
     <string name="toast_image_not_found">画像ファイルが見つかりません</string>
     <string name="toast_import_first">先に画像をインポートしてください</string>
     <string name="msg_imported">画像をインポートしました</string>

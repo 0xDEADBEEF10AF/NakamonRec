@@ -3,11 +3,13 @@ package com.dqw.nakamonrec
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
-import android.view.MotionEvent
 import android.view.View
-import kotlin.math.abs
-import kotlin.math.hypot
 
+/**
+ * 校正画面のプレビュー (スクショ + 緑枠 ROI + スコア) を描く表示専用 View。
+ * 26.10.2: 手動ドラッグ/リサイズ (onTouchEvent) は廃止。校正は「校正する」(自動校正 / 詳細校正) 経由のみで、
+ * iOS CalibrationView (ドラッグなし) と同じ構造にした。
+ */
 class CalibrationView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
@@ -29,10 +31,6 @@ class CalibrationView @JvmOverloads constructor(
         strokeWidth = 2f
         alpha = 120
         pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
-    }
-    private val paintHandle = Paint().apply {
-        color = Color.YELLOW
-        style = Paint.Style.FILL
     }
     private val paintText = Paint().apply {
         color = Color.GREEN
@@ -59,12 +57,9 @@ class CalibrationView @JvmOverloads constructor(
     )
 
     private val boxes = mutableListOf<CalibrationBox>()
-    private var activeBoxIndex = -1
-    private var isResizing = false
     private val imageRect = RectF()
     private val reusableRect = RectF()
     private val bufferRect = RectF()
-    private val handleRadius = 30f
 
     private var uiScale: Float = 1.0f
 
@@ -86,11 +81,6 @@ class CalibrationView @JvmOverloads constructor(
 
     fun getBoxes(): List<CalibrationBox> = boxes
 
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val img = backgroundImage ?: return
@@ -103,7 +93,7 @@ class CalibrationView @JvmOverloads constructor(
         val viewW = imageRect.width()
         val viewH = imageRect.height()
 
-        boxes.forEachIndexed { index, box ->
+        boxes.forEach { box ->
             val cx = imageRect.left + (viewW * box.centerX)
             val cy = imageRect.top + (viewH * box.centerY)
             
@@ -134,13 +124,6 @@ class CalibrationView @JvmOverloads constructor(
                 canvas.drawRect(bufferRect, paintBufferStroke)
             }
 
-            if (index == activeBoxIndex) {
-                paintRect.color = Color.YELLOW
-                canvas.drawCircle(reusableRect.right, reusableRect.bottom, handleRadius, paintHandle)
-            } else {
-                paintRect.color = Color.GREEN
-            }
-            
             canvas.drawRect(reusableRect, paintRect)
             
             // ラベルの描画（白縁取り + 緑）
@@ -168,70 +151,5 @@ class CalibrationView @JvmOverloads constructor(
                 paintText.color = oldColor
             }
         }
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        val img = backgroundImage ?: return super.onTouchEvent(event)
-        val x = event.x
-        val y = event.y
-        
-        val viewW = imageRect.width()
-        val viewH = imageRect.height()
-        val bitmapW = img.width.toFloat()
-        val bitmapH = img.height.toFloat()
-
-        when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                performClick()
-                activeBoxIndex = -1
-                isResizing = false
-                
-                boxes.forEachIndexed { index, box ->
-                    val cx = imageRect.left + (viewW * box.centerX)
-                    val cy = imageRect.top + (viewH * box.centerY)
-                    
-                    val scaleX = viewW / bitmapW
-                    val scaleY = viewH / bitmapH
-                    
-                    val bw = (box.width * scaleX) / 2f
-                    val bh = (box.height * scaleY) / 2f
-                    
-                    val distToHandle = hypot(x - (cx + bw), y - (cy + bh))
-                    if (distToHandle < handleRadius * 2) {
-                        activeBoxIndex = index
-                        isResizing = true
-                        return@forEachIndexed
-                    }
-
-                    if (x in (cx - bw)..(cx + bw) && y in (cy - bh)..(cy + bh)) {
-                        activeBoxIndex = index
-                        isResizing = false
-                        return@forEachIndexed
-                    }
-                }
-                invalidate()
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (activeBoxIndex != -1) {
-                    val box = boxes[activeBoxIndex]
-
-                    if (isResizing) {
-                        val cx = imageRect.left + (viewW * box.centerX)
-                        val cy = imageRect.top + (viewH * box.centerY)
-                        
-                        val scaleX = viewW / bitmapW
-                        val scaleY = viewH / bitmapH
-                        
-                        box.width = ((abs(x - cx) * 2) / scaleX).toInt().coerceAtLeast(20)
-                        box.height = ((abs(y - cy) * 2) / scaleY).toInt().coerceAtLeast(20)
-                    } else {
-                        box.centerX = ((x - imageRect.left) / viewW).coerceIn(0f, 1f)
-                        box.centerY = ((y - imageRect.top) / viewH).coerceIn(0f, 1f)
-                    }
-                    invalidate()
-                }
-            }
-        }
-        return true
     }
 }

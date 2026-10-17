@@ -3,7 +3,10 @@ import NakamonREC_Shared
 
 /// 校正画面 (1 つの画面ぶん)
 /// インポート済みスクショに緑枠 ROI を重ね、自動校正でカスタムテンプレを生成する。
-/// ドラッグ操作は廃止: 校正は基本的に自動校正ボタン経由で行う。
+/// ドラッグ操作は廃止: 校正は「校正する」ボタン経由のみ。
+/// 26.10.2: ボタンは「校正する / リセットする / 戻る」の 3 つ。自動校正の成功時に位置を即保存する
+/// (旧「この位置で決定」の押し忘れで、テンプレートだけ新しく位置はデフォルトのまま、という
+/// ちぐはぐな状態が Android 実機で発生した)。失敗時は退避したテンプレートを戻し、保存済みの校正には触れない。
 struct CalibrationView: View {
     let screen: CalibrationScreen
     @Environment(\.dismiss) private var dismiss
@@ -16,6 +19,16 @@ struct CalibrationView: View {
     @State private var statusMessage: String? = nil
     /// VS 画面のカスタムテンプレが「大会用 VS」で作られている (= グランプリ記録モード ON) か
     @State private var isGrandPrixTemplate: Bool = false
+
+    // 「校正する」の方式選択 (VS のみ) と「リセットする」の確認
+    @State private var showMethodDialog: Bool = false
+    @State private var showResetConfirm: Bool = false
+
+    // 自動校正の失敗時に元へ戻すための退避 (開始時に beginAutoCal で保存)
+    @State private var backupTemplate: Data? = nil
+    @State private var backupHasCustom: Bool = false
+    @State private var backupGrandPrix: Bool = false
+    @State private var backupIsGrandPrixTemplate: Bool = false
 
     // 詳細校正 (VS画面のみ): 8 スロットに事前にモンスター ID を指定し、1-vs-1 マッチで校正する
     @State private var showDetailCalSheet: Bool = false
@@ -127,29 +140,39 @@ struct CalibrationView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 6) {
-            Button("自動校正") { runAutoCalibration() }
-                .buttonStyle(.bordered)
-                .tint(Color.recCoral)
-            Button("デフォルト") { resetToDefault() }
+            // VS 画面だけ自動校正 / 詳細校正の方式選択を挟む。他画面は即自動校正
+            Button("校正する") {
+                if screen == .battlePrep { showMethodDialog = true } else { runAutoCalibration() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.recCoral)
+            Button("リセットする") { showResetConfirm = true }
                 .buttonStyle(.bordered)
                 .tint(.gray)
-            if screen == .battlePrep {
-                Button("詳細校正") { showDetailCalSheet = true }
-                    .buttonStyle(.bordered)
-                    .tint(.gray)
-            }
             Spacer()
             Button("戻る") { dismiss() }
                 .buttonStyle(.bordered)
                 .tint(.gray)
-            Button("この位置で決定") { saveAndDismiss() }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.recCoral)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Color.black.opacity(0.85))
         .disabled(isAutoCalibrating)
+        .confirmationDialog("校正方法を選択", isPresented: $showMethodDialog, titleVisibility: .visible) {
+            Button("自動校正") { runAutoCalibration() }
+            Button("詳細校正") { showDetailCalSheet = true }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("自動校正: スクリーンショットから VS ロゴとモンスターの位置を自動で検出します。通常はこちらで十分です。\n\n詳細校正: 8 体のモンスターを自分で指定し、そのテンプレートだけで位置を決めます。自動校正で位置がずれる端末向けです。")
+        }
+        .alert("校正をリセット", isPresented: $showResetConfirm) {
+            Button("リセット", role: .destructive) { resetToDefault() }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text(screen == .battlePrep
+                 ? "校正をリセットしてデフォルト位置に戻します。グランプリモードも解除されます。"
+                 : "校正をリセットしてデフォルト位置に戻します。")
+        }
     }
 
     // MARK: - ROI overlay (display only, no drag)
@@ -299,10 +322,16 @@ struct CalibrationView: View {
             GrandPrixMode.isEnabled = false
             isGrandPrixTemplate = false
         }
+        // 即保存 (確認ダイアログを経由して呼ばれる)
+        persistCalibration()
         recomputeScores()
+        statusMessage = "デフォルト位置に戻しました。"
     }
 
-    private func saveAndDismiss() {
+    /// 表示中の ROI (= 自動校正の結果 or デフォルト) を現在の画面ぶんの校正データとして保存する。
+    /// カスタムテンプレートは自動校正の成功時点で保存済みなので、ここでは位置だけを書く。
+    /// 画面は閉じない (枠とスコアで結果を確認できる。「戻る」で閉じる)。
+    private func persistCalibration() {
         var cfg = CalibrationStore.load()
         switch screen {
         case .partySelect: cfg.partySelectROIs = rois
@@ -313,7 +342,44 @@ struct CalibrationView: View {
         case .lose: if let r = rois.first { cfg.loseROI = r }
         }
         CalibrationStore.save(cfg)
-        dismiss()
+    }
+
+    // MARK: - 自動校正の開始 / 成功 / 失敗の共通処理
+
+    /// 自動校正の開始時に呼ぶ。自動校正は既存のカスタムテンプレートも候補に使うため、古い (不適切な)
+    /// テンプレートの影響を受けないよう削除してから走らせる。失敗時に「前回の校正のまま」へ戻せるよう
+    /// テンプレートの実体とフラグを退避しておく。
+    private func beginAutoCal(kind: CustomTemplateKind) {
+        isAutoCalibrating = true
+        backupTemplate = CustomTemplateStore.read(kind)
+        backupHasCustom = hasCustomTemplate
+        backupGrandPrix = GrandPrixMode.isEnabled
+        backupIsGrandPrixTemplate = isGrandPrixTemplate
+        CustomTemplateStore.remove(kind)
+        hasCustomTemplate = false
+        if kind == .vs { isGrandPrixTemplate = false }
+    }
+
+    /// 成功時: 位置を即保存し、結果メッセージに保存した旨を添える
+    private func completeAutoCal(message: String) {
+        persistCalibration()
+        backupTemplate = nil
+        statusMessage = message + "\n校正を保存しました。"
+    }
+
+    /// 失敗時: 退避したテンプレートとフラグを戻す (保存済みの校正データには触れていない)
+    private func failAutoCal(kind: CustomTemplateKind, reason: String) {
+        if let data = backupTemplate { CustomTemplateStore.save(data, as: kind) }
+        hasCustomTemplate = backupHasCustom
+        if kind == .vs {
+            GrandPrixMode.isEnabled = backupGrandPrix
+            isGrandPrixTemplate = backupIsGrandPrixTemplate
+        }
+        backupTemplate = nil
+        let hint = kind == .vs
+            ? "別のスクリーンショットで試すか、「校正する」→「詳細校正」をお試しください。"
+            : "別のスクリーンショットでお試しください。"
+        statusMessage = reason + "\n前回の校正はそのまま残しています。" + hint
     }
 
     /// 現在の ROI 位置で BASE テンプレマッチを実行し、各 ROI のライブスコアを更新
@@ -421,9 +487,7 @@ struct CalibrationView: View {
             statusMessage = "BASE \(baseName).png が見つかりません。"
             return
         }
-        isAutoCalibrating = true
-        CustomTemplateStore.remove(kind)
-        hasCustomTemplate = false
+        beginAutoCal(kind: kind)
 
         DispatchQueue.global(qos: .userInitiated).async {
             // マルチスケール: 各倍率で最良位置を取り、スコア最大のものを採用
@@ -447,9 +511,9 @@ struct CalibrationView: View {
                                            scene: UIImage) {
         defer { isAutoCalibrating = false }
         guard matchLocation.score >= 0.4 else {
-            statusMessage = String(format: "%@ ロゴを検出できませんでした (最高スコア %.3f)",
-                                   (kind == .win ? "勝利" : "ざんねん"),
-                                   matchLocation.score)
+            failAutoCal(kind: kind, reason: String(format: "%@ ロゴを検出できませんでした (最高スコア %.3f)",
+                                                   (kind == .win ? "勝利" : "ざんねん"),
+                                                   matchLocation.score))
             return
         }
         let sceneW = Double(scene.size.width)
@@ -473,8 +537,7 @@ struct CalibrationView: View {
         }
 
         recomputeScores()
-        statusMessage = String(format: "自動校正完了 (スコア %.3f)\nこの位置で決定 を押すと保存されます。",
-                               matchLocation.score)
+        completeAutoCal(message: String(format: "自動校正完了 (スコア %.3f)", matchLocation.score))
     }
 
     private func runPartySelectAutoCal(scene: UIImage) {
@@ -482,9 +545,7 @@ struct CalibrationView: View {
             statusMessage = "BASE SELECT テンプレが見つかりません。"
             return
         }
-        isAutoCalibrating = true
-        CustomTemplateStore.remove(.select)
-        hasCustomTemplate = false
+        beginAutoCal(kind: .select)
 
         let sceneW = scene.size.width
         let sceneH = scene.size.height
@@ -560,10 +621,7 @@ struct CalibrationView: View {
             return
         }
         let vsMG = loadTemplate("VS_MG")
-        isAutoCalibrating = true
-        CustomTemplateStore.remove(.vs)
-        hasCustomTemplate = false
-        isGrandPrixTemplate = false
+        beginAutoCal(kind: .vs)
 
         DispatchQueue.global(qos: .userInitiated).async {
             // --- 1. VS 検出 (テンプレを scene スケール × マルチスケールでリサイズしてマッチング) ---
@@ -648,10 +706,8 @@ struct CalibrationView: View {
                                                scene: UIImage) {
         defer { isAutoCalibrating = false }
         guard vsLocation.score >= 0.4 else {
-            statusMessage = String(format: "VS ロゴを検出できませんでした (最高スコア %.3f)", vsLocation.score)
-            // 検出失敗時はカスタム未保存 = グランプリモードは無効のまま
-            GrandPrixMode.isEnabled = false
-            isGrandPrixTemplate = false
+            // 検出失敗 = 退避したテンプレートとグランプリモードのフラグを元に戻す
+            failAutoCal(kind: .vs, reason: String(format: "VS ロゴを検出できませんでした (最高スコア %.3f)", vsLocation.score))
             return
         }
         let sceneW = Double(scene.size.width)
@@ -699,8 +755,8 @@ struct CalibrationView: View {
             return String(format: "%@:%@ %.2f", label, r.id, r.score)
         }.joined(separator: " / ")
         let modeNote = isTournament ? "\n🎖 グランプリ記録モード ON (大会用 VS を検出)" : ""
-        statusMessage = String(format: "自動校正完了\nVS Score %.3f%@\n%@\nこの位置で決定 を押すと保存されます。",
-                               vsLocation.score, modeNote, slotSummary)
+        completeAutoCal(message: String(format: "自動校正完了\nVS Score %.3f%@\n%@",
+                                        vsLocation.score, modeNote, slotSummary))
     }
 
     /// 名前を指定して templates フォルダから BASE テンプレを取得
@@ -734,10 +790,7 @@ struct CalibrationView: View {
             }
         }
 
-        isAutoCalibrating = true
-        CustomTemplateStore.remove(.vs)
-        hasCustomTemplate = false
-        isGrandPrixTemplate = false
+        beginAutoCal(kind: .vs)
 
         DispatchQueue.global(qos: .userInitiated).async {
             // --- 1. VS 検出 (マルチスケール、FM/MG 別追跡で大会判定) ---
@@ -829,13 +882,13 @@ struct CalibrationView: View {
         defer { isAutoCalibrating = false }
 
         guard locations.count == 3 else {
-            statusMessage = "SELECT を 3 つ検出できませんでした (検出 \(locations.count) 件)。"
+            failAutoCal(kind: .select, reason: "SELECT を 3 つ検出できませんでした (検出 \(locations.count) 件)。")
             return
         }
         // 最高スコア (= 水色 SELECT) チェック
         let bestScore = locations.map(\.score).max() ?? 0
         guard bestScore >= 0.4 else {
-            statusMessage = String(format: "SELECT 検出スコアが低すぎます (最高 %.3f)", bestScore)
+            failAutoCal(kind: .select, reason: String(format: "SELECT 検出スコアが低すぎます (最高 %.3f)", bestScore))
             return
         }
 
@@ -874,7 +927,7 @@ struct CalibrationView: View {
                                  .enumerated()
                                  .map { String(format: "P%d %.3f", $0.offset + 1, $0.element.score) }
                                  .joined(separator: ", ")
-        statusMessage = "自動校正完了\n\(scoreList)\nこの位置で決定 を押すと保存されます。"
+        completeAutoCal(message: "自動校正完了\n\(scoreList)")
     }
 
     // MARK: - 16:9 (iPhone SE 系) 固定レイアウト校正
@@ -917,16 +970,16 @@ struct CalibrationView: View {
         let focusedIdx = cyanP1 >= cyanP2 ? 0 : 1
         let focusedCyan = max(cyanP1, cyanP2)
         guard focusedCyan >= 0.10 else {
-            statusMessage = String(format: "フォーカス枠 (水色) を検出できませんでした (P1 %.0f%% / P2 %.0f%%)。\nパーティ1か2を選択した状態・スクロールなしの全画面スクショを使ってください。",
-                                   cyanP1 * 100, cyanP2 * 100)
+            failAutoCal(kind: .select, reason: String(format: "フォーカス枠 (水色) を検出できませんでした (P1 %.0f%% / P2 %.0f%%)。\nパーティ1か2を選択した状態・スクロールなしの全画面スクショを使ってください。",
+                                                      cyanP1 * 100, cyanP2 * 100))
             return
         }
         var aboveROI = defaults[focusedIdx]
         aboveROI.centerYRatio -= aboveROI.heightRatio
         let cyanAbove = cyanRatio(scene: scene, roi: aboveROI)
         guard cyanAbove < 0.10 else {
-            statusMessage = String(format: "スクロールした状態の画像のようです (P%d 直上に水色 %.0f%%)。\nパーティ一覧をスクロールしていない状態の全画面スクショを使ってください。",
-                                   focusedIdx + 1, cyanAbove * 100)
+            failAutoCal(kind: .select, reason: String(format: "スクロールした状態の画像のようです (P%d 直上に水色 %.0f%%)。\nパーティ一覧をスクロールしていない状態の全画面スクショを使ってください。",
+                                                      focusedIdx + 1, cyanAbove * 100))
             return
         }
         rois = defaults
@@ -939,8 +992,8 @@ struct CalibrationView: View {
             hasCustomTemplate = true
         }
         recomputeScores()
-        statusMessage = String(format: "自動校正完了 (16:9 固定レイアウト)\nフォーカス: P%d (水色率 %.0f%%)、P3 外挿\nこの位置で決定 を押すと保存されます。",
-                               focusedIdx + 1, focusedCyan * 100)
+        completeAutoCal(message: String(format: "自動校正完了 (16:9 固定レイアウト)\nフォーカス: P%d (水色率 %.0f%%)、P3 外挿",
+                                        focusedIdx + 1, focusedCyan * 100))
     }
 
     /// scene から指定 ROI を切り出し、1080-ref ピクセルサイズに正規化したカスタムテンプレ PNG データを返す

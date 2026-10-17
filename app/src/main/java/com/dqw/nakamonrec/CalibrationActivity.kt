@@ -89,56 +89,135 @@ class CalibrationActivity : AppCompatActivity() {
 
         displayBoxes(currentData)
 
-        binding.btnSave.setOnClickListener {
-            saveChanges()
+        // 26.10.2: ボタンは「校正する / リセットする / 戻る」の 3 つ。校正は成功時に即保存する
+        // (旧「この位置で決定」の押し忘れで位置がデフォルトのまま残る事故があった)。
+        binding.btnCalibrate.setOnClickListener {
+            // 詳細校正は VS モードでのみ意味を持つ (モンスタースロット位置決め用) ので、
+            // VS だけ方式選択ダイアログを挟み、他モードは即自動校正
+            if (mode == "vs") showCalibrationMethodDialog() else runAutoCalibration()
+        }
+
+        binding.btnReset.setOnClickListener {
+            showResetConfirmDialog()
         }
 
         binding.btnCancel.setOnClickListener {
             finish()
         }
 
-        binding.btnDefault.setOnClickListener {
-            // 本番スコアをリセット
-            lastMeasuredRecord = null
-            lastWinRecord = null
-            lastLoseRecord = null
-
-            // 現在のモードに応じて対象のカスタムテンプレートのみを削除
-            when (mode) {
-                "party" -> analyzer.deleteCustomTemplate("party_custom.png")
-                "vs" -> {
-                    analyzer.deleteCustomTemplate("vs_custom.png")
-                    // VS をデフォルトに戻す = 大会用でなくなるためグランプリモード解除
-                    GrandPrixMode.setEnabled(this, false)
-                }
-                "win" -> analyzer.deleteCustomTemplate("win_custom.png")
-                "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
-            }
-
-            val defaultData = CalibrationData()
-            detectedScale = defaultData.uiScale
-            binding.calibrationView.setUiScale(detectedScale)
-            displayBoxes(defaultData)
-            updateTemplateNameDisplay()
-            showTopToast(getString(R.string.toast_default_restored))
-        }
-
-        binding.btnAuto.setOnClickListener {
-            runAutoCalibration()
-        }
-
-        // 詳細校正は VS モードでのみ意味を持つ (モンスタースロット位置決め用)。
-        // 他モードでは非表示にしてユーザーを混乱させないようにする。
-        if (mode == "vs") {
-            binding.btnAutoDetail.visibility = View.VISIBLE
-            binding.btnAutoDetail.setOnClickListener {
-                showDetailCalibrationSpec()
-            }
-        } else {
-            binding.btnAutoDetail.visibility = View.GONE
-        }
-
         updateTemplateNameDisplay()
+    }
+
+    /** VS 画面の「校正する」: 自動校正 / 詳細校正 の方式選択 (それぞれの違いを短く併記) */
+    private fun showCalibrationMethodDialog() {
+        val density = resources.displayMetrics.density
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+        }
+        var dialog: androidx.appcompat.app.AlertDialog? = null
+        fun option(title: String, desc: String, onClick: () -> Unit) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+                isClickable = true; isFocusable = true
+                val out = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
+                setBackgroundResource(out.resourceId)
+                setOnClickListener { dialog?.dismiss(); onClick() }
+            }
+            row.addView(android.widget.TextView(this).apply {
+                text = title; textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(android.graphics.Color.WHITE)
+            })
+            row.addView(android.widget.TextView(this).apply {
+                text = desc; textSize = 12f; setTextColor(android.graphics.Color.LTGRAY)
+                setPadding(0, (4 * density).toInt(), 0, 0)
+            })
+            root.addView(row)
+        }
+        option(getString(R.string.btn_auto), getString(R.string.calib_method_auto_desc)) { runAutoCalibration() }
+        option(getString(R.string.btn_auto_detail), getString(R.string.calib_method_detail_desc)) { showDetailCalibrationSpec() }
+        dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.calib_method_title))
+            .setView(root)
+            .setNegativeButton(getString(R.string.btn_cancel), null)
+            .show()
+    }
+
+    /** 「リセットする」: 即保存になったため確認を 1 つ挟む (元に戻せない操作) */
+    private fun showResetConfirmDialog() {
+        val message = if (mode == "vs") getString(R.string.calib_reset_message_vs) else getString(R.string.calib_reset_message)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.calib_reset_title))
+            .setMessage(message)
+            .setPositiveButton(getString(R.string.btn_reset_confirm)) { _, _ -> resetToDefault() }
+            .setNegativeButton(getString(R.string.btn_cancel), null)
+            .show()
+    }
+
+    /** 現在のモードの校正をデフォルト位置に戻して保存する (テンプレート削除・VS ならグランプリモード解除) */
+    private fun resetToDefault() {
+        // 本番スコアをリセット
+        lastMeasuredRecord = null
+        lastWinRecord = null
+        lastLoseRecord = null
+
+        // 現在のモードに応じて対象のカスタムテンプレートのみを削除
+        when (mode) {
+            "party" -> analyzer.deleteCustomTemplate("party_custom.png")
+            "vs" -> {
+                analyzer.deleteCustomTemplate("vs_custom.png")
+                // VS をデフォルトに戻す = 大会用でなくなるためグランプリモード解除
+                GrandPrixMode.setEnabled(this, false)
+            }
+            "win" -> analyzer.deleteCustomTemplate("win_custom.png")
+            "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
+        }
+
+        val defaultData = CalibrationData()
+        detectedScale = defaultData.uiScale
+        binding.calibrationView.setUiScale(detectedScale)
+        displayBoxes(defaultData)
+        persistCalibration()
+        updateTemplateNameDisplay()
+        showTopToast(getString(R.string.toast_default_restored))
+    }
+
+    /** 自動校正の失敗ダイアログ。保存済みの校正は触っていないことを伝える */
+    private fun showAutoCalibrationFailedDialog() {
+        val message = if (mode == "vs") getString(R.string.calib_failed_message_vs) else getString(R.string.calib_failed_message)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.calib_failed_title))
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /**
+     * 自動校正の前にカスタムテンプレートを一時退避する。自動校正は既存のカスタムテンプレートも候補に
+     * 使うため、古い (不適切な) テンプレートの影響を受けないよう削除してから走らせたい。一方で失敗時は
+     * 「前回の校正をそのまま残す」必要があるので、ファイル内容を控えておき失敗時に書き戻す。
+     */
+    private fun backupCustomTemplate(fileName: String): ByteArray? {
+        val f = File(filesDir, fileName)
+        val bytes = if (f.exists()) f.readBytes() else null
+        analyzer.deleteCustomTemplate(fileName)
+        return bytes
+    }
+
+    private fun restoreCustomTemplate(fileName: String, bytes: ByteArray?) {
+        if (bytes == null) return
+        File(filesDir, fileName).writeBytes(bytes)
+        analyzer.loadCustomTemplates(this)
+    }
+
+    private fun customTemplateFileName(): String? = when (mode) {
+        "party" -> "party_custom.png"
+        "vs" -> "vs_custom.png"
+        "win" -> "win_custom.png"
+        "lose" -> "lose_custom.png"
+        else -> null
     }
 
     private fun updateTemplateNameDisplay() {
@@ -168,14 +247,11 @@ class CalibrationActivity : AppCompatActivity() {
 
     private fun runAutoCalibration() {
         val bitmap = sourceBitmap ?: return
-        
-        // 自動校正の開始前に、既存の不適切なカスタムテンプレートがあれば削除してクリーンな状態にする
-        when (mode) {
-            "party" -> analyzer.deleteCustomTemplate("party_custom.png")
-            "vs" -> analyzer.deleteCustomTemplate("vs_custom.png")
-            "win" -> analyzer.deleteCustomTemplate("win_custom.png")
-            "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
-        }
+
+        // 自動校正の開始前に、既存のカスタムテンプレートを一時退避してクリーンな状態にする
+        // (失敗時は書き戻して「前回の校正のまま」にする)
+        val templateFile = customTemplateFileName()
+        val templateBackup = templateFile?.let { backupCustomTemplate(it) }
 
         binding.layoutProgress.visibility = View.VISIBLE
 
@@ -264,10 +340,14 @@ class CalibrationActivity : AppCompatActivity() {
                     detectedScale = newScale
                     binding.calibrationView.setUiScale(detectedScale)
                     binding.calibrationView.setBoxes(results)
+                    // 成功 = その場で保存 (画面は閉じず、枠とスコアで結果を確認できる。「戻る」で閉じる)
+                    persistCalibration()
                     updateTemplateNameDisplay() // スコア更新に合わせて表示確認
-                    showTopToast(getString(R.string.toast_auto_calibrated))
+                    showTopToast(getString(R.string.toast_calibration_saved))
                 } else {
-                    showTopToast(getString(R.string.toast_auto_calibrate_failed))
+                    // 失敗 = 退避したテンプレートを戻し、保存済みの校正には触れない
+                    templateFile?.let { restoreCustomTemplate(it, templateBackup) }
+                    showAutoCalibrationFailedDialog()
                 }
             }
         }
@@ -322,50 +402,35 @@ class CalibrationActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveChanges() {
+    /**
+     * 画面に表示中の枠 (= 自動校正の結果 or デフォルト) を現在のモードの校正データとして保存する。
+     * カスタムテンプレートは自動校正の成功時点で保存済みなので、ここでは位置と uiScale だけを書く。
+     * 旧「この位置で決定」の保存処理から、画面を閉じる処理とテンプレート保存を外したもの。
+     */
+    private fun persistCalibration() {
         val updatedBoxes = binding.calibrationView.getBoxes()
         if (updatedBoxes.isEmpty()) return
 
         val data = loadCalibrationData()
         data.uiScale = detectedScale
 
-        val bitmap = sourceBitmap
         when (mode) {
             "party" -> {
                 data.partySelectBoxes = updatedBoxes.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
-                // スコア（水色比率加味済み）が最も高い枠をカスタムテンプレートとして保存
-                if (bitmap != null) {
-                    val bestBox = updatedBoxes.maxByOrNull { it.score }
-                    bestBox?.let {
-                        analyzer.saveCustomTemplate(bitmap, BoxConfig(it.centerX, it.centerY, it.width, it.height), "party_custom.png")
-                    }
-                }
             }
             "vs" -> {
                 val vs = updatedBoxes.find { it.id == 0 } ?: return
                 data.vsBox = BoxConfig(vs.centerX, vs.centerY, vs.width, vs.height)
                 data.enemyPartyBoxes = updatedBoxes.filter { it.id in 10..13 }.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
                 data.myPartyBoxes = updatedBoxes.filter { it.id in 20..23 }.map { BoxConfig(it.centerX, it.centerY, it.width, it.height) }
-                // VSロゴをカスタムテンプレートとして保存
-                if (bitmap != null) {
-                    analyzer.saveCustomTemplate(bitmap, data.vsBox, "vs_custom.png")
-                }
             }
             "win" -> {
                 val res = updatedBoxes[0]
-                val config = BoxConfig(res.centerX, res.centerY, res.width, res.height)
-                data.winBox = config
-                if (bitmap != null) {
-                    analyzer.saveCustomTemplate(bitmap, config, "win_custom.png")
-                }
+                data.winBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
             }
             "lose" -> {
                 val res = updatedBoxes[0]
-                val config = BoxConfig(res.centerX, res.centerY, res.width, res.height)
-                data.loseBox = config
-                if (bitmap != null) {
-                    analyzer.saveCustomTemplate(bitmap, config, "lose_custom.png")
-                }
+                data.loseBox = BoxConfig(res.centerX, res.centerY, res.width, res.height)
             }
         }
 
@@ -373,9 +438,6 @@ class CalibrationActivity : AppCompatActivity() {
         getSharedPreferences("NakamonPrefs", MODE_PRIVATE).edit {
             putString("calibration_data", json)
         }
-
-        showTopToast(getString(R.string.toast_save_success))
-        finish()
     }
 
     private fun showTopToast(message: String) {
@@ -668,8 +730,8 @@ class CalibrationActivity : AppCompatActivity() {
     }
 
     private fun runDetailedAutoCalibration(bitmap: Bitmap, specs: List<String>) {
-        // 既存のカスタムテンプレ (VS) があれば削除して fresh state に
-        analyzer.deleteCustomTemplate("vs_custom.png")
+        // 既存のカスタムテンプレ (VS) を一時退避して fresh state に (失敗時は書き戻す)
+        val templateBackup = backupCustomTemplate("vs_custom.png")
 
         binding.layoutProgress.visibility = View.VISIBLE
         executor.execute {
@@ -700,10 +762,13 @@ class CalibrationActivity : AppCompatActivity() {
                 if (results != null) {
                     binding.calibrationView.setUiScale(detectedScale)
                     binding.calibrationView.setBoxes(results)
+                    // 成功 = その場で保存 (通常の自動校正と同じ)
+                    persistCalibration()
                     updateTemplateNameDisplay()
-                    showTopToast(getString(R.string.toast_auto_calibrated))
+                    showTopToast(getString(R.string.toast_calibration_saved))
                 } else {
-                    showTopToast(getString(R.string.toast_auto_calibrate_failed))
+                    restoreCustomTemplate("vs_custom.png", templateBackup)
+                    showAutoCalibrationFailedDialog()
                 }
             }
         }
