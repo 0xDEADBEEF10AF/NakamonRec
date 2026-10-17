@@ -118,7 +118,7 @@
     <string name="msg_record_added">レコードを追加しました</string>
 
     <!-- 校正用ガイド -->
-    <string name="calibrate_guide_party">「校正する」でパーティ枠の右上角 (SELECT 表示) の位置を検出し、保存します</string>
+    <string name="calibrate_guide_party">「校正する」でパーティ枠右上の SELECT の位置を検出し、保存します</string>
     <string name="calibrate_guide_vs">「校正する」で「VS」ロゴと各モンスターの顔の位置を検出し、保存します</string>
     <string name="calibrate_guide_win">「校正する」で「勝利」ロゴの位置を検出し、保存します</string>
     <string name="calibrate_guide_lose">「校正する」で「ざんねん」ロゴの位置を検出し、保存します</string>
