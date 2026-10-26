@@ -124,15 +124,37 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
                   category: nil)
     }
 
+    // MARK: - デバッグメニュー用プレビュー (見た目確認。実際の記録とは無関係)
+
+    /// プレビューは 3 秒後に出す (REC 中でなければ前面表示デリゲートが無いので、ホームに戻って確認してもらう)
+    private static let previewDelay: TimeInterval = 3
+
+    static func previewGrandPrixRecorded() {
+        post(id: grandPrixNotificationID + ".preview", title: String(format: "🎖 GP記録 %.1f", 2208.1), body: "",
+             category: nil, delay: previewDelay)
+    }
+
+    static func previewGrandPrixUnread() {
+        post(id: grandPrixNotificationID + ".preview", title: "🎖 GP戦を検知 (レーティング未取得)",
+             body: "レーティングを読めませんでした。グランプリ集計から手動で補完できます。", category: nil, delay: previewDelay)
+    }
+
+    static func previewIdleWarning() {
+        let minutes = Int(idleWarningThreshold / 60)
+        post(id: idleNotificationID + ".preview", title: "REC 中ですよ！",
+             body: "最後のバトル確定から\(minutes)分以上経過しています。", category: idleCategoryID, delay: previewDelay)
+    }
+
     // MARK: - 送信
 
-    private static func post(id: String, title: String, body: String, category: String?) {
+    private static func post(id: String, title: String, body: String, category: String?, delay: TimeInterval = 0) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
         if let category { content.categoryIdentifier = category }
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        let trigger = delay > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
                 notifierLogger.error("notification add failed: \(error.localizedDescription)")

@@ -587,6 +587,29 @@ private struct DebugMenuView: View {
                         } label: {
                             Label("ScreenCaptureKit 検証 (プロトタイプ)", systemImage: "rectangle.dashed.badge.record")
                         }
+                        // 通知の見た目確認 (実記録とは無関係。許可未取得なら先に許可ダイアログ)。
+                        // 3 秒後に届くので、押したらホームに戻って確認する
+                        Button {
+                            CaptureNotifier.requestAuthorizationIfNeeded()
+                            CaptureNotifier.previewGrandPrixRecorded()
+                        } label: {
+                            Label("通知プレビュー: GP記録 (3 秒後・ホームで確認)", systemImage: "bell")
+                                .foregroundStyle(.white)
+                        }
+                        Button {
+                            CaptureNotifier.requestAuthorizationIfNeeded()
+                            CaptureNotifier.previewGrandPrixUnread()
+                        } label: {
+                            Label("通知プレビュー: GP未取得", systemImage: "bell")
+                                .foregroundStyle(.white)
+                        }
+                        Button {
+                            CaptureNotifier.requestAuthorizationIfNeeded()
+                            CaptureNotifier.previewIdleWarning()
+                        } label: {
+                            Label("通知プレビュー: REC 放置警告 (停止ボタン付き)", systemImage: "bell.badge")
+                                .foregroundStyle(.white)
+                        }
                     }
                 }
                 #endif
