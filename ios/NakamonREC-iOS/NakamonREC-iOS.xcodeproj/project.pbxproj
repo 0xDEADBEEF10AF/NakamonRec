@@ -71,6 +71,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				NakamonAnalyzerCore.cpp,
+				NakamonCaptureEngine.swift,
 				NakamonWrapper.mm,
 			);
 			target = 02BF30972FB7A41F00A0BD95 /* NakamonREC-ScreenCapture */;

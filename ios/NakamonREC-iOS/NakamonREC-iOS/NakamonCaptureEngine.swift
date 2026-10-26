@@ -1,11 +1,34 @@
-import ReplayKit
-import VideoToolbox
+import UIKit
+import CoreMedia
+import CoreImage
 import OSLog
 import NakamonREC_Shared
 
-class NakamonCaptureEngine: RPBroadcastSampleHandler {
+/// フレーム供給元。ログの文言と将来の経路別挙動の切り分けに使う
+/// (nonisolated: ホストターゲットの既定 MainActor 分離だと Equatable 準拠まで MainActor になり、エンジンから比較できない)
+nonisolated enum CaptureSource {
+    /// iOS 26 以前: Broadcast Upload Extension (ReplayKit) が別プロセスで駆動
+    case broadcastExtension
+    /// iOS 27 以降: ホストアプリ内の ScreenCaptureKit SCStream が駆動
+    case screenCaptureKit
+}
+
+/// 画面フレームからパーティ選択 / VS / モンスター / 勝敗 / GP レーティングを認識して戦績を保存する解析本体。
+/// ReplayKit にも ScreenCaptureKit にも依存せず、CMSampleBuffer を受け取るだけ。
+/// - Extension (NakamonBroadcastHandler) とホストアプリ (iOS 27 の ScreenCaptureKit 経路) の両ターゲットで
+///   コンパイルされる (NakamonAnalyzerCore.cpp / NakamonWrapper.mm と同じ membership)。
+/// - `nonisolated`: ホストターゲットの既定 MainActor 分離から外す。フレームは配信スレッド /
+///   専用キューで届き、状態はそのスレッド上と analysisQueue (pendingLock で保護) で扱う設計のまま。
+/// - `@unchecked Sendable`: analysisQueue へ `[weak self]` で渡すため。可変状態はフレーム配信スレッド上でのみ
+///   更新し、スレッドをまたぐ pending だけ pendingLock で保護している (従来設計のまま)。
+nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
 
     private let logger = Logger(subsystem: "com.android.NakamonREC-iOS", category: "CaptureEngine")
+    let source: CaptureSource
+
+    init(source: CaptureSource) {
+        self.source = source
+    }
 
     private var lastProcessTime: TimeInterval = 0
     // 生存通知はタイマー駆動 (フレーム駆動だと ReplayKit が静止画面でフレーム配信を
@@ -97,10 +120,11 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
     /// (Extension の 50MB メモリ制限対策: alloc/dealloc を減らして fragmentation を避ける)
     private let ciContext = CIContext(options: nil)
 
-    override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
+    /// キャプチャ開始時に 1 回呼ぶ (Extension: broadcastStarted / SCK: startCapture 成功後)
+    func start() {
         logger.log("NakamonREC Engine: Starting...")
         BattleLogger.rotate()
-        BattleLogger.append("Extension起動")
+        BattleLogger.append(source == .broadcastExtension ? "Extension起動" : "ホスト内キャプチャ起動 (ScreenCaptureKit)")
         BroadcastStatus.setActive(true)
         startHeartbeat()
         loadTemplates()
@@ -241,10 +265,10 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         BattleLogger.append("モンスターテンプレ cv::Mat キャッシュ完了")
     }
 
-    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleType: RPSampleBufferType) {
-        if sampleType == .video {
-            handleVideoSample(sampleBuffer)
-        }
+    /// 映像フレームを 1 枚渡す。配信スレッド (Extension) または SCStream のサンプルキュー (SCK) から呼ばれる。
+    /// 間引き (0.5 秒間隔) はこの先の handleVideoSample が行う。
+    func process(_ sampleBuffer: CMSampleBuffer) {
+        handleVideoSample(sampleBuffer)
     }
 
     private func handleVideoSample(_ sampleBuffer: CMSampleBuffer) {
@@ -884,19 +908,20 @@ class NakamonCaptureEngine: RPBroadcastSampleHandler {
         }
     }
 
-    override func broadcastPaused() {
+    func pause() {
         logger.log("NakamonREC: Broadcast Paused")
         BattleLogger.append("ブロードキャスト一時停止")
     }
 
-    override func broadcastResumed() {
+    func resume() {
         logger.log("NakamonREC: Broadcast Resumed")
         BattleLogger.append("ブロードキャスト再開")
     }
 
-    override func broadcastFinished() {
+    /// キャプチャ終了時に 1 回呼ぶ (Extension: broadcastFinished / SCK: STOP またはストリーム停止)
+    func finish() {
         logger.log("NakamonREC: Broadcast Finished")
-        BattleLogger.append("ブロードキャスト終了")
+        BattleLogger.append(source == .broadcastExtension ? "ブロードキャスト終了" : "ホスト内キャプチャ終了")
         heartbeatTimer?.cancel()
         heartbeatTimer = nil
         BroadcastStatus.setActive(false)
