@@ -536,6 +536,20 @@ private struct DebugMenuView: View {
                         Label("マッチング閾値を調整", systemImage: "slider.horizontal.3")
                     }
                 }
+
+                // iOS 27 ScreenCaptureKit (アプリ本体プロセス内キャプチャ) の検証プロトタイプ。
+                // 26.x では項目自体を出さない。
+                #if canImport(ScreenCaptureKit)
+                if #available(iOS 27.0, *) {
+                    Section("iOS 27 検証") {
+                        NavigationLink {
+                            ScreenCaptureKitProbeView()
+                        } label: {
+                            Label("ScreenCaptureKit 検証 (プロトタイプ)", systemImage: "rectangle.dashed.badge.record")
+                        }
+                    }
+                }
+                #endif
             }
             .alert("アップデート", isPresented: Binding(
                 get: { updateCheckMessage != nil },

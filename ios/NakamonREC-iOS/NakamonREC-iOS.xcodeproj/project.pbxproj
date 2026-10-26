@@ -92,6 +92,7 @@
 		02E122F32FB92D9300116A7A /* Exceptions for "NakamonREC-iOS" folder in "NakamonREC-iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Info.plist,
 				NakamonRECActivityAttributes.swift,
 			);
 			target = 02BF2F632FB60B8200A0BD95 /* NakamonREC-iOS */;
@@ -516,6 +517,7 @@
 					"$(PROJECT_DIR)/../../shared_cpp",
 					"$(PROJECT_DIR)/opencv2.framework/Headers",
 				);
+				INFOPLIST_FILE = "NakamonREC-iOS/Info.plist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -529,6 +531,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 26.10.2;
+				OTHER_LDFLAGS = (
+					"-weak_framework",
+					ScreenCaptureKit,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -564,6 +570,7 @@
 					"$(PROJECT_DIR)/../../shared_cpp",
 					"$(PROJECT_DIR)/opencv2.framework/Headers",
 				);
+				INFOPLIST_FILE = "NakamonREC-iOS/Info.plist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -577,6 +584,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 26.10.2;
+				OTHER_LDFLAGS = (
+					"-weak_framework",
+					ScreenCaptureKit,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
