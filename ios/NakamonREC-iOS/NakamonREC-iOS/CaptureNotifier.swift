@@ -36,7 +36,8 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
     /// 「停止する」アクションが押されたときに呼ぶ (MainActor へ hop して REC 停止)
     private let onStopRequested: @Sendable () -> Void
 
-    private let queue = DispatchQueue(label: "com.android.NakamonREC-iOS.notifier")
+    // userInitiated: バックグラウンドで解析 (userInitiated) が回っている最中でも通知の送信が後回しにされないように
+    private let queue = DispatchQueue(label: "com.android.NakamonREC-iOS.notifier", qos: .userInitiated)
     private var idleTimer: DispatchSourceTimer?
     private var lastConfirmedAt: Date = .distantPast
     private var lastWarnedAt: Date = .distantPast
@@ -177,14 +178,20 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = .default
+        // 状態通知は無音 (ビーフ要望: 戦闘ごとに「ピコン」は不要)。放置警告だけは気づいてもらうために音あり
+        content.sound = (category == idleCategoryID) ? .default : nil
         if let category { content.categoryIdentifier = category }
         let trigger = delay > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        let requestedAt = CACurrentMediaTime()
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
                 notifierLogger.error("notification add failed: \(error.localizedDescription)")
                 BattleLogger.append("通知失敗: \(error.localizedDescription)")
+            } else if delay == 0 {
+                // 診断: 要求から通知センター受理までの時間 (遅延がアプリ側か配信側かの切り分け用)
+                let ms = Int((CACurrentMediaTime() - requestedAt) * 1000)
+                BattleLogger.append("通知: \(title) 受理 (+\(ms) ms)")
             }
         }
     }
