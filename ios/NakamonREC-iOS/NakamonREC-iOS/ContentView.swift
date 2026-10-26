@@ -455,7 +455,29 @@ struct BroadcastButton: UIViewRepresentable {
         var isBroadcasting: Bool = false
 
         @objc func tap() {
-            // REC / STOP のいずれも RPSystemBroadcastPickerView を起動するだけ。
+            // iOS 27 以降: ホストアプリ内の ScreenCaptureKit 経路 (ScreenCaptureKitRecorder)。
+            //   REC = システムピッカーで「画面全体」を選ばせて SCStream 開始 / STOP = 即停止。
+            //   ただし Extension 経路の放送が動いている (コントロールセンターから開始した等) なら
+            //   recorder は停止できないので、従来どおりシステムシートに任せる。
+            #if canImport(ScreenCaptureKit)
+            if #available(iOS 27.0, *) {
+                let recorder = ScreenCaptureKitRecorder.shared
+                if recorder.isRunning || recorder.isStarting {
+                    logger.log("STOP tapped → ScreenCaptureKit stop")
+                    recorder.stop()
+                    return
+                }
+                if !isBroadcasting {
+                    logger.log("REC tapped → ScreenCaptureKit start")
+                    recorder.start()
+                    return
+                }
+                logger.log("STOP tapped while legacy broadcast active → system sheet")
+            }
+            #endif
+
+            // iOS 26 以前 (または Extension 経路の放送中): REC / STOP のいずれも
+            // RPSystemBroadcastPickerView を起動するだけ。
             // ピッカーは iOS 側が放送中か否かを判定して、「ブロードキャストを開始」
             // または「ブロードキャストを停止」シートを自動で出し分けてくれる。
             // (Extension 側で finishBroadcastWithError: を呼ばないので、
