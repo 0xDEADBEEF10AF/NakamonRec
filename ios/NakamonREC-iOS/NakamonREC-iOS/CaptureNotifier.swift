@@ -196,10 +196,6 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
         content.body = body
         // 状態通知は無音 (ビーフ要望: 戦闘ごとに「ピコン」は不要)。放置警告だけは気づいてもらうために音あり
         content.sound = (category == idleCategoryID) ? .default : nil
-        // 実験 (2026-10-27): 背景アプリのローカル通知が OS 側で約 10 秒保留される現象への対策。
-        // Time Sensitive (要 entitlement com.apple.developer.usernotifications.time-sensitive) なら
-        // 即時配信される可能性がある。iOS 18.2 では効かなかったという報告があるが iOS 27 で要実測。
-        content.interruptionLevel = .timeSensitive
         if let category { content.categoryIdentifier = category }
         let trigger = delay > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
