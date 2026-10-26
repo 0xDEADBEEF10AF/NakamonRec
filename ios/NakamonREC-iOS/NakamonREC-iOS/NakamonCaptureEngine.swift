@@ -120,7 +120,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     /// (Extension の 50MB メモリ制限対策: alloc/dealloc を減らして fragmentation を避ける)
     private let ciContext = CIContext(options: nil)
 
-    /// キャプチャ開始時に 1 回呼ぶ (Extension: broadcastStarted / SCK: startCapture 成功後)
+    /// start() 完了〜finish() の間だけ true。これより前に届いたフレームは捨てる。
+    /// (SCK 経路で startCapture 直後のフレームが loadTemplates() と競合し、読み込み途中の
+    /// テンプレ配列で校正・キャッシュしてしまう事故の防御。Extension 経路は ReplayKit が順序を保証する)
+    private var isStarted = false
+
+    /// キャプチャ開始時に 1 回呼ぶ (Extension: broadcastStarted / SCK: startCapture の前にフレームキュー上で)。
+    /// フレームを渡し始める前に完了させること (loadTemplates はこの中で同期的に走る)。
     func start() {
         logger.log("NakamonREC Engine: Starting...")
         BattleLogger.rotate()
@@ -128,6 +134,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         BroadcastStatus.setActive(true)
         startHeartbeat()
         loadTemplates()
+        isStarted = true
     }
 
     /// 生存通知タイマー (2秒間隔)。broadcastFinished を呼べずに Extension が死んだ場合、
@@ -268,6 +275,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     /// 映像フレームを 1 枚渡す。配信スレッド (Extension) または SCStream のサンプルキュー (SCK) から呼ばれる。
     /// 間引き (0.5 秒間隔) はこの先の handleVideoSample が行う。
     func process(_ sampleBuffer: CMSampleBuffer) {
+        guard isStarted else { return }
         handleVideoSample(sampleBuffer)
     }
 
@@ -285,6 +293,10 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                     let snapshot = currentBurstImages
                     currentBurstImages.removeAll()
                     isAnalyzing = false
+                    // 診断: バースト 5 枚が何 ms に収まったか (供給元のフレームレート差の切り分け用。
+                    // SCK は約 40 fps で連続配信するため ReplayKit より短い窓になる)
+                    let spanMs = Int((currentTime - lastProcessTime) * 1000)
+                    BattleLogger.append("バースト \(burstCount) 枚取得 (VS 検知から \(spanMs) ms, 供給元=\(source == .screenCaptureKit ? "SCK" : "RK"))")
                     analysisQueue.async { [weak self] in
                         self?.performDeepAnalysis(frames: snapshot)
                     }
@@ -557,6 +569,17 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         let startedAt = Date()
         logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots, Top-K)...")
         BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット, Top-K 最適化)")
+
+        // 診断 (デバッグメニューで ON にしたときだけ): バースト先頭フレームを PNG で残す。
+        // 供給元 (ReplayKit / ScreenCaptureKit) ごとの実フレームをテンプレと直接比較するため。
+        // キーはホスト側 DiagnosticsExporter.saveBurstFrameKey と同じ文字列 (Extension からは参照できない)
+        if UserDefaults(suiteName: "group.com.android.NakamonREC-iOS")?.bool(forKey: "debugSaveBurstFrame") == true,
+           let first = inputFrames.first,
+           let path = MatchingScoreSnapshot.path(forFile: "burst_frame0.png"),
+           let data = first.pngData() {
+            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            BattleLogger.append(String(format: "診断: バースト先頭フレームを保存 %dx%d (burst_frame0.png)", Int(first.size.width), Int(first.size.height)))
+        }
 
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
         struct SlotBest { var score: Double = 0; var index: Int = -1 }
@@ -920,6 +943,8 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
 
     /// キャプチャ終了時に 1 回呼ぶ (Extension: broadcastFinished / SCK: STOP またはストリーム停止)
     func finish() {
+        guard isStarted else { return }   // start() 前の失敗 (startCapture エラー等) では何もしない
+        isStarted = false
         logger.log("NakamonREC: Broadcast Finished")
         BattleLogger.append(source == .broadcastExtension ? "ブロードキャスト終了" : "ホスト内キャプチャ終了")
         heartbeatTimer?.cancel()

@@ -507,6 +507,8 @@ private struct DebugMenuView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
     @State private var updateCheckMessage: String? = nil
+    @State private var saveBurstFrame: Bool = DiagnosticsExporter.saveBurstFrameEnabled
+    @State private var diagMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -559,6 +561,22 @@ private struct DebugMenuView: View {
                     }
                 }
 
+                // 診断資料の取り出し (Mac 側で解析するとき用)
+                Section("診断") {
+                    Toggle(isOn: $saveBurstFrame) {
+                        Label("バースト先頭フレームを保存", systemImage: "photo.badge.arrow.down")
+                    }
+                    .onChange(of: saveBurstFrame) { _, newValue in
+                        DiagnosticsExporter.saveBurstFrameEnabled = newValue
+                    }
+                    Button {
+                        diagMessage = DiagnosticsExporter.exportToDocuments()
+                    } label: {
+                        Label("診断ファイルを Documents へ書き出し", systemImage: "square.and.arrow.up.on.square")
+                            .foregroundStyle(.white)
+                    }
+                }
+
                 // iOS 27 ScreenCaptureKit (アプリ本体プロセス内キャプチャ) の検証プロトタイプ。
                 // 26.x では項目自体を出さない。
                 #if canImport(ScreenCaptureKit)
@@ -579,6 +597,13 @@ private struct DebugMenuView: View {
                 Button("OK") { updateCheckMessage = nil }
             } message: {
                 Text(updateCheckMessage ?? "")
+            }
+            .alert("診断", isPresented: Binding(
+                get: { diagMessage != nil },
+                set: { if !$0 { diagMessage = nil } })) {
+                Button("OK") { diagMessage = nil }
+            } message: {
+                Text(diagMessage ?? "")
             }
             .navigationTitle("デバッグメニュー")
             .navigationBarTitleDisplayMode(.inline)
