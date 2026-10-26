@@ -5,7 +5,7 @@
 //  iOS 27 の ScreenCaptureKit 経路 (アプリ本体内キャプチャ) で使うローカル通知。
 //  Broadcast Upload Extension からは UserNotifications が使えなかったため iOS 版には無かった機能を、
 //  Android (MediaCaptureService) と同じ条件・文言で提供する:
-//    1. 状態通知 (Android の前景サービス通知に相当。1 つの ID を上書きし続けるので通知センターには常に最新 1 件):
+//    1. 状態通知 (Android の前景サービス通知に相当。直前の通知を消してから新しい ID で出すので通知センターには常に最新 1 件):
 //       タイトル = 「待機中 (ファイル名)」「戦闘開始 (P1)」「戦闘終了」「🎖 GP記録 2208.1」「🎖 GP戦を検知 (レーティング未取得)」
 //       本文 = 「12W - 8L (60.0%)」(アクティブな戦績ファイルの通算)
 //    2. REC 放置警告 (別 ID): 最後のバトル確定 (開始時刻を初期値) から 30 分で「REC 中ですよ！」、
@@ -30,7 +30,7 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
     static let idleCategoryID = "nakamon.rec.idle"
     static let stopActionID = "nakamon.rec.stop"
     private static let idleNotificationID = "nakamon.rec.idle.warning"
-    /// 状態通知 (待機中 / 戦闘開始 / 戦闘終了 / GP 記録) は同じ ID で上書きする
+    /// 状態通知 (待機中 / 戦闘開始 / 戦闘終了 / GP 記録) の ID 接頭辞。実 ID は毎回ユニーク (postStatus 参照)
     private static let statusNotificationID = "nakamon.rec.status"
 
     /// 「停止する」アクションが押されたときに呼ぶ (MainActor へ hop して REC 停止)
@@ -80,7 +80,7 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
             // Android の起動時「待機中 (ファイル名)」
             let file = BattleHistoryStore.shared.activeFileName
             let name = file.hasSuffix(".json") ? String(file.dropLast(5)) : file
-            Self.postStatus(title: "待機中 (\(name))")
+            self.postStatus(title: "待機中 (\(name))")
         }
     }
 
@@ -90,18 +90,34 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
             self.idleTimer = nil
         }
         // 停止時に放置警告と状態通知を消す (Android は前景通知ごと消える)
-        let ids = [Self.idleNotificationID, Self.statusNotificationID]
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [Self.idleNotificationID])
+        center.removePendingNotificationRequests(withIdentifiers: [Self.idleNotificationID])
+        center.getDeliveredNotifications { delivered in
+            let ids = delivered.map(\.request.identifier).filter { $0.hasPrefix(Self.statusNotificationID) }
+            if !ids.isEmpty {
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+            }
+        }
     }
 
-    /// 状態通知: タイトル = 状態、本文 = アクティブファイルの通算 W-L (Android buildMyNotification と同形)
-    private static func postStatus(title: String) {
+    /// 直前に出した状態通知の ID (queue 上でのみ触る)。新しい状態を出す前に消して「常に最新 1 件」を保つ
+    private var lastStatusID: String?
+
+    /// 状態通知: タイトル = 状態、本文 = アクティブファイルの通算 W-L (Android buildMyNotification と同形)。
+    /// ID は毎回ユニークにする。同じ ID で上書き (replace) すると iOS 側の配信が 10 秒近く遅れる
+    /// 現象が実機で出たため (2026-10-27 ビーフ計測: アプリ側の受理は +17 ms なのにバナーは約 10 秒後)。
+    private func postStatus(title: String) {
         let history = BattleHistoryStore.shared.loadActive()
         let win = history.totalWins, lose = history.totalLosses
         let total = win + lose
         let rate = total > 0 ? Double(win) / Double(total) * 100 : 0
-        post(id: statusNotificationID, title: title, body: "\(win)W - \(lose)L (\(RateFormat.percent(rate)))", category: nil)
+        if let previous = lastStatusID {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [previous])
+        }
+        let id = Self.statusNotificationID + "." + String(Int(Date().timeIntervalSince1970 * 1000))
+        lastStatusID = id
+        Self.post(id: id, title: title, body: "\(win)W - \(lose)L (\(RateFormat.percent(rate)))", category: nil)
     }
 
     private func checkIdle() {
@@ -121,7 +137,7 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
 
     func engineDidStartBattle(partyIndex: Int) {
         let party = partyIndex >= 0 ? "P\(partyIndex + 1)" : "?"
-        queue.async { Self.postStatus(title: "戦闘開始 (\(party))") }
+        queue.async { self.postStatus(title: "戦闘開始 (\(party))") }
     }
 
     func engineDidFinalizeBattle(result: String) {
@@ -129,16 +145,16 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
             // 確定があった時点で「最近活動あり」とみなしタイマーをリセット
             self.lastConfirmedAt = Date()
             self.lastWarnedAt = .distantPast
-            Self.postStatus(title: "戦闘終了")
+            self.postStatus(title: "戦闘終了")
         }
     }
 
     func engineDidRecordGrandPrix(rating: Double) {
-        queue.async { Self.postStatus(title: String(format: "🎖 GP記録 %.1f", rating)) }
+        queue.async { self.postStatus(title: String(format: "🎖 GP記録 %.1f", rating)) }
     }
 
     func engineDidRecordGrandPrixUnread() {
-        queue.async { Self.postStatus(title: "🎖 GP戦を検知 (レーティング未取得)") }
+        queue.async { self.postStatus(title: "🎖 GP戦を検知 (レーティング未取得)") }
     }
 
     // MARK: - デバッグメニュー用プレビュー (見た目確認。実際の記録とは無関係)
