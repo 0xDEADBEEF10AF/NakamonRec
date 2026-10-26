@@ -13,6 +13,17 @@ nonisolated enum CaptureSource {
     case screenCaptureKit
 }
 
+/// エンジンの記録イベントを受け取る (ホスト側のローカル通知・放置警告タイマー用)。
+/// Extension 経路では通知が出せないため nil のまま。配信スレッドから呼ばれる。
+nonisolated protocol CaptureEngineEvents: AnyObject, Sendable {
+    /// 通常戦の戦績レコードを保存した (REC 放置タイマーのリセット用)
+    func engineDidFinalizeBattle(result: String)
+    /// グランプリのレーティングを読んで記録した (A 方針: 値のみ通知)
+    func engineDidRecordGrandPrix(rating: Double)
+    /// グランプリ戦を検知したがレーティング未取得のまま次戦へ進んだ (STOP 時は呼ばれない)
+    func engineDidRecordGrandPrixUnread()
+}
+
 /// 画面フレームからパーティ選択 / VS / モンスター / 勝敗 / GP レーティングを認識して戦績を保存する解析本体。
 /// ReplayKit にも ScreenCaptureKit にも依存せず、CMSampleBuffer を受け取るだけ。
 /// - Extension (NakamonBroadcastHandler) とホストアプリ (iOS 27 の ScreenCaptureKit 経路) の両ターゲットで
@@ -25,6 +36,8 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
 
     private let logger = Logger(subsystem: "com.android.NakamonREC-iOS", category: "CaptureEngine")
     let source: CaptureSource
+    /// 記録イベントの通知先 (ホストの SCK 経路のみ設定。start() 前に設定すること)
+    weak var events: CaptureEngineEvents?
 
     init(source: CaptureSource) {
         self.source = source
@@ -362,6 +375,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                                      rankTier: rankTier)
         BattleHistoryStore.shared.appendGrandPrix(record)
         grandPrixWait = nil
+        events?.engineDidRecordGrandPrix(rating: reading.currentRating)
         let tierDiag = rankTier == nil ? " ランク診断: \(RankTierReader.lastDiagnostic)" : ""
         BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@%@%@",
                                    reading.currentRating,
@@ -798,6 +812,10 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                             + (summary.isEmpty ? "" : ": \(summary)") + ")"
                             + (lastDiag.isEmpty ? "" : " 直近: \(lastDiag)"))
         BattleHistoryStore.shared.appendGrandPrix(GrandPrixRecord.unread(timestamp: wait.timestamp, result: wait.result))
+        // STOP 起点 (finish() は先に isStarted=false にしている) では通知しない (Android の notify=false と同じ)
+        if isStarted {
+            events?.engineDidRecordGrandPrixUnread()
+        }
     }
 
     private func startGrandPrixWaitIfNeeded(result: String) {
@@ -873,6 +891,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         BattleHistoryStore.shared.append(record)
         // Host メイン画面のサマリ即時更新用シグナル
         BroadcastStatus.lastRecordTimestamp = record.timestamp
+        events?.engineDidFinalizeBattle(result: result)
         BattleLogger.append(String(format: "📝 戦績記録: %@ P[%d] 味方=%@ vs 敵=%@",
                                    result,
                                    p.partyIndex + 1,

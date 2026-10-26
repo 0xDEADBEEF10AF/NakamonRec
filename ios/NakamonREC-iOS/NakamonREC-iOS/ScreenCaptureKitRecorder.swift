@@ -16,6 +16,7 @@
 import UIKit
 import OSLog
 import Observation
+import UserNotifications
 import NakamonREC_Shared
 #if canImport(ScreenCaptureKit)
 // SCStream 等は Sendable 注釈が無い。配信キューと MainActor をまたいで受け渡すため preconcurrency で読み込む
@@ -39,6 +40,8 @@ final class ScreenCaptureKitRecorder: NSObject {
 
     @ObservationIgnored private var stream: SCStream?
     @ObservationIgnored private var output: EngineStreamOutput?
+    /// ローカル通知 (GP 記録・REC 放置警告)。エンジンの events として登録し、start/finish と対で動かす
+    @ObservationIgnored private var notifier: CaptureNotifier?
     @ObservationIgnored private var isObservingPicker = false
     @ObservationIgnored private var terminateObserver: NSObjectProtocol?
 
@@ -48,7 +51,10 @@ final class ScreenCaptureKitRecorder: NSObject {
         terminateObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.output?.engine.finish() }
+            Task { @MainActor [weak self] in
+                self?.output?.engine.finish()
+                self?.notifier?.stop()
+            }
         }
     }
 
@@ -57,6 +63,8 @@ final class ScreenCaptureKitRecorder: NSObject {
     func start() {
         guard !isRunning, !isStarting else { return }
         isStarting = true
+        // 通知許可 (初回のみダイアログ)。拒否されても REC は続行する
+        CaptureNotifier.requestAuthorizationIfNeeded()
         let picker = SCContentSharingPicker.shared
         picker.defaultConfiguration = SCContentSharingPickerConfiguration()
         if !isObservingPicker {
@@ -84,6 +92,7 @@ final class ScreenCaptureKitRecorder: NSObject {
             // 読めなかった GP 待機の未取得レコード化・進行中バトル破棄
             output.engine.finish()
             Task { @MainActor [weak self] in
+                self?.notifier?.stop()
                 self?.tearDown()
             }
         }
@@ -113,6 +122,15 @@ final class ScreenCaptureKitRecorder: NSObject {
         let widthPx = config.width
         let heightPx = config.height
 
+        // ローカル通知: エンジンの記録イベントを受けて GP 記録通知・REC 放置警告を出す。
+        // 「停止する」アクションは MainActor へ戻して stop()
+        let notifier = CaptureNotifier(onStopRequested: {
+            Task { @MainActor in ScreenCaptureKitRecorder.shared.stop() }
+        })
+        self.notifier = notifier
+        UNUserNotificationCenter.current().delegate = notifier
+        output.engine.events = notifier
+
         // 順序が重要: エンジンの start() (テンプレ読み込みを含む) を「フレームが届くキュー上で」先に完了させ、
         // そのあとで startCapture する。startCapture 直後からフレームは流れ始めるため、逆順にすると
         // 読み込み途中のテンプレ配列で初回校正・キャッシュが走り、後半のモンスターが認識不能になる
@@ -121,6 +139,7 @@ final class ScreenCaptureKitRecorder: NSObject {
         output.queue.async { [weak self] in
             // Extension の broadcastStarted 相当 (ログ rotate・active=true・ハートビート・テンプレ読込)
             output.engine.start()
+            notifier.start()
             BattleLogger.append(String(format: "SCK ストリーム開始 要求=%dx%d px (scale %.2f)", widthPx, heightPx, Double(scale)))
             newStream.startCapture { [weak self] error in
                 Task { @MainActor [weak self] in
@@ -129,6 +148,7 @@ final class ScreenCaptureKitRecorder: NSObject {
                         recorderLogger.error("startCapture failed: \(error.localizedDescription)")
                         BattleLogger.append("❌ SCK startCapture 失敗: \(error.localizedDescription)")
                         output.engine.finish()
+                        notifier.stop()
                         self.tearDown()
                         return
                     }
@@ -144,6 +164,7 @@ final class ScreenCaptureKitRecorder: NSObject {
     private func tearDown() {
         stream = nil
         output = nil
+        notifier = nil
         isRunning = false
         isStarting = false
         detachPicker()
@@ -162,6 +183,7 @@ final class ScreenCaptureKitRecorder: NSObject {
     fileprivate func streamDidStop(error: any Error) {
         BattleLogger.append("⚠️ SCK ストリームが停止: \(error.localizedDescription)")
         output?.engine.finish()
+        notifier?.stop()
         tearDown()
     }
 }
