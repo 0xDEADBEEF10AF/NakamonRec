@@ -16,6 +16,8 @@ nonisolated enum CaptureSource {
 /// エンジンの記録イベントを受け取る (ホスト側のローカル通知・放置警告タイマー用)。
 /// Extension 経路では通知が出せないため nil のまま。配信スレッドから呼ばれる。
 nonisolated protocol CaptureEngineEvents: AnyObject, Sendable {
+    /// VS を検知して戦闘が始まった (partyIndex は 0..2、未検知なら -1)
+    func engineDidStartBattle(partyIndex: Int)
     /// 通常戦の戦績レコードを保存した (REC 放置タイマーのリセット用)
     func engineDidFinalizeBattle(result: String)
     /// グランプリのレーティングを読んで記録した (A 方針: 値のみ通知)
@@ -520,6 +522,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             }
             BattleLogger.append(String(format: "VS検知 Score %.3f → バースト開始", score))
             isBattleInProgress = true
+            events?.engineDidStartBattle(partyIndex: lastDetectedPartyIndex)
             isAnalyzing = true
             currentBurstImages.removeAll()
             currentBurstImages.append(scene)

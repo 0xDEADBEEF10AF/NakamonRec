@@ -591,9 +591,23 @@ private struct DebugMenuView: View {
                         // 3 秒後に届くので、押したらホームに戻って確認する
                         Button {
                             CaptureNotifier.requestAuthorizationIfNeeded()
+                            CaptureNotifier.previewBattleStart()
+                        } label: {
+                            Label("通知プレビュー: 戦闘開始 (3 秒後・ホームで確認)", systemImage: "bell")
+                                .foregroundStyle(.white)
+                        }
+                        Button {
+                            CaptureNotifier.requestAuthorizationIfNeeded()
+                            CaptureNotifier.previewBattleEnd()
+                        } label: {
+                            Label("通知プレビュー: 戦闘終了", systemImage: "bell")
+                                .foregroundStyle(.white)
+                        }
+                        Button {
+                            CaptureNotifier.requestAuthorizationIfNeeded()
                             CaptureNotifier.previewGrandPrixRecorded()
                         } label: {
-                            Label("通知プレビュー: GP記録 (3 秒後・ホームで確認)", systemImage: "bell")
+                            Label("通知プレビュー: GP記録", systemImage: "bell")
                                 .foregroundStyle(.white)
                         }
                         Button {
