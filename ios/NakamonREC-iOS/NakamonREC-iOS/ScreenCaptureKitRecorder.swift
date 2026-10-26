@@ -18,7 +18,8 @@ import OSLog
 import Observation
 import NakamonREC_Shared
 #if canImport(ScreenCaptureKit)
-import ScreenCaptureKit
+// SCStream 等は Sendable 注釈が無い。配信キューと MainActor をまたいで受け渡すため preconcurrency で読み込む
+@preconcurrency import ScreenCaptureKit
 #endif
 
 #if canImport(ScreenCaptureKit)
@@ -117,7 +118,7 @@ final class ScreenCaptureKitRecorder: NSObject {
         // 読み込み途中のテンプレ配列で初回校正・キャッシュが走り、後半のモンスターが認識不能になる
         // (2026-10-26 実機で発生: 読み込み体数が 111/88 と揺れ、Top-K 候補が若い id だけになった)。
         // Extension 経路では ReplayKit が broadcastStarted → processSampleBuffer の順序を保証している。
-        output.queue.async {
+        output.queue.async { [weak self] in
             // Extension の broadcastStarted 相当 (ログ rotate・active=true・ハートビート・テンプレ読込)
             output.engine.start()
             BattleLogger.append(String(format: "SCK ストリーム開始 要求=%dx%d px (scale %.2f)", widthPx, heightPx, Double(scale)))
