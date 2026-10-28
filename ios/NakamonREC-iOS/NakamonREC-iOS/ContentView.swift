@@ -536,7 +536,7 @@ private struct DebugMenuView: View {
                         }
                     } label: {
                         Label("アプリのアップデートを確認", systemImage: "arrow.triangle.2.circlepath")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                     }
 
                     Button {
@@ -551,7 +551,7 @@ private struct DebugMenuView: View {
                               ? "アップデート通知を再有効化 (抑止なし)"
                               : "アップデート通知を再有効化 (Ver \(suppressedUpdateVersion) を抑止中)",
                               systemImage: "bell.badge")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                     }
 
                     NavigationLink {
@@ -573,7 +573,7 @@ private struct DebugMenuView: View {
                         diagMessage = DiagnosticsExporter.exportToDocuments()
                     } label: {
                         Label("診断ファイルを Documents へ書き出し", systemImage: "square.and.arrow.up.on.square")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                     }
                 }
 
@@ -594,35 +594,35 @@ private struct DebugMenuView: View {
                             CaptureNotifier.previewBattleStart()
                         } label: {
                             Label("通知プレビュー: 戦闘開始 (3 秒後・ホームで確認)", systemImage: "bell")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                         Button {
                             CaptureNotifier.requestAuthorizationIfNeeded()
                             CaptureNotifier.previewBattleEnd()
                         } label: {
                             Label("通知プレビュー: 戦闘終了", systemImage: "bell")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                         Button {
                             CaptureNotifier.requestAuthorizationIfNeeded()
                             CaptureNotifier.previewGrandPrixRecorded()
                         } label: {
                             Label("通知プレビュー: GP記録", systemImage: "bell")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                         Button {
                             CaptureNotifier.requestAuthorizationIfNeeded()
                             CaptureNotifier.previewGrandPrixUnread()
                         } label: {
                             Label("通知プレビュー: GP未取得", systemImage: "bell")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                         Button {
                             CaptureNotifier.requestAuthorizationIfNeeded()
                             CaptureNotifier.previewIdleWarning()
                         } label: {
                             Label("通知プレビュー: REC 放置警告 (停止ボタン付き)", systemImage: "bell.badge")
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -705,9 +705,12 @@ private struct ThresholdAdjustView: View {
             HStack {
                 Text(label).bold()
                 Spacer()
+                // Form はシステム配色 (ライトでは白背景) なので .white だと数値が見えない (iPhone 17 ユーザー報告 2026-10-28)。
+                // 配色に追従する .primary にし、設定値であることが分かるよう強調する
                 Text(format(value.wrappedValue))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .font(.title3.bold())
+                    .foregroundStyle(.primary)
             }
             Slider(value: value, in: range, step: step)
             Text("デフォルト: \(format(defaultValue))")
