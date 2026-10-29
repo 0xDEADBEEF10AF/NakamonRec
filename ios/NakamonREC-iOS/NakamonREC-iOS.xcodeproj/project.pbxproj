@@ -509,7 +509,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "NakamonREC-iOS/NakamonREC-iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
@@ -532,7 +532,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.10.2;
+				MARKETING_VERSION = 26.11.1;
 				OTHER_LDFLAGS = (
 					"-weak_framework",
 					ScreenCaptureKit,
@@ -563,7 +563,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "NakamonREC-iOS/NakamonREC-iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
@@ -586,7 +586,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.10.2;
+				MARKETING_VERSION = 26.11.1;
 				OTHER_LDFLAGS = (
 					"-weak_framework",
 					ScreenCaptureKit,
@@ -613,7 +613,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "NakamonREC-ScreenCapture/NakamonREC-ScreenCapture.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -630,7 +630,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.10.2;
+				MARKETING_VERSION = 26.11.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS.NakamonREC-ScreenCapture";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -649,7 +649,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "NakamonREC-ScreenCapture/NakamonREC-ScreenCapture.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -666,7 +666,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.10.2;
+				MARKETING_VERSION = 26.11.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS.NakamonREC-ScreenCapture";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -687,7 +687,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = "NakamonREC-WidgetsExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NakamonREC-Widgets/Info.plist";
@@ -698,7 +698,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.10.2;
+				MARKETING_VERSION = 26.11.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS.NakamonREC-Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -718,7 +718,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = "NakamonREC-WidgetsExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = VAD44XWMR7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NakamonREC-Widgets/Info.plist";
@@ -729,7 +729,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.10.2;
+				MARKETING_VERSION = 26.11.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.android.NakamonREC-iOS.NakamonREC-Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
