@@ -108,13 +108,12 @@ final class ScreenCaptureKitRecorder: NSObject {
         let scale = CGFloat(filter.pointPixelScale)
         let nativeW = filter.contentRect.width * scale
         let nativeH = filter.contentRect.height * scale
-        // 既定は ReplayKit (replayd) と同じ「長辺 1920 px」に縮小して受け取る。
-        // ネイティブ (13 mini で 1126 px) のままだとモンスター解析が 24〜28 秒かかり (886 px なら 6.8 秒)、
-        // 戦闘終了通知が解析完了まで待たされる。Extension 経路とフレーム幅を揃えることで
-        // 閾値・テンプレ倍率・探索窓の挙動も両経路で同一になる。比較実験用にデバッグトグルでネイティブへ戻せる
-        let native = DiagnosticsExporter.sckNativeResolutionEnabled
+        // ReplayKit (replayd) と同じ「長辺 1920 px」に縮小して受け取る。
+        // ネイティブ (13 mini で 1126 px) のままだとモンスター解析が 24〜28 秒かかり (886 px では 2 秒)、
+        // 戦闘終了通知が解析完了まで待たされた (2026-10-30 実測)。Extension 経路とフレーム幅を揃えることで
+        // 閾値・テンプレ倍率・探索窓の挙動も両経路で同一になる
         let longEdge = max(nativeW, nativeH)
-        let shrink: CGFloat = (!native && longEdge > Self.maxLongEdgePx) ? Self.maxLongEdgePx / longEdge : 1
+        let shrink: CGFloat = longEdge > Self.maxLongEdgePx ? Self.maxLongEdgePx / longEdge : 1
         // 幅・高さは偶数に丸める (420f の色差サブサンプリング要件。SCK 側も奇数幅は偶数へ丸めてくる)
         func even(_ v: CGFloat) -> Int { Int((v / 2).rounded()) * 2 }
         let config = SCStreamConfiguration()

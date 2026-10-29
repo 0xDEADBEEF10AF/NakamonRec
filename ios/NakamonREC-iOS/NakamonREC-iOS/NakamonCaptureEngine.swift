@@ -646,17 +646,6 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots, Top-K)...")
         BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット, Top-K 最適化)")
 
-        // 診断 (デバッグメニューで ON にしたときだけ): バースト先頭フレームを PNG で残す。
-        // 供給元 (ReplayKit / ScreenCaptureKit) ごとの実フレームをテンプレと直接比較するため。
-        // キーはホスト側 DiagnosticsExporter.saveBurstFrameKey と同じ文字列 (Extension からは参照できない)
-        if UserDefaults(suiteName: "group.com.android.NakamonREC-iOS")?.bool(forKey: "debugSaveBurstFrame") == true,
-           let first = inputFrames.first,
-           let path = MatchingScoreSnapshot.path(forFile: "burst_frame0.png"),
-           let data = first.pngData() {
-            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
-            BattleLogger.append(String(format: "診断: バースト先頭フレームを保存 %dx%d (burst_frame0.png)", Int(first.size.width), Int(first.size.height)))
-        }
-
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
         struct SlotBest { var score: Double = 0; var index: Int = -1 }
         let slotROIs = calibrationConfig.battlePrepMonsterROIs

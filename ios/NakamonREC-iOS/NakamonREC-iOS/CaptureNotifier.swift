@@ -157,54 +157,22 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
         queue.async { self.postStatus(title: "🎖 GP戦を検知 (レーティング未取得)") }
     }
 
-    // MARK: - デバッグメニュー用プレビュー (見た目確認。実際の記録とは無関係)
-
-    /// プレビューは 3 秒後に出す (REC 中でなければ前面表示デリゲートが無いので、ホームに戻って確認してもらう)
-    private static let previewDelay: TimeInterval = 3
-
-    static func previewBattleStart() {
-        post(id: statusNotificationID + ".preview", title: "戦闘開始 (P1)", body: "12W - 8L (60.0%)",
-             category: nil, delay: previewDelay)
-    }
-
-    static func previewBattleEnd() {
-        post(id: statusNotificationID + ".preview", title: "戦闘終了", body: "13W - 8L (61.9%)",
-             category: nil, delay: previewDelay)
-    }
-
-    static func previewGrandPrixRecorded() {
-        post(id: statusNotificationID + ".preview", title: String(format: "🎖 GP記録 %.1f", 2208.1), body: "13W - 8L (61.9%)",
-             category: nil, delay: previewDelay)
-    }
-
-    static func previewGrandPrixUnread() {
-        post(id: statusNotificationID + ".preview", title: "🎖 GP戦を検知 (レーティング未取得)",
-             body: "13W - 8L (61.9%)", category: nil, delay: previewDelay)
-    }
-
-    static func previewIdleWarning() {
-        let minutes = Int(idleWarningThreshold / 60)
-        post(id: idleNotificationID + ".preview", title: "REC 中ですよ！",
-             body: "最後のバトル確定から\(minutes)分以上経過しています。", category: idleCategoryID, delay: previewDelay)
-    }
-
     // MARK: - 送信
 
-    private static func post(id: String, title: String, body: String, category: String?, delay: TimeInterval = 0) {
+    private static func post(id: String, title: String, body: String, category: String?) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         // 状態通知は無音 (ビーフ要望: 戦闘ごとに「ピコン」は不要)。放置警告だけは気づいてもらうために音あり
         content.sound = (category == idleCategoryID) ? .default : nil
         if let category { content.categoryIdentifier = category }
-        let trigger = delay > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         let requestedAt = CACurrentMediaTime()
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
                 notifierLogger.error("notification add failed: \(error.localizedDescription)")
                 BattleLogger.append("通知失敗: \(error.localizedDescription)")
-            } else if delay == 0 {
+            } else {
                 // 診断: 要求から通知センター受理までの時間 (遅延がアプリ側か配信側かの切り分け用)
                 let ms = Int((CACurrentMediaTime() - requestedAt) * 1000)
                 BattleLogger.append("通知: \(title) 受理 (+\(ms) ms)")

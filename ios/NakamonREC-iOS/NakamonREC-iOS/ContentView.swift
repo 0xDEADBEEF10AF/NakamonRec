@@ -507,9 +507,6 @@ private struct DebugMenuView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
     @State private var updateCheckMessage: String? = nil
-    @State private var saveBurstFrame: Bool = DiagnosticsExporter.saveBurstFrameEnabled
-    @State private var sckNativeResolution: Bool = DiagnosticsExporter.sckNativeResolutionEnabled
-    @State private var diagMessage: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -561,86 +558,6 @@ private struct DebugMenuView: View {
                         Label("マッチング閾値を調整", systemImage: "slider.horizontal.3")
                     }
                 }
-
-                // 診断資料の取り出し (Mac 側で解析するとき用)
-                Section("診断") {
-                    Toggle(isOn: $saveBurstFrame) {
-                        Label("バースト先頭フレームを保存", systemImage: "photo.badge.arrow.down")
-                    }
-                    .onChange(of: saveBurstFrame) { _, newValue in
-                        DiagnosticsExporter.saveBurstFrameEnabled = newValue
-                    }
-                    if #available(iOS 27.0, *) {
-                        Toggle(isOn: $sckNativeResolution) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Label("SCK をネイティブ解像度で取り込む", systemImage: "arrow.up.left.and.arrow.down.right")
-                                Text("OFF = ReplayKit と同じ長辺 1920 px に縮小 (既定)。次回の REC 開始から反映")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .onChange(of: sckNativeResolution) { _, newValue in
-                            DiagnosticsExporter.sckNativeResolutionEnabled = newValue
-                        }
-                    }
-                    Button {
-                        diagMessage = DiagnosticsExporter.exportToDocuments()
-                    } label: {
-                        Label("診断ファイルを Documents へ書き出し", systemImage: "square.and.arrow.up.on.square")
-                            .foregroundStyle(.primary)
-                    }
-                }
-
-                // iOS 27 ScreenCaptureKit (アプリ本体プロセス内キャプチャ) の検証プロトタイプ。
-                // 26.x では項目自体を出さない。
-                #if canImport(ScreenCaptureKit)
-                if #available(iOS 27.0, *) {
-                    Section("iOS 27 検証") {
-                        NavigationLink {
-                            ScreenCaptureKitProbeView()
-                        } label: {
-                            Label("ScreenCaptureKit 検証 (プロトタイプ)", systemImage: "rectangle.dashed.badge.record")
-                        }
-                        // 通知の見た目確認 (実記録とは無関係。許可未取得なら先に許可ダイアログ)。
-                        // 3 秒後に届くので、押したらホームに戻って確認する
-                        Button {
-                            CaptureNotifier.requestAuthorizationIfNeeded()
-                            CaptureNotifier.previewBattleStart()
-                        } label: {
-                            Label("通知プレビュー: 戦闘開始 (3 秒後・ホームで確認)", systemImage: "bell")
-                                .foregroundStyle(.primary)
-                        }
-                        Button {
-                            CaptureNotifier.requestAuthorizationIfNeeded()
-                            CaptureNotifier.previewBattleEnd()
-                        } label: {
-                            Label("通知プレビュー: 戦闘終了", systemImage: "bell")
-                                .foregroundStyle(.primary)
-                        }
-                        Button {
-                            CaptureNotifier.requestAuthorizationIfNeeded()
-                            CaptureNotifier.previewGrandPrixRecorded()
-                        } label: {
-                            Label("通知プレビュー: GP記録", systemImage: "bell")
-                                .foregroundStyle(.primary)
-                        }
-                        Button {
-                            CaptureNotifier.requestAuthorizationIfNeeded()
-                            CaptureNotifier.previewGrandPrixUnread()
-                        } label: {
-                            Label("通知プレビュー: GP未取得", systemImage: "bell")
-                                .foregroundStyle(.primary)
-                        }
-                        Button {
-                            CaptureNotifier.requestAuthorizationIfNeeded()
-                            CaptureNotifier.previewIdleWarning()
-                        } label: {
-                            Label("通知プレビュー: REC 放置警告 (停止ボタン付き)", systemImage: "bell.badge")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-                }
-                #endif
             }
             .alert("アップデート", isPresented: Binding(
                 get: { updateCheckMessage != nil },
@@ -648,13 +565,6 @@ private struct DebugMenuView: View {
                 Button("OK") { updateCheckMessage = nil }
             } message: {
                 Text(updateCheckMessage ?? "")
-            }
-            .alert("診断", isPresented: Binding(
-                get: { diagMessage != nil },
-                set: { if !$0 { diagMessage = nil } })) {
-                Button("OK") { diagMessage = nil }
-            } message: {
-                Text(diagMessage ?? "")
             }
             .navigationTitle("デバッグメニュー")
             .navigationBarTitleDisplayMode(.inline)
