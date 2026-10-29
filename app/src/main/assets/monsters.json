@@ -18,7 +18,7 @@
   { "name": "ドラゴン", "fileName": "id017.png" },
   { "name": "スカイドラゴン", "fileName": "id018.png" },
   { "name": "メタッピー", "fileName": "id019.png" },
-  { "name": "ガチャコッコ", "fileName": "id020.png" },
+  { "name": "ガチャコッコ", "fileName": "id020.png", "isWall": true },
   { "name": "キラーマシン", "fileName": "id021.png" },
   { "name": "グレムリン", "fileName": "id022.png" },
   { "name": "ミニデーモン", "fileName": "id023.png" },

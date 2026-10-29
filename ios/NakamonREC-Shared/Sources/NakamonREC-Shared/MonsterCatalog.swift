@@ -6,8 +6,9 @@ public struct MonsterEntry: Codable, Hashable, Identifiable, Sendable {
     public let name: String
     /// テンプレ画像のファイル名 (例: "id001.png")
     public let fileName: String
-    /// 壁役モンスターか否か。パーティ構成ランキングでの表示順 (壁を左側) に使用。
-    /// monsters.json で省略可能 (省略時 false 扱い)。
+    /// 壁役モンスターか否か。パーティ構成ランキングでの表示順 (壁を左側) にだけ使用。
+    /// 厳密な「壁役」ではなく「通常パーティの左端に置くのがセオリーのモンスター」も含む
+    /// (例: ガチャコッコ、2026-10-30)。monsters.json で省略可能 (省略時 false 扱い)。
     public let isWall: Bool?
 
     /// テンプレ ID (例: "id001")。fileName から .png を取り除いたもの

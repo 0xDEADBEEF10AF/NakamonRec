@@ -8,6 +8,8 @@ import org.opencv.core.Mat
 data class MonsterData(
     val name: String,
     val fileName: String,
+    // 組み合わせ集計の表示順 (左端に並べる) にだけ使う。厳密な「壁役」ではなく
+    // 「通常パーティの左端に置くのがセオリーのモンスター」も含む (例: ガチャコッコ、2026-10-30)
     val isWall: Boolean = false,
     var templateMat: Mat? = null
 )
