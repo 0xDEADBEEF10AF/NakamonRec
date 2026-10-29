@@ -24,6 +24,18 @@ enum DiagnosticsExporter {
         set { UserDefaults(suiteName: appGroupID)?.set(newValue, forKey: saveBurstFrameKey) }
     }
 
+    /// SCK 経路でフレームを端末ネイティブ解像度のまま取り込むデバッグフラグ。
+    /// 既定 (false) は ReplayKit と同じ「長辺 1920 px」へ縮小して受け取る。
+    /// 1126 px のネイティブでは 13 mini でモンスター解析が 24〜28 秒 (886 px なら 6.8 秒) かかり、
+    /// 戦闘終了通知が解析完了まで出ない・バースト取得も 0.7〜1.4 秒かかるため (2026-10-30 実測)。
+    /// 両経路のフレーム幅を揃えて判定条件を同一にする狙いもある。比較実験用に残すトグル
+    static let sckNativeResolutionKey = "debugSCKNativeResolution"
+
+    static var sckNativeResolutionEnabled: Bool {
+        get { UserDefaults(suiteName: appGroupID)?.bool(forKey: sckNativeResolutionKey) ?? false }
+        set { UserDefaults(suiteName: appGroupID)?.set(newValue, forKey: sckNativeResolutionKey) }
+    }
+
     /// App Group 直下の全ファイル/ディレクトリ (Library を除く) を Documents/diag/ へコピーする。
     /// 戻り値は結果メッセージ (コピー件数 or エラー)
     static func exportToDocuments() -> String {

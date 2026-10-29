@@ -108,6 +108,19 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     // 直近のパーティ選択 3 box ぶんスコア (BattleRecord 用)
     private var lastPartySelectScores: [Double] = []
 
+    // P? 診断: 0.7 未満のまま VS に至ったとき「探索中に最高スコアだったフレーム」の 3 窓画像を証拠として残す。
+    // スコアそのものは上書きしない (遷移フレームのノイズで実測値を汚さない、という従来方針は維持)。
+    // 候補画像は p{i}_cand.png に随時保存し、VS 検知時に未検知なら p{i}.png へ昇格、検知済みなら破棄する
+    private struct PartyScanCandidate {
+        var score: Double
+        var index: Int
+        var scores: [Double]
+        var at: Date
+    }
+    private var partyScanCandidate: PartyScanCandidate?
+    private var partyScanCount = 0
+    private static let partyCandidateFloor = 0.2
+
     // 現在進行中の戦闘の集計中データ。WIN/LOSE 確定 + モンスター解析完了で finalize → JSON 保存
     private struct PendingBattle {
         var startedAt: Date
@@ -436,10 +449,20 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                 bestIndex = i
             }
         }
+        partyScanCount += 1
+
         // 確信検知時のみキャプチャ。遷移フレーム (全 box が低スコア) の値で
         // 上書きしないことで、後続の VS 検知時に正しいパーティ識別スコアが残る。
         if bestScore >= 0.7 {
             lastPartySelectScores = allScores
+        } else if lastDetectedPartyIndex < 0,
+                  bestScore >= Self.partyCandidateFloor,
+                  bestScore > (partyScanCandidate?.score ?? 0) {
+            // P? 診断: まだ未検知で、これまでの最高を更新したフレームだけ候補画像を保存 (スコアは記録しない)
+            partyScanCandidate = PartyScanCandidate(score: bestScore, index: bestIndex,
+                                                    scores: allScores, at: Date())
+            saveMatchingScorePartySnapshots(scene: scene, select: select, rois: rois,
+                                            scores: nil, fileSuffix: "_cand")
         }
 
         if bestScore >= 0.7 && bestIndex != lastDetectedPartyIndex {
@@ -454,11 +477,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         }
     }
 
-    /// パーティ選択 3 box ぶんの ROI を p0/p1/p2.png として書き出し、metadata の partyScores を更新する
+    /// パーティ選択 3 box ぶんの ROI を p0/p1/p2.png として書き出し、metadata の partyScores を更新する。
+    /// - fileSuffix: "_cand" を渡すと p0_cand.png 等に書く (P? 診断の候補画像)。scores が nil なら metadata は触らない
     private func saveMatchingScorePartySnapshots(scene: UIImage,
                                                  select: UIImage,
                                                  rois: [CalibrationROI],
-                                                 scores: [Double]) {
+                                                 scores: [Double]?,
+                                                 fileSuffix: String = "") {
         let w = scene.size.width
         let h = scene.size.height
         // 切り出し範囲は scanForPartySelect の非対称探索窓と同期:
@@ -469,7 +494,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                                  : roi.searchVMarginRatio + CalibrationDefaults.partyScrollAllowanceVRatio
             let downRatio = is16x9 ? CalibrationDefaults.partyDownMarginVRatio16x9
                                    : roi.searchVMarginRatio
-            let path = MatchingScoreSnapshot.path(forFile: "p\(i).png")
+            let path = MatchingScoreSnapshot.path(forFile: "p\(i)\(fileSuffix).png")
             let cx = Int32(w * roi.centerXRatio)
             let cy = Int32(h * (roi.centerYRatio - (upRatio - downRatio) / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
@@ -482,8 +507,38 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                                                    horizontalMargin: hMargin,
                                                    savePath: path)
         }
-        MatchingScoreSnapshot.updateMetadata { meta in
-            meta.partyScores = scores
+        if let scores {
+            MatchingScoreSnapshot.updateMetadata { meta in
+                meta.partyScores = scores
+            }
+        }
+    }
+
+    /// P? 診断の後始末 (VS 検知時に呼ぶ)。未検知なら候補画像 p{i}_cand.png を p{i}.png へ昇格して 1 行ログ、
+    /// 検知済みなら候補を捨てる。どちらの場合も次戦に向けて候補と走査回数をリセットする
+    private func resolvePartyScanCandidate(detected: Bool) {
+        defer {
+            partyScanCandidate = nil
+            partyScanCount = 0
+        }
+        let fm = FileManager.default
+        for i in 0..<3 {
+            guard let cand = MatchingScoreSnapshot.url(forFile: "p\(i)_cand.png") else { continue }
+            if !detected, partyScanCandidate != nil, fm.fileExists(atPath: cand.path),
+               let dest = MatchingScoreSnapshot.url(forFile: "p\(i).png") {
+                try? fm.removeItem(at: dest)
+                try? fm.moveItem(at: cand, to: dest)
+            } else {
+                try? fm.removeItem(at: cand)
+            }
+        }
+        guard !detected else { return }
+        if let c = partyScanCandidate {
+            let hhmmss = BattleTimestampFormatter.formatter.string(from: c.at).suffix(8)
+            BattleLogger.append(String(format: "パーティ未検知 (探索中の最高 P%d %.3f @%@, 走査 %d 回, 切り出しを保存)",
+                                       c.index + 1, c.score, String(hhmmss), partyScanCount))
+        } else {
+            BattleLogger.append("パーティ未検知 (探索中に \(String(format: "%.1f", Self.partyCandidateFloor)) 以上のフレームなし, 走査 \(partyScanCount) 回)")
         }
     }
 
@@ -520,6 +575,8 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             if lastDetectedPartyIndex >= 0 {
                 BattleLogger.append(String(format: "パーティ P[%d] で戦闘開始", lastDetectedPartyIndex + 1))
             }
+            // P? 診断: 未検知なら候補画像を p0〜p2 に昇格して理由を 1 行残す (clearBattleArtifacts より前に行う)
+            resolvePartyScanCandidate(detected: lastDetectedPartyIndex >= 0)
             BattleLogger.append(String(format: "VS検知 Score %.3f → バースト開始", score))
             isBattleInProgress = true
             events?.engineDidStartBattle(partyIndex: lastDetectedPartyIndex)
@@ -562,8 +619,10 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                 meta.resultScore = nil
             }
 
-            // 次の戦闘でも検知ログが出るようリセット
+            // 次の戦闘でも検知ログが出るようリセット。スコア配列も空に戻す
+            // (戻さないと、2 戦目以降で P? になったレコードに前戦のスコアがそのまま載る)
             lastDetectedPartyIndex = -1
+            lastPartySelectScores = []
         } else if score > 0.1 {
             logger.log("🔎 Scanning... VS Score: \(score, format: .fixed(precision: 3))")
         }

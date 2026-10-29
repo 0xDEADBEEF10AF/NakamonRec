@@ -33,6 +33,10 @@ nonisolated private let recorderLogger = Logger(subsystem: "com.android.NakamonR
 final class ScreenCaptureKitRecorder: NSObject {
     static let shared = ScreenCaptureKitRecorder()
 
+    /// 取り込みフレームの長辺上限 (px)。ReplayKit の replayd が放送フレームを縮小する上限と同じ値
+    /// (13 mini: 1125x2436 → 886x1920、iPhone 17: 1206x2622 → 884x1920)
+    nonisolated static let maxLongEdgePx: CGFloat = 1920
+
     /// SCStream が動いている (= この経路で REC 中)。Extension 経路の放送中は false のまま
     private(set) var isRunning = false
     /// ピッカー表示中〜startCapture 完了まで true。二重タップ防止
@@ -102,9 +106,20 @@ final class ScreenCaptureKitRecorder: NSObject {
 
     private func startStream(with filter: SCContentFilter) {
         let scale = CGFloat(filter.pointPixelScale)
+        let nativeW = filter.contentRect.width * scale
+        let nativeH = filter.contentRect.height * scale
+        // 既定は ReplayKit (replayd) と同じ「長辺 1920 px」に縮小して受け取る。
+        // ネイティブ (13 mini で 1126 px) のままだとモンスター解析が 24〜28 秒かかり (886 px なら 6.8 秒)、
+        // 戦闘終了通知が解析完了まで待たされる。Extension 経路とフレーム幅を揃えることで
+        // 閾値・テンプレ倍率・探索窓の挙動も両経路で同一になる。比較実験用にデバッグトグルでネイティブへ戻せる
+        let native = DiagnosticsExporter.sckNativeResolutionEnabled
+        let longEdge = max(nativeW, nativeH)
+        let shrink: CGFloat = (!native && longEdge > Self.maxLongEdgePx) ? Self.maxLongEdgePx / longEdge : 1
+        // 幅・高さは偶数に丸める (420f の色差サブサンプリング要件。SCK 側も奇数幅は偶数へ丸めてくる)
+        func even(_ v: CGFloat) -> Int { Int((v / 2).rounded()) * 2 }
         let config = SCStreamConfiguration()
-        config.width = Int((filter.contentRect.width * scale).rounded())
-        config.height = Int((filter.contentRect.height * scale).rounded())
+        config.width = even(nativeW * shrink)
+        config.height = even(nativeH * shrink)
         config.capturesAudio = false
 
         let output = EngineStreamOutput()
@@ -140,7 +155,9 @@ final class ScreenCaptureKitRecorder: NSObject {
             // Extension の broadcastStarted 相当 (ログ rotate・active=true・ハートビート・テンプレ読込)
             output.engine.start()
             notifier.start()
-            BattleLogger.append(String(format: "SCK ストリーム開始 要求=%dx%d px (scale %.2f)", widthPx, heightPx, Double(scale)))
+            BattleLogger.append(String(format: "SCK ストリーム開始 要求=%dx%d px (scale %.2f, %@)",
+                                       widthPx, heightPx, Double(scale),
+                                       shrink < 1 ? "長辺 \(Int(Self.maxLongEdgePx)) に縮小" : "ネイティブ解像度"))
             newStream.startCapture { [weak self] error in
                 Task { @MainActor [weak self] in
                     guard let self else { return }

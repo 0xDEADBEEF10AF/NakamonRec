@@ -508,6 +508,7 @@ private struct DebugMenuView: View {
     @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
     @State private var updateCheckMessage: String? = nil
     @State private var saveBurstFrame: Bool = DiagnosticsExporter.saveBurstFrameEnabled
+    @State private var sckNativeResolution: Bool = DiagnosticsExporter.sckNativeResolutionEnabled
     @State private var diagMessage: String? = nil
 
     var body: some View {
@@ -568,6 +569,19 @@ private struct DebugMenuView: View {
                     }
                     .onChange(of: saveBurstFrame) { _, newValue in
                         DiagnosticsExporter.saveBurstFrameEnabled = newValue
+                    }
+                    if #available(iOS 27.0, *) {
+                        Toggle(isOn: $sckNativeResolution) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Label("SCK をネイティブ解像度で取り込む", systemImage: "arrow.up.left.and.arrow.down.right")
+                                Text("OFF = ReplayKit と同じ長辺 1920 px に縮小 (既定)。次回の REC 開始から反映")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onChange(of: sckNativeResolution) { _, newValue in
+                            DiagnosticsExporter.sckNativeResolutionEnabled = newValue
+                        }
                     }
                     Button {
                         diagMessage = DiagnosticsExporter.exportToDocuments()
