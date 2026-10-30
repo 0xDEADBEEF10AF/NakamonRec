@@ -101,7 +101,7 @@
                 <ImageView
                     android:layout_width="28dp"
                     android:layout_height="28dp"
-                    android:src="@android:drawable/ic_menu_manage"
+                    android:src="@drawable/ic_settings_gear"
                     app:tint="#AAAAAA"
                     android:contentDescription="@string/btn_calibrate" />
             </LinearLayout>
