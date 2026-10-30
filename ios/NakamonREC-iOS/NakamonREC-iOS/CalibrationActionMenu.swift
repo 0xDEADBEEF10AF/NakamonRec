@@ -14,6 +14,8 @@ struct CalibrationActionMenu: View {
     @State private var errorMessage: String? = nil
     @State private var showPartyImportNotice = false
     @State private var showPartyPicker = false
+    /// 注意シートで「画像を選ぶ」が押された (シートが閉じ終わってからピッカーを開く)
+    @State private var proceedToPartyPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,17 +81,20 @@ struct CalibrationActionMenu: View {
             CalibrationView(screen: screen)
         }
         .photosPicker(isPresented: $showPartyPicker, selection: $pickerItem, matching: .images)
-        .alert("インポート前の確認", isPresented: $showPartyImportNotice) {
-            Button("画像を選ぶ") { showPartyPicker = true }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            if Self.is16x9Device {
-                // 16:9 (iPhone SE 系) は P3 が未スクロールで画面外のため、校正には
-                // 未スクロール + P1/P2 フォーカスの画像が必要 (P3 は自動外挿される)
-                Text("パーティ1か2を選択した状態 (フォーカスの水色枠が付いた状態) で、一覧をスクロールせずに撮ったスクリーンショットを使ってください。\nこの端末ではパーティ3の位置は自動で補完されます。")
-            } else {
-                Text("パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
+        // 注意ダイアログは alert ではなく見本画像付きのシート (alert には画像を置けない)。
+        // 文字の注意書きは読まれず「フォーカスなしスクショで校正 → パーティが識別されない」問い合わせが
+        // 繰り返されるため、正しいスクショの見本を小さく見せて印象づける (ビーフ 2026-10-30)
+        .sheet(isPresented: $showPartyImportNotice, onDismiss: {
+            if proceedToPartyPicker {
+                proceedToPartyPicker = false
+                showPartyPicker = true
             }
+        }) {
+            PartyImportNoticeSheet(is16x9: Self.is16x9Device) {
+                proceedToPartyPicker = true
+                showPartyImportNotice = false
+            }
+            .presentationDetents([.large])
         }
         .alert("エラー", isPresented: Binding(
             get: { errorMessage != nil },
@@ -127,5 +132,72 @@ struct CalibrationActionMenu: View {
         .contentShape(Rectangle())
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+}
+
+
+// MARK: - パーティ選択スクショのインポート前の注意 (見本画像付き)
+
+/// 正しいスクショ (パーティを選択してフォーカスの水色枠が付いた状態・未スクロール) の見本を見せる。
+/// 見本画像 `party_import_sample` は Assets に置く (相手・味方の名前はマスク済みのものを使うこと)
+private struct PartyImportNoticeSheet: View {
+    let is16x9: Bool
+    let onPick: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Image("party_import_sample")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 420)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.recCoral, lineWidth: 2)
+                            )
+                            .padding(.top, 8)
+
+                        Text("見本: パーティを選択して水色の枠が付いた状態")
+                            .font(.caption)
+                            .foregroundStyle(Color.recCoral)
+
+                        Text(is16x9
+                             ? "パーティ1か2を選択した状態 (フォーカスの水色枠が付いた状態) で、一覧をスクロールせずに撮ったスクリーンショットを使ってください。\nこの端末ではパーティ3の位置は自動で補完されます。"
+                             : "パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Button {
+                            onPick()
+                        } label: {
+                            Text("画像を選ぶ")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.recCoral)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+            }
+            .navigationTitle("インポート前の確認")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("キャンセル") { dismiss() }
+                }
+            }
+        }
     }
 }
