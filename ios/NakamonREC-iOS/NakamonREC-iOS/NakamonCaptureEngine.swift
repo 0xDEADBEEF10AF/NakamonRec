@@ -55,6 +55,11 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     private var isAnalyzing = false
     private let burstCount = 5
     private var currentBurstImages: [UIImage] = []
+    /// バーストの 2 枚目以降は直前の採用フレームから 150 ms 以上空ける (Android の 150 ms 固定と同じ、5 枚で約 0.6 秒幅)。
+    /// 届いた順に詰めると SCK では 5 枚が 0.13〜0.3 秒に収まり、VS 早検知 (ロゴの出始め) のときに
+    /// 5 枚ともカード出現前になって解析が長引いた (2026-10-31 03:29、67 秒)
+    private let burstMinInterval: TimeInterval = 0.15
+    private var lastBurstFrameTime: TimeInterval = 0
     private let analysisQueue = DispatchQueue(label: "com.android.NakamonREC-iOS.analysis", qos: .userInitiated)
 
     // 戦闘状態
@@ -349,8 +354,11 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         // バースト撮影中: モンスター解析のために画像蓄積
         if isAnalyzing {
             if currentBurstImages.count < burstCount {
+                // 直前の採用フレームから 150 ms 未満のフレームは読み飛ばす (時間方向の多様性を確保)
+                guard currentTime - lastBurstFrameTime >= burstMinInterval else { return }
                 if let uiImage = sampleBufferToUIImage(sampleBuffer) {
                     currentBurstImages.append(uiImage)
+                    lastBurstFrameTime = currentTime
                 }
                 if currentBurstImages.count == burstCount {
                     // 5枚揃った時点で解析を非同期へ逃がし、即座に WIN/LOSE 監視へ復帰
@@ -626,6 +634,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             isAnalyzing = true
             currentBurstImages.removeAll()
             currentBurstImages.append(scene)
+            lastBurstFrameTime = lastProcessTime   // 検知フレームの時刻 (この後 150 ms 空けて 2 枚目を採る)
 
             let startedAt = Date()
 
@@ -728,12 +737,16 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                     let rw = Int32(w * (roi.widthRatio + 2 * roi.searchHMarginRatio))
                     let rh = Int32(h * (roi.heightRatio + 2 * roi.searchVMarginRatio))
 
-                    let bestScore: Double
-                    let bestIndex: Int
-                    if isFirstFrame {
-                        // Frame 1: 1/2 縮小テンプレで全モンスターを粗選抜 (Top-K) → 原寸は Top-K だけ照合。
-                        // 低速コア対策 (2026-10-31): 原寸の全走査 (133 体 × 8 スロット) が背景アプリでは 14 秒かかった。
-                        // 縮小側は面積 1/4 × テンプレ 1/4 で約 1/16 のコスト。正解が Top-K (10) に入れば原寸で確定する
+                    // 低速コア対策 (2026-10-31): 原寸の全テンプレ走査は背景アプリで 1 スロット列 14 秒かかるため廃止。
+                    //  - Top-K 未確定 (slotFallback=true): 1/2 縮小テンプレで全モンスターから Top-K を粗選抜 → 原寸は Top-K だけ照合。
+                    //    原寸で 0.7 以上が出たらその Top-K を固定し、以降のフレームは Top-K 照合のみ。
+                    //    出なければ (VS 早検知でカードがまだ映っていない等) 次のフレームでも粗選抜からやり直す。
+                    //  - Top-K 確定済み: 固定した Top-K を原寸で照合
+                    // 旧方式 (Frame1 で原寸全走査、0.7 未満なら以降も原寸全走査) は VS 早検知時に 67 秒かかった (2026-10-31 03:29)
+                    var bestScore: Double = 0
+                    var bestIndex: Int = -1
+                    if isFirstFrame { slotFallback[slotIdx] = true }
+                    if slotFallback[slotIdx] {
                         let coarse = NakamonWrapper.topKMonstersCoarseInPreparedScene(centerX: cx,
                                                                                        centerY: cy,
                                                                                        width: rw,
@@ -746,40 +759,17 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                                                                                  width: rw,
                                                                                  height: rh,
                                                                                  templateIndices: indices)
-                            if fine.score >= fallbackThreshold {
-                                bestScore = fine.score
-                                bestIndex = fine.index
+                            bestScore = fine.score
+                            bestIndex = fine.index
+                            if isFirstFrame || fine.score >= fallbackThreshold {
                                 slotTopKIndices[slotIdx] = indices
                                 slotTopKDiag[slotIdx] = coarse.map { (index: $0.index, score: $0.score) }
-                                slotFallback[slotIdx] = false
-                            } else {
-                                // 粗選抜の Top-K に 0.7 以上が無い → 従来どおり原寸で全走査し、以降のフレームも全走査
-                                let full = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
-                                                                                     centerY: cy,
-                                                                                     width: rw,
-                                                                                     height: rh)
-                                bestScore = max(full.score, fine.score)
-                                bestIndex = full.score >= fine.score ? full.index : fine.index
-                                slotTopKIndices[slotIdx] = indices
-                                slotTopKDiag[slotIdx] = coarse.map { (index: $0.index, score: $0.score) }
-                                slotFallback[slotIdx] = true
                             }
-                        } else {
-                            bestScore = 0
-                            bestIndex = -1
-                            slotFallback[slotIdx] = true
+                            if fine.score >= fallbackThreshold {
+                                slotFallback[slotIdx] = false   // Top-K 確定
+                            }
                         }
-                        frame1Max.append(bestScore)
-                    } else if slotFallback[slotIdx] {
-                        // フォールバック: Frame 1 で max < 0.5 のスロットは全テンプレ走査を継続
-                        let r = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
-                                                                           centerY: cy,
-                                                                           width: rw,
-                                                                           height: rh)
-                        bestScore = r.score
-                        bestIndex = r.index
                     } else {
-                        // Top-K サブセットのみ評価
                         let r = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
                                                                            centerY: cy,
                                                                            width: rw,
@@ -788,6 +778,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                         bestScore = r.score
                         bestIndex = r.index
                     }
+                    if isFirstFrame { frame1Max.append(bestScore) }
 
                     if bestScore > perSlot[slotIdx].score {
                         perSlot[slotIdx].score = bestScore
@@ -816,7 +807,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         let cpuElapsed = Self.threadCPUTime() - cpuStart
         logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s (cpu \(cpuElapsed, format: .fixed(precision: 2))s)")
         BattleLogger.append(String(format: "モンスター解析完了 (%.2fs, CPU %.2fs, %@)", elapsed, cpuElapsed, Self.environmentSummary()))
-        // 内訳: Frame1 の各スロット最大 / フォールバック数 / フレームごとの所要 / 変換と保存の合計
+        // 内訳: Frame1 の各スロット最大 / 最後まで Top-K を確定できなかったスロット数 / フレームごとの所要 / 変換と保存の合計
         let f1 = frame1Max.map { String(format: "%.2f", $0) }.joined(separator: " ")
         let ft = frameTimes.map { String(format: "%.1f", $0) }.joined(separator: "/")
         // 照合窓とテンプレの実寸 (px)。校正データの余白が変わっていれば窓が変わり、照合 1 回のコストが面積ぶん変わる
