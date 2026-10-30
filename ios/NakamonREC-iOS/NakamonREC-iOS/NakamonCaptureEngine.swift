@@ -52,9 +52,26 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     private let processInterval: TimeInterval = 0.5
 
     // バースト解析用
-    private var isAnalyzing = false
     private let burstCount = 5
     private var currentBurstImages: [UIImage] = []
+    /// バースト収集の打ち切り。静止画面で供給元がフレームを止めると 5 枚揃わないため、この秒数で手持ちぶんで解析に進む
+    private let burstTimeout: TimeInterval = 2.0
+
+    // フレーム受け取りの逆圧制御 (2026-10-31)
+    //
+    // 供給元 (SCK の sampleHandlerQueue / ReplayKit のスレッド) からの呼び出しは即座に返す。受け入れ判定だけを
+    // ロック下で行い、受け入れたフレームは UIImage へ変換 (自前メモリへコピー) して専用キュー frameQueue に渡す。
+    // CMSampleBuffer (replayd の IOSurface) は呼び出しが返った時点で解放される。
+    // 背景: 処理待ちフレームが溜まって IOSurface を抱え込み (purgeable 508MB 相当)、供給元の replayd が highwater で
+    // 殺されて SCK が「接続が中断」で止まっていた (JetsamEvent 2026-10-30 23:01 / 10-31 04:30)。
+    private let frameQueue = DispatchQueue(label: "com.android.NakamonREC-iOS.frames", qos: .userInitiated)
+    private let gateLock = NSLock()
+    private enum FrameRole { case scan, burst }
+    private var gateScanBusy = false
+    private var gateBurstCollecting = false
+    private var gateBurstAccepted = 0
+    /// メモリ圧迫の通知 (warning / critical)。ログに残し、照合用キャッシュを捨てる
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
     /// バーストの 2 枚目以降は直前の採用フレームから 150 ms 以上空ける (Android の 150 ms 固定と同じ、5 枚で約 0.6 秒幅)。
     /// 届いた順に詰めると SCK では 5 枚が 0.13〜0.3 秒に収まり、VS 早検知 (ロゴの出始め) のときに
     /// 5 枚ともカード出現前になって解析が長引いた (2026-10-31 03:29、67 秒)
@@ -193,11 +210,41 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         logger.log("NakamonREC Engine: Starting...")
         BattleLogger.rotate()
         BattleLogger.append(source == .broadcastExtension ? "Extension起動" : "ホスト内キャプチャ起動 (ScreenCaptureKit)")
-        BattleLogger.append("環境: \(Self.environmentSummary())")
+        BattleLogger.append("環境: \(Self.environmentSummary()) \(Self.memorySummary())")
         BroadcastStatus.setActive(true)
         startHeartbeat()
+        startMemoryPressureMonitor()
         loadTemplates()
         isStarted = true
+    }
+
+    // MARK: - メモリ診断 (2026-10-31)
+
+    /// 「メモリ 使用=188MB 利用可能=1200MB」の形。phys_footprint は Jetsam の判定に使われる値
+    private static func memorySummary() -> String {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        let used = kr == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : -1
+        let avail = Int(os_proc_available_memory() / 1_048_576)
+        return "メモリ 使用=\(used)MB 利用可能=\(avail)MB"
+    }
+
+    private func startMemoryPressureMonitor() {
+        let src = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: frameQueue)
+        src.setEventHandler { [weak self] in
+            guard self != nil else { return }
+            let level = src.data.contains(.critical) ? "critical" : "warning"
+            BattleLogger.append("⚠ メモリ圧迫 (\(level)) \(Self.memorySummary())")
+            // 照合用のフレーム Mat を捨てる (次のフレームで作り直される)。バーストや解析中のフレームは結果に必要なので残す
+            NakamonWrapper.clearScanSceneMat()
+        }
+        src.resume()
+        memoryPressureSource = src
     }
 
     /// 生存通知タイマー (2秒間隔)。broadcastFinished を呼べずに Extension が死んだ場合、
@@ -207,7 +254,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     private func startHeartbeat() {
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "nakamon.heartbeat"))
         timer.schedule(deadline: .now(), repeating: 2.0)
-        timer.setEventHandler { BroadcastStatus.beat() }
+        var beats = 0
+        timer.setEventHandler {
+            BroadcastStatus.beat()
+            beats += 1
+            // 60 秒ごとにメモリ使用量を残す (戦闘を重ねて増え続ける = 解放漏れ、の切り分け用)
+            if beats % 30 == 0 { BattleLogger.append(Self.memorySummary()) }
+        }
         timer.resume()
         heartbeatTimer = timer
     }
@@ -341,48 +394,93 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         BattleLogger.append("モンスターテンプレ cv::Mat キャッシュ完了")
     }
 
-    /// 映像フレームを 1 枚渡す。配信スレッド (Extension) または SCStream のサンプルキュー (SCK) から呼ばれる。
-    /// 間引き (0.5 秒間隔) はこの先の handleVideoSample が行う。
-    func process(_ sampleBuffer: CMSampleBuffer) {
-        guard isStarted else { return }
-        handleVideoSample(sampleBuffer)
+    // MARK: - フレーム受け取り
+
+    /// 受け入れ判定 (供給元スレッドで呼ばれる。ロック下、重い処理はしない)
+    private func admit(at now: TimeInterval) -> FrameRole? {
+        gateLock.lock(); defer { gateLock.unlock() }
+        if gateBurstCollecting {
+            // バースト中: 直前の採用フレームから 150 ms 以上空いたものだけ採る (Android の 150 ms 固定と同じ)
+            guard gateBurstAccepted < burstCount, now - lastBurstFrameTime >= burstMinInterval else { return nil }
+            gateBurstAccepted += 1
+            lastBurstFrameTime = now
+            return .burst
+        }
+        // 通常走査: 0.5 秒間隔 かつ 前のフレームの処理が終わっていること (終わっていなければ捨てる = 溜め込まない)
+        guard !gateScanBusy, now - lastProcessTime >= processInterval else { return nil }
+        gateScanBusy = true
+        lastProcessTime = now
+        return .scan
     }
 
-    private func handleVideoSample(_ sampleBuffer: CMSampleBuffer) {
-        let currentTime = CACurrentMediaTime()
+    private func setScanBusy(_ busy: Bool) {
+        gateLock.lock(); gateScanBusy = busy; gateLock.unlock()
+    }
 
-        // バースト撮影中: モンスター解析のために画像蓄積
-        if isAnalyzing {
-            if currentBurstImages.count < burstCount {
-                // 直前の採用フレームから 150 ms 未満のフレームは読み飛ばす (時間方向の多様性を確保)
-                guard currentTime - lastBurstFrameTime >= burstMinInterval else { return }
-                if let uiImage = sampleBufferToUIImage(sampleBuffer) {
-                    currentBurstImages.append(uiImage)
-                    lastBurstFrameTime = currentTime
-                }
-                if currentBurstImages.count == burstCount {
-                    // 5枚揃った時点で解析を非同期へ逃がし、即座に WIN/LOSE 監視へ復帰
-                    let snapshot = currentBurstImages
-                    currentBurstImages.removeAll()
-                    isAnalyzing = false
-                    // 診断: バースト 5 枚が何 ms に収まったか (供給元のフレームレート差の切り分け用。
-                    // SCK は約 40 fps で連続配信するため ReplayKit より短い窓になる)
-                    let spanMs = Int((currentTime - lastProcessTime) * 1000)
-                    BattleLogger.append("バースト \(burstCount) 枚取得 (VS 検知から \(spanMs) ms, 供給元=\(source == .screenCaptureKit ? "SCK" : "RK"))")
-                    analysisQueue.async { [weak self] in
-                        self?.performDeepAnalysis(frames: snapshot)
-                    }
-                }
+    /// VS 検知フレームをバーストの 1 枚目として収集を開始する (frameQueue 上で呼ぶ)
+    private func beginBurst(with scene: UIImage, at time: TimeInterval) {
+        gateLock.lock()
+        gateBurstCollecting = true
+        gateBurstAccepted = 1
+        lastBurstFrameTime = time
+        gateLock.unlock()
+        currentBurstImages.removeAll()
+        currentBurstImages.append(scene)
+        // 供給元がフレームを止めた場合の打ち切り (静止画面では SCK/RK ともフレームが来ないことがある)
+        frameQueue.asyncAfter(deadline: .now() + burstTimeout) { [weak self] in
+            guard let self else { return }
+            self.gateLock.lock()
+            let stillCollecting = self.gateBurstCollecting
+            self.gateLock.unlock()
+            if stillCollecting && !self.currentBurstImages.isEmpty {
+                BattleLogger.append("バースト打ち切り: \(self.burstTimeout) 秒で \(self.currentBurstImages.count) 枚のみ → 解析へ")
+                self.dispatchBurstAnalysis(at: CACurrentMediaTime())
             }
+        }
+    }
+
+    /// 集めたバーストフレームを解析キューへ渡し、収集状態を解除する (frameQueue 上)
+    private func dispatchBurstAnalysis(at now: TimeInterval) {
+        gateLock.lock()
+        gateBurstCollecting = false
+        gateLock.unlock()
+        let burst = BurstFrames(currentBurstImages)
+        currentBurstImages.removeAll()
+        // 診断: バースト 5 枚が何 ms に収まったか (供給元のフレームレート差の切り分け用)
+        let spanMs = Int((now - lastProcessTime) * 1000)
+        BattleLogger.append("バースト \(burst.frames.count) 枚取得 (VS 検知から \(spanMs) ms, 供給元=\(source == .screenCaptureKit ? "SCK" : "RK"))")
+        analysisQueue.async { [weak self] in
+            self?.performDeepAnalysis(burst: burst)
+        }
+    }
+
+    /// 映像フレームを 1 枚渡す。配信スレッド (Extension) または SCStream のサンプルキュー (SCK) から呼ばれる。
+    /// ここでは受け入れ判定と UIImage 変換だけを行い、即座に返す (CMSampleBuffer を手放す)。
+    func process(_ sampleBuffer: CMSampleBuffer) {
+        guard isStarted else { return }
+        let now = CACurrentMediaTime()
+        guard let role = admit(at: now) else { return }
+        guard let image = sampleBufferToUIImage(sampleBuffer) else {
+            if role == .scan { setScanBusy(false) }
             return
         }
+        frameQueue.async { [weak self] in
+            guard let self, self.isStarted else { return }
+            switch role {
+            case .burst:
+                self.currentBurstImages.append(image)
+                if self.currentBurstImages.count >= self.burstCount {
+                    self.dispatchBurstAnalysis(at: now)
+                }
+            case .scan:
+                self.handleScanFrame(image)
+                self.setScanBusy(false)
+            }
+        }
+    }
 
-        // インターバル制限
-        guard currentTime - lastProcessTime >= processInterval else { return }
-        lastProcessTime = currentTime
-
-        guard let uiImage = sampleBufferToUIImage(sampleBuffer) else { return }
-
+    /// 0.5 秒間隔で採用したフレームの走査本体 (frameQueue 上)
+    private func handleScanFrame(_ uiImage: UIImage) {
         // 初回のみ、フレーム幅に合わせて全テンプレートをリサイズ
         if !didCalibrate {
             didCalibrate = true
@@ -631,10 +729,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             BattleLogger.append(String(format: "VS検知 Score %.3f → バースト開始", score))
             isBattleInProgress = true
             events?.engineDidStartBattle(partyIndex: lastDetectedPartyIndex)
-            isAnalyzing = true
-            currentBurstImages.removeAll()
-            currentBurstImages.append(scene)
-            lastBurstFrameTime = lastProcessTime   // 検知フレームの時刻 (この後 150 ms 空けて 2 枚目を採る)
+            beginBurst(with: scene, at: lastProcessTime)   // 検知フレームの時刻 (この後 150 ms 空けて 2 枚目を採る)
 
             let startedAt = Date()
 
@@ -693,11 +788,19 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     ///     (識別閾値 0.7 未満は "?" 扱いになるため、ここを fallback 閾値に合わせる。
     ///      0.5〜0.7 のグレーゾーンでは「磁石テンプレ」が Top-K を埋め、正解テンプレが
     ///      ランク外に押し出されるケースが実機で確認されたため。)
-    private func performDeepAnalysis(frames inputFrames: [UIImage]) {
+    /// バーストフレームの入れ物。解析しながら 1 枚ずつ取り出して解放する (5 枚 ≒ 34MB を最後まで抱えない)
+    final class BurstFrames: @unchecked Sendable {
+        var frames: [UIImage]
+        init(_ frames: [UIImage]) { self.frames = frames }
+    }
+
+    private func performDeepAnalysis(burst: BurstFrames) {
         let startedAt = Date()
         let cpuStart = Self.threadCPUTime()
-        logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots, Top-K)...")
-        BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット, Top-K 最適化)")
+        let inputCount = burst.frames.count
+        let frameSize = burst.frames.first?.size ?? .zero
+        logger.log("👾 Performing Deep Analysis on \(inputCount) frames (8 slots, Top-K)...")
+        BattleLogger.append("モンスター解析開始 (\(inputCount)枚 × 8スロット, Top-K 最適化) \(Self.memorySummary())")
 
         // スロットごとの最良結果 (5 フレーム横断で最高スコアを残す)
         struct SlotBest { var score: Double = 0; var index: Int = -1 }
@@ -718,12 +821,11 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         var snapshotCount = 0
         var frame1Max: [Double] = []           // Frame 1 の各スロット最大スコア
 
-        var frames = inputFrames
         var isFirstFrame = true
-        while !frames.isEmpty {
+        while !burst.frames.isEmpty {
             autoreleasepool {
                 let frameStart = CACurrentMediaTime()
-                let frame = frames.removeFirst()
+                let frame = burst.frames.removeFirst()   // 取り出した時点で入れ物側の参照が消え、処理後に解放される
                 let w = frame.size.width
                 let h = frame.size.height
                 // Phase 2.1: UIImage → cv::Mat 変換を 1 フレーム = 1 回に集約
@@ -806,13 +908,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         let elapsed = Date().timeIntervalSince(startedAt)
         let cpuElapsed = Self.threadCPUTime() - cpuStart
         logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s (cpu \(cpuElapsed, format: .fixed(precision: 2))s)")
-        BattleLogger.append(String(format: "モンスター解析完了 (%.2fs, CPU %.2fs, %@)", elapsed, cpuElapsed, Self.environmentSummary()))
+        BattleLogger.append(String(format: "モンスター解析完了 (%.2fs, CPU %.2fs, %@, %@)", elapsed, cpuElapsed, Self.environmentSummary(), Self.memorySummary()))
         // 内訳: Frame1 の各スロット最大 / 最後まで Top-K を確定できなかったスロット数 / フレームごとの所要 / 変換と保存の合計
         let f1 = frame1Max.map { String(format: "%.2f", $0) }.joined(separator: " ")
         let ft = frameTimes.map { String(format: "%.1f", $0) }.joined(separator: "/")
         // 照合窓とテンプレの実寸 (px)。校正データの余白が変わっていれば窓が変わり、照合 1 回のコストが面積ぶん変わる
-        let fw = inputFrames.first?.size.width ?? 0
-        let fh = inputFrames.first?.size.height ?? 0
+        let fw = frameSize.width
+        let fh = frameSize.height
         var winW = 0, winH = 0
         if let roi0 = slotROIs.first {
             winW = Int(fw * CGFloat(roi0.widthRatio + 2 * roi0.searchHMarginRatio))
@@ -1103,7 +1205,18 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     /// キャプチャ終了時に 1 回呼ぶ (Extension: broadcastFinished / SCK: STOP またはストリーム停止)
     func finish() {
         guard isStarted else { return }   // start() 前の失敗 (startCapture エラー等) では何もしない
-        isStarted = false
+        isStarted = false                 // 以降に届くフレームは process() の入口で捨てる
+        memoryPressureSource?.cancel()
+        memoryPressureSource = nil
+        // 状態の後始末は走査中のフレームと競合しないよう frameQueue 上で行う
+        frameQueue.sync { [self] in finishOnFrameQueue() }
+    }
+
+    private func finishOnFrameQueue() {
+        gateLock.lock()
+        gateBurstCollecting = false
+        gateScanBusy = false
+        gateLock.unlock()
         logger.log("NakamonREC: Broadcast Finished")
         BattleLogger.append(source == .broadcastExtension ? "ブロードキャスト終了" : "ホスト内キャプチャ終了")
         heartbeatTimer?.cancel()
@@ -1135,7 +1248,6 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             pendingLock.unlock()
         }
         isBattleInProgress = false
-        isAnalyzing = false
         currentBurstImages.removeAll()
     }
 }
