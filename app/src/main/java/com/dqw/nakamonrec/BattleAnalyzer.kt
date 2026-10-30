@@ -47,6 +47,16 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
     var dataManager: BattleDataManager? = null // フライトレコーダー書き込み用
     private val slotCandidates = arrayOfNulls<Set<String>>(8) // Top-K 追跡用 (O(1) lookup のため Set)
 
+    // --- 低速端末対策 (2026-10-31、iOS 26.11.1 と同じ方針) ---
+    // 背景で走る解析は端末によって照合 1 回が 10 倍遅くなる (iOS 実測)。計算量そのものを下げる:
+    //  1. 1 フレームの bitmap→Mat 変換を 1 回にまとめ、そのフレーム内の全ロゴ照合 (VS/勝敗/パーティ) で使い回す
+    //  2. 大きなロゴ (VS/WIN/LOSE) は 1/4 縮小で最良位置を探し、原寸は周辺 ±12px だけ照合する (粗→精)
+    //  3. モンスターの Top-K 選抜は 1/2 縮小テンプレで行い、原寸照合は Top-K だけにする
+    private var scanSceneMat: Mat? = null
+    private var scanSceneBitmap: Bitmap? = null
+    private val coarseLogoCache = java.util.IdentityHashMap<Mat, Mat>()
+    private val scaledMonsterTemplatesHalf = mutableMapOf<String, List<Mat>>()
+
     // ユーザー可変の検知閾値。MediaCaptureService が dataManager から取得して書き戻す。
     var vsThreshold: Double = DEFAULT_VS_THRESHOLD
     var winThreshold: Double = DEFAULT_WIN_THRESHOLD
@@ -78,6 +88,13 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         // performDeepAnalysisBatch のハードキャップ。v1.5.0 の最悪 ~26s を超えないための上限。
         // 超過したら残りフレームを切り捨てて識別をコミットし、次バトル開始の検知漏れを防ぐ。
         private const val ANALYSIS_BUDGET_MS: Long = 24_000L
+        // 粗→精ロゴ照合: 縮小率と、粗の最良位置の周辺を原寸で確認する余白 (px)。粗スコアがこれ未満なら原寸確認を省く
+        private const val LOGO_COARSE_FACTOR = 4
+        private const val LOGO_COARSE_PAD = LOGO_COARSE_FACTOR * 3
+        private const val LOGO_COARSE_SKIP_BELOW = 0.25
+        private const val LOGO_COARSE_MIN_SIDE = 64   // これより小さいテンプレ (SELECT 等) は原寸のまま
+        // モンスター Top-K 粗選抜の縮小率
+        private const val MONSTER_COARSE_SCALE = 0.5
         // フレーム間 yield。サーマルスロットリング下でも SoC に短い idle 期間を与える。
         private const val INTER_FRAME_YIELD_MS: Long = 50L
         
@@ -120,6 +137,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         // GALAXY等の特殊なレンダリング（場所による縮小）に対応するため、探索範囲を +/- 10% に拡大
         val microScales = listOf(templateBaseScale * 0.90, templateBaseScale * 0.95, templateBaseScale * 1.0, templateBaseScale * 1.05, templateBaseScale * 1.10)
 
+        scaledMonsterTemplatesHalf.values.forEach { list -> list.forEach { it.release() } }
+        scaledMonsterTemplatesHalf.clear()
+        coarseLogoCache.values.forEach { it.release() }
+        coarseLogoCache.clear()
+
         monsterMaster.forEach { data ->
             data.templateMat?.let { tpl ->
                 val variants = microScales.map { ms ->
@@ -128,6 +150,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
                     scaled
                 }
                 scaledMonsterTemplates[data.name] = variants
+                // Top-K 粗選抜用の 1/2 縮小版 (INTER_AREA)
+                scaledMonsterTemplatesHalf[data.name] = variants.map { v ->
+                    val half = Mat()
+                    Imgproc.resize(v, half, Size(), MONSTER_COARSE_SCALE, MONSTER_COARSE_SCALE, Imgproc.INTER_AREA)
+                    half
+                }
             }
         }
 
@@ -835,47 +863,107 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return null
     }
 
+    /** 直近に変換したフレームの Mat を返す (同じ Bitmap インスタンスなら再利用。1 tick 内の複数照合で共有する) */
+    private fun sceneMatFor(bitmap: Bitmap): Mat {
+        val cached = scanSceneMat
+        if (cached != null && scanSceneBitmap === bitmap && !cached.empty()) return cached
+        cached?.release()
+        val m = Mat()
+        Utils.bitmapToMat(bitmap, m)
+        Imgproc.cvtColor(m, m, Imgproc.COLOR_RGBA2RGB)
+        scanSceneMat = m
+        scanSceneBitmap = bitmap
+        return m
+    }
+
+    /** テンプレの 1/4 縮小版 (粗→精の粗側)。テンプレ Mat の同一性でキャッシュし、prepareScaledTemplates で破棄 */
+    private fun coarseTemplateFor(template: Mat): Mat? {
+        if (template.rows() < LOGO_COARSE_MIN_SIDE || template.cols() < LOGO_COARSE_MIN_SIDE) return null
+        coarseLogoCache[template]?.let { return it }
+        val small = Mat()
+        val inv = 1.0 / LOGO_COARSE_FACTOR
+        Imgproc.resize(template, small, Size(), inv, inv, Imgproc.INTER_AREA)
+        coarseLogoCache[template] = small
+        return small
+    }
+
     private fun performColorMatchCached(bitmap: Bitmap, config: BoxConfig, scaledTemplate: Mat?, verticalMargin: Int = 0, horizontalMargin: Int = 0): Double {
         if (scaledTemplate == null) return 0.0
-        val fullMat = Mat()
-        Utils.bitmapToMat(bitmap, fullMat)
-        Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
+        val fullMat = sceneMatFor(bitmap)
         val imgW = fullMat.cols()
         val imgH = fullMat.rows()
-        
+
         // テンプレートが画像より大きい場合は、テンプレート側に合わせるのではなく失敗とする
-        if (scaledTemplate.cols() > imgW || scaledTemplate.rows() > imgH) {
-            fullMat.release()
-            return 0.0
-        }
+        if (scaledTemplate.cols() > imgW || scaledTemplate.rows() > imgH) return 0.0
 
         val centerX = (imgW * config.centerX).toInt()
         val centerY = (imgH * config.centerY).toInt()
-        
+
         // 探索範囲の設定 (テンプレートサイズ + マージン)
         // 探索範囲自体が画像サイズを超えないように制限
         val roiW = (scaledTemplate.cols() + horizontalMargin * 2).coerceAtMost(imgW)
         val roiH = (scaledTemplate.rows() + verticalMargin * 2).coerceAtMost(imgH)
-        
+
         val left = (centerX - roiW / 2).coerceIn(0, (imgW - roiW).coerceAtLeast(0))
         val top = (centerY - roiH / 2).coerceIn(0, (imgH - roiH).coerceAtLeast(0))
-        
+
         var score = 0.0
         try {
             // submatの終点が画像サイズを超えないことを保証
             val actualW = if (left + roiW > imgW) imgW - left else roiW
             val actualH = if (top + roiH > imgH) imgH - top else roiH
-            
+
             if (actualW >= scaledTemplate.cols() && actualH >= scaledTemplate.rows()) {
                 val roi = fullMat.submat(top, top + actualH, left, left + actualW)
-                val res = Mat()
-                Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
-                score = Core.minMaxLoc(res).maxVal
-                res.release()
+                val coarseTpl = coarseTemplateFor(scaledTemplate)
+                if (coarseTpl == null) {
+                    // 小さなテンプレ (SELECT 等) は原寸のまま
+                    val res = Mat()
+                    Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
+                    score = Core.minMaxLoc(res).maxVal
+                    res.release()
+                } else {
+                    // 粗: 1/4 縮小で最良位置
+                    val roiSmall = Mat()
+                    val inv = 1.0 / LOGO_COARSE_FACTOR
+                    Imgproc.resize(roi, roiSmall, Size(), inv, inv, Imgproc.INTER_AREA)
+                    if (coarseTpl.cols() > roiSmall.cols() || coarseTpl.rows() > roiSmall.rows()) {
+                        val res = Mat()
+                        Imgproc.matchTemplate(roi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
+                        score = Core.minMaxLoc(res).maxVal
+                        res.release()
+                    } else {
+                        val coarseRes = Mat()
+                        Imgproc.matchTemplate(roiSmall, coarseTpl, coarseRes, Imgproc.TM_CCOEFF_NORMED)
+                        val mm = Core.minMaxLoc(coarseRes)
+                        coarseRes.release()
+                        if (mm.maxVal < LOGO_COARSE_SKIP_BELOW) {
+                            score = mm.maxVal   // 閾値の下限 0.4 より十分下。原寸確認は省く
+                        } else {
+                            // 精: 粗の最良位置の周辺だけ原寸で照合
+                            val fx = (mm.maxLoc.x * LOGO_COARSE_FACTOR).toInt()
+                            val fy = (mm.maxLoc.y * LOGO_COARSE_FACTOR).toInt()
+                            val x0 = (fx - LOGO_COARSE_PAD).coerceAtLeast(0)
+                            val y0 = (fy - LOGO_COARSE_PAD).coerceAtLeast(0)
+                            val x1 = (fx + scaledTemplate.cols() + LOGO_COARSE_PAD).coerceAtMost(roi.cols())
+                            val y1 = (fy + scaledTemplate.rows() + LOGO_COARSE_PAD).coerceAtMost(roi.rows())
+                            if (x1 - x0 >= scaledTemplate.cols() && y1 - y0 >= scaledTemplate.rows()) {
+                                val fineRoi = roi.submat(y0, y1, x0, x1)
+                                val res = Mat()
+                                Imgproc.matchTemplate(fineRoi, scaledTemplate, res, Imgproc.TM_CCOEFF_NORMED)
+                                score = Core.minMaxLoc(res).maxVal
+                                res.release()
+                                fineRoi.release()
+                            } else {
+                                score = mm.maxVal
+                            }
+                        }
+                    }
+                    roiSmall.release()
+                }
                 roi.release()
             }
         } catch (_: Exception) {}
-        fullMat.release()
         return score
     }
 
@@ -928,6 +1016,9 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         val analysisStartTime = System.currentTimeMillis()
         var processedFrames = 0
         var budgetExceeded = false
+        // 診断: 解析内訳 (iOS と同形)
+        val frameTimesMs = mutableListOf<Long>()
+        val frame1Max = mutableListOf<Double>()
 
         for (fIdx in bitmaps.indices) {
             // ハードキャップ: v1.5.0 の最悪 ~26s を超えないための安全弁。
@@ -957,39 +1048,36 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             Imgproc.cvtColor(fullMat, fullMat, Imgproc.COLOR_RGBA2RGB)
 
             val isFirstFrame = (fIdx == 0)
+            val frameStart = System.currentTimeMillis()
 
             for (slotIndex in 0..7) {
                 val config = if (slotIndex < 4) calibrationData.myPartyBoxes[slotIndex] else calibrationData.enemyPartyBoxes[slotIndex - 4]
-                val candidates = slotCandidates[slotIndex]
-
-                // 解析対象モンスターの決定
-                //   Frame 1 (isFirstFrame) → 全テンプレ走査 + 結果をキャッシュ
-                //   Frame 2-5 で fallback フラグ立ち → 全テンプレ走査
-                //   Frame 2-5 で候補あり → Top-K のみ走査
-                val monstersToTry = if (!isFirstFrame && !slotFallback[slotIndex] && candidates != null) {
-                    sortedMonsters.filter { candidates.contains(it.name) }
-                } else {
-                    sortedMonsters
-                }
-                // Frame 1 のときだけ allScores を返してもらう (キャッシュ生成のため)
-                val needAllScores = isFirstFrame
-
-                // 2 段階探索: narrow (狭い range)
                 val narrowPad = (20 * calibrationData.uiScale).toInt()
-                val resultNarrow = tryIdentify(fullMat, config, narrowPad, imgW, imgH, monstersToTry, needAllScores)
 
-                // Frame 1 で Top-K キャッシュ生成
-                if (isFirstFrame && resultNarrow.allScores != null) {
-                    val sortedTopK = resultNarrow.allScores
-                        .sortedByDescending { it.second }
-                        .take(CANDIDATE_COUNT)
-                    slotTopKDiag[slotIndex] = sortedTopK
-                    if (resultNarrow.score >= FALLBACK_THRESHOLD) {
-                        slotCandidates[slotIndex] = sortedTopK.map { it.first }.toSet()
-                    } else {
-                        slotFallback[slotIndex] = true
+                // 低速端末対策 (2026-10-31、iOS と同方式):
+                //   Top-K 未確定 (Frame 1、または前フレームまでに原寸で 0.7 以上が出ていない) のスロットは
+                //   1/2 縮小テンプレで全モンスターを粗選抜 → 原寸は Top-K だけ照合。原寸で 0.7 以上が出たら Top-K を固定。
+                //   原寸での全テンプレ走査 (133 体 × 5 スケール × 8 スロット) は廃止。
+                //   VS 早検知でカードがまだ映っていないフレームでは次のフレームで粗選抜からやり直す。
+                if (isFirstFrame) slotFallback[slotIndex] = true
+                val resultNarrow: MatchResult
+                if (slotFallback[slotIndex]) {
+                    val coarse = tryIdentify(fullMat, config, narrowPad, imgW, imgH, sortedMonsters, returnAll = true, useHalf = true)
+                    val topK = (coarse.allScores ?: emptyList()).sortedByDescending { it.second }.take(CANDIDATE_COUNT)
+                    val topNames = topK.map { it.first }.toSet()
+                    val fine = if (topNames.isEmpty()) MatchResult("", -1.0)
+                               else tryIdentify(fullMat, config, narrowPad, imgW, imgH, sortedMonsters.filter { topNames.contains(it.name) })
+                    if (isFirstFrame || fine.score >= FALLBACK_THRESHOLD) {
+                        slotTopKDiag[slotIndex] = topK
+                        slotCandidates[slotIndex] = topNames
                     }
+                    if (fine.score >= FALLBACK_THRESHOLD) slotFallback[slotIndex] = false   // Top-K 確定
+                    resultNarrow = fine
+                } else {
+                    val candidates = slotCandidates[slotIndex] ?: emptySet()
+                    resultNarrow = tryIdentify(fullMat, config, narrowPad, imgW, imgH, sortedMonsters.filter { candidates.contains(it.name) })
                 }
+                if (isFirstFrame) frame1Max.add(resultNarrow.score)
 
                 // best スコア更新?
                 // 注: 旧コードはここで wide-pad 2 段階探索を実施していたが、
@@ -1008,7 +1096,17 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
             fullMat.release()
             processedFrames++
+            frameTimesMs.add(System.currentTimeMillis() - frameStart)
         }
+
+        // 診断: 解析内訳 (iOS と同形。Frame1 各スロット最大 / 最後まで Top-K を確定できなかったスロット数 / フレーム別所要)
+        dataManager?.appendFlightLog(String.format(Locale.US,
+            "解析内訳: Frame1最大 [%s], フォールバック %d/8, フレーム別 %ss, テンプレ %d体 ×%dスケール",
+            frame1Max.joinToString(" ") { String.format(Locale.US, "%.2f", it) },
+            slotFallback.count { it },
+            frameTimesMs.joinToString("/") { String.format(Locale.US, "%.1f", it / 1000.0) },
+            sortedMonsters.size,
+            scaledMonsterTemplates.values.firstOrNull()?.size ?: 0))
 
         // 全フレーム (もしくは予算内ぶん) 終了後にまとめて確定 (iOS の finalize 相当)
         for (slotIndex in 0..7) {
@@ -1097,7 +1195,7 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return false
     }
 
-    private fun tryIdentify(fullMat: Mat, config: BoxConfig, pad: Int, imgW: Float, imgH: Float, monsters: List<MonsterData>, returnAll: Boolean = false): MatchResult {
+    private fun tryIdentify(fullMat: Mat, config: BoxConfig, pad: Int, imgW: Float, imgH: Float, monsters: List<MonsterData>, returnAll: Boolean = false, useHalf: Boolean = false): MatchResult {
         val expandedConfig = BoxConfig(config.centerX, config.centerY, config.width + pad * 2, config.height + pad * 2)
         
         // 画像サイズ制限ガード
@@ -1125,7 +1223,12 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
             }
             Core.normalize(workRoi, workRoi, 0.0, 255.0, Core.NORM_MINMAX)
 
-            val result = findBestMonsterMatchMicroScales(workRoi, monsters, returnAll)
+            // useHalf: Top-K 粗選抜用に ROI も 1/2 に縮小し、1/2 テンプレ群と照合する
+            val matchRoi = if (useHalf) Mat().also {
+                Imgproc.resize(workRoi, it, Size(), MONSTER_COARSE_SCALE, MONSTER_COARSE_SCALE, Imgproc.INTER_AREA)
+            } else workRoi
+            val result = findBestMonsterMatchMicroScales(matchRoi, monsters, returnAll, useHalf)
+            if (useHalf) matchRoi.release()
 
             workRoi.release()
             roi.release()
@@ -1163,13 +1266,14 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         return summary
     }
 
-    private fun findBestMonsterMatchMicroScales(workRoi: Mat, monsters: List<MonsterData>, returnAll: Boolean = false): MatchResult {
+    private fun findBestMonsterMatchMicroScales(workRoi: Mat, monsters: List<MonsterData>, returnAll: Boolean = false, useHalf: Boolean = false): MatchResult {
         var bestScore = -1.0
         var bestName = ""
         val allScores = if (returnAll) mutableListOf<Pair<String, Double>>() else null
+        val templateMap = if (useHalf) scaledMonsterTemplatesHalf else scaledMonsterTemplates
 
         for (monster in monsters) {
-            val variants = scaledMonsterTemplates[monster.name] ?: continue
+            val variants = templateMap[monster.name] ?: continue
             var monsterMaxScore = -1.0
             for (scaledTpl in variants) {
                 if (scaledTpl.cols() <= workRoi.cols() && scaledTpl.rows() <= workRoi.rows()) {
@@ -1360,6 +1464,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         partyCustomTemplate?.release()
         
         scaledMonsterTemplates.values.forEach { list -> list.forEach { it.release() } }
+        scaledMonsterTemplatesHalf.values.forEach { list -> list.forEach { it.release() } }
+        scaledMonsterTemplatesHalf.clear()
+        coarseLogoCache.values.forEach { it.release() }
+        coarseLogoCache.clear()
+        scanSceneMat?.release(); scanSceneMat = null; scanSceneBitmap = null
         vsFmTemplateScaled?.release()
         vsMgTemplateScaled?.release()
         vsCustomTemplateScaled?.release()
