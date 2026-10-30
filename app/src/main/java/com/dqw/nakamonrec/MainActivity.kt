@@ -526,7 +526,7 @@ class MainActivity : AppCompatActivity() {
                                         setPadding(0, (6 * dp).toInt(), 0, (10 * dp).toInt())
                                     })
                                     addView(TextView(this@MainActivity).apply {
-                                        text = "パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。"
+                                        text = "パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) で、一覧をスクロールせずに撮ったスクリーンショットを使ってください。\n選択していないスクショではパーティを正常に識別できません。"
                                         textSize = 14f
                                         setTextColor(0xFFFFFFFF.toInt())
                                     })

@@ -87,7 +87,7 @@ struct UserSettingsSheet: View {
                                 Image(systemName: "bell.fill")
                                     .foregroundStyle(statusNotificationsOn ? Color.recCoral : .gray)
                                     .frame(width: 28)
-                                Text("戦闘の通知 (開始 / 終了 / GP 記録)")
+                                Text("戦闘の通知")
                                     .foregroundStyle(.white)
                                 Spacer()
                                 Toggle("", isOn: $statusNotificationsOn)
