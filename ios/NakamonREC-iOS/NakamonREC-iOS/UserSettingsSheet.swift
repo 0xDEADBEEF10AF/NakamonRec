@@ -12,6 +12,7 @@ struct UserSettingsSheet: View {
     @State private var showLightPicker = false
     @State private var calibrationTarget: CalibrationScreen? = nil
     @State private var recIsActive: Bool = BroadcastStatus.isEffectivelyActive()
+    @State private var statusNotificationsOn: Bool = CaptureNotifier.statusNotificationsEnabled
 
     var body: some View {
         NavigationStack {
@@ -75,6 +76,43 @@ struct UserSettingsSheet: View {
                             Text("通常モード: monsters.json の全 \(MonsterCatalog.all.count) 体を識別\n軽負荷モード: 対象モンスターのみを識別し、解析時間を短縮")
                                 .font(.caption2)
                                 .foregroundStyle(.gray)
+                        }
+                    }
+
+                    // 通知設定: iOS 27 (ホスト内キャプチャ) でだけ通知が出せるので、項目自体を 27 以降に限定する。
+                    // 項目が見えるかどうかで「通知対応の方式で動いているか」がユーザーにも分かる
+                    if #available(iOS 27.0, *) {
+                        Section {
+                            HStack {
+                                Image(systemName: "bell.fill")
+                                    .foregroundStyle(statusNotificationsOn ? Color.recCoral : .gray)
+                                    .frame(width: 28)
+                                Text("戦闘の通知 (開始 / 終了 / GP 記録)")
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Toggle("", isOn: $statusNotificationsOn)
+                                    .labelsHidden()
+                                    .tint(Color.recCoral)
+                                    .onChange(of: statusNotificationsOn) { _, newValue in
+                                        CaptureNotifier.statusNotificationsEnabled = newValue
+                                    }
+                            }
+                            .listRowBackground(Color.cardBackground)
+                            .disabled(recIsActive)
+                            .opacity(recIsActive ? 0.4 : 1.0)
+                        } header: {
+                            Text("通知")
+                                .foregroundStyle(.gray)
+                        } footer: {
+                            if recIsActive {
+                                Text("REC 中は通知設定を変更できません。\nREC を停止してから変更してください。")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.recCoral)
+                            } else {
+                                Text("iPhone のゲームモードがオンだと通知が約 10 秒遅れて届きます。気になる場合はゲームモードをオフにするか、この通知をオフにしてください。\nREC の切り忘れ警告 (30 分) はこの設定に関わらず届きます。")
+                                    .font(.caption2)
+                                    .foregroundStyle(.gray)
+                            }
                         }
                     }
                 }

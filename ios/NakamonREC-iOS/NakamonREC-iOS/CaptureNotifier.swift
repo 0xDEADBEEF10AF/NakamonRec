@@ -33,6 +33,26 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
     /// 状態通知 (待機中 / 戦闘開始 / 戦闘終了 / GP 記録) の ID 接頭辞。実 ID は毎回ユニーク (postStatus 参照)
     private static let statusNotificationID = "nakamon.rec.status"
 
+    // MARK: - ユーザー設定: 状態通知の ON/OFF (既定 ON)
+    //
+    // iPhone のゲームモードが ON だと背景アプリの通知が約 10 秒遅れる (2026-10-30 実測)。ゲームモードを
+    // 切りたくない人向けに、戦闘開始/終了などの状態通知だけを止められるようにする。REC 放置警告 (30 分) は
+    // 切り忘れ防止の安全装置なので、この設定に関わらず出す。値は REC 開始時に読んでその REC の間は固定
+    // (設定画面は REC 中グレーアウト)。iOS 26 以前では通知自体が無いので設定項目も表示しない。
+    private static let appGroupID = "group.com.android.NakamonREC-iOS"
+    private static let statusEnabledKey = "notifications.statusEnabled"
+
+    static var statusNotificationsEnabled: Bool {
+        get {
+            guard let d = UserDefaults(suiteName: appGroupID), d.object(forKey: statusEnabledKey) != nil else { return true }
+            return d.bool(forKey: statusEnabledKey)
+        }
+        set { UserDefaults(suiteName: appGroupID)?.set(newValue, forKey: statusEnabledKey) }
+    }
+
+    /// この REC で状態通知を出すか (init 時点の設定値で固定)
+    private let statusEnabled: Bool
+
     /// 「停止する」アクションが押されたときに呼ぶ (MainActor へ hop して REC 停止)
     private let onStopRequested: @Sendable () -> Void
 
@@ -44,6 +64,7 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
 
     init(onStopRequested: @escaping @Sendable () -> Void) {
         self.onStopRequested = onStopRequested
+        self.statusEnabled = Self.statusNotificationsEnabled
         super.init()
     }
 
@@ -77,6 +98,9 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
             timer.setEventHandler { [weak self] in self?.checkIdle() }
             timer.resume()
             self.idleTimer = timer
+            if !self.statusEnabled {
+                BattleLogger.append("通知: 状態通知はユーザー設定で OFF (放置警告のみ有効)")
+            }
             // Android の起動時「待機中 (ファイル名)」
             let file = BattleHistoryStore.shared.activeFileName
             let name = file.hasSuffix(".json") ? String(file.dropLast(5)) : file
@@ -108,6 +132,7 @@ nonisolated final class CaptureNotifier: NSObject, CaptureEngineEvents, @uncheck
     /// ID は毎回ユニークにする。同じ ID で上書き (replace) すると iOS 側の配信が 10 秒近く遅れる
     /// 現象が実機で出たため (2026-10-27 ビーフ計測: アプリ側の受理は +17 ms なのにバナーは約 10 秒後)。
     private func postStatus(title: String) {
+        guard statusEnabled else { return }   // ユーザー設定で状態通知 OFF (放置警告は別経路なので影響しない)
         let history = BattleHistoryStore.shared.loadActive()
         let win = history.totalWins, lose = history.totalLosses
         let total = win + lose
