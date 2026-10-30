@@ -17,6 +17,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import androidx.core.graphics.toColorInt
+import androidx.core.widget.TextViewCompat
+import android.util.TypedValue
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.dqw.nakamonrec.databinding.ActivityHistoryBinding
 import java.io.File
@@ -1809,7 +1811,11 @@ class HistoryActivity : AppCompatActivity() {
                             textSize = 17f
                             setTypeface(null, Typeface.BOLD)
                             gravity = Gravity.END
+                            maxLines = 1
                             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                            // 文字サイズ拡大端末で「100.0%」が列幅 (62dp) を超えて隣列を押し出す崩れの対策 (26.11.1):
+                            // 列幅に収まるよう 10〜17sp で自動縮小
+                            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 10, 17, 1, TypedValue.COMPLEX_UNIT_SP)
                         })
                         addView(TextView(context).apply {
                             text = sub
@@ -1858,7 +1864,14 @@ class HistoryActivity : AppCompatActivity() {
                 }
                 root.addView(rankText)
 
-                val iconSize = (40 * density).toInt()
+                // サムネイル 4 枚のサイズは利用可能な幅から逆算する (上限 40dp、下限 26dp)。
+                // 固定 40dp だと「順位 32 + 4 枚 × 44 + 指標 2 列 × 68 + 余白」≒ 364dp で、表示サイズを大きくした
+                // 端末 (dp 幅 320〜360) では右端の勝率列が画面外へ押し出されて見切れていた (26.11.1、SNS 報告)
+                val iconMargin = (4 * density).toInt()
+                val dialogContentWidth = resources.displayMetrics.widthPixels - (64 * density).toInt()   // ダイアログ左右の余白ぶん
+                val fixedWidth = (32 + 2 * (62 + 6) + 2 * 10 + 8) * density                            // 順位 + 指標 2 列 + 内側余白
+                val iconSize = ((dialogContentWidth - fixedWidth) / 4f - iconMargin).toInt()
+                    .coerceIn((26 * density).toInt(), (40 * density).toInt())
                 val iconRow = LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
                 }
@@ -1874,7 +1887,7 @@ class HistoryActivity : AppCompatActivity() {
                 })
                 displayOrder.forEach { name ->
                     val iv = ImageView(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { marginEnd = (4 * density).toInt() }
+                        layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { marginEnd = iconMargin }
                         scaleType = ImageView.ScaleType.CENTER_CROP
                         dataManager.monsterMaster.find { it.name == name }?.let { monster ->
                             try { assets.open("templates/${monster.fileName}").use { setImageBitmap(BitmapFactory.decodeStream(it)) } }
@@ -1909,7 +1922,10 @@ class HistoryActivity : AppCompatActivity() {
                         textSize = 17f
                         setTypeface(null, Typeface.BOLD)
                         gravity = Gravity.END
+                        maxLines = 1
                         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                        // 列幅に収まるよう 10〜17sp で自動縮小 (モンスタータブの metricColumn と同じ、26.11.1)
+                        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 10, 17, 1, TypedValue.COMPLEX_UNIT_SP)
                     })
                     addView(TextView(context).apply {
                         text = sub

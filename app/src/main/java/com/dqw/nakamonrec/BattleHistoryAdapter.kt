@@ -78,7 +78,8 @@ class BattleHistoryAdapter(
         holder.party.text = "P${record.partyIndex + 1}"
         // 表示専用: 日付をドット区切り (2026.08.14) にして横幅を詰める
         // (保存形式・CSV は yyyy-MM-dd のまま変更しない。時刻の「:」は影響なし)
-        holder.time.text = record.timestamp.replace('-', '.')
+        // 日付と時刻を明示的に改行で分け、欄幅に収まるよう自動縮小させる (レイアウト側 autoSize と対)
+        holder.time.text = record.timestamp.replace('-', '.').replaceFirst(' ', '\n')
 
         // スコア表示
         holder.vsScore.visibility = View.GONE

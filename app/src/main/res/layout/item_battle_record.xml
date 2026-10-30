@@ -81,6 +81,8 @@
 
         <!-- 右側: 日時 (2行表示想定)。iOS 版 (BattleHistoryView: .gray / 標準ウェイト) に合わせて
              太字・白ではなく細字・グレーにする (26.10.2) -->
+        <!-- 文字サイズ/表示サイズを大きくした端末で「2026.10.30」が欄幅に収まらず 1 文字ずつ折り返す崩れが
+             あったため (26.11.1)、日付と時刻を明示的に 2 行にし、欄幅に収まるよう文字を自動縮小する -->
         <TextView
             android:id="@+id/textTimestamp"
             android:layout_width="@dimen/battle_history_side_width_right"
@@ -89,6 +91,12 @@
             android:textStyle="normal"
             android:textSize="@dimen/battle_history_text_sub"
             android:textColor="#8E8E93"
+            android:maxLines="2"
+            android:lines="2"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="7sp"
+            app:autoSizeMaxTextSize="@dimen/battle_history_text_sub"
+            app:autoSizeStepGranularity="1sp"
             android:layout_marginStart="2dp" />
 
     </LinearLayout>
