@@ -191,7 +191,7 @@ struct ContentView: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Top action bar (JSON + camera)
+    // MARK: - Top action bar (JSON + 設定 (歯車))
 
     private var topActionBar: some View {
         HStack(spacing: 8) {
@@ -217,7 +217,7 @@ struct ContentView: View {
             Button {
                 showUserSettings = true
             } label: {
-                Image(systemName: "camera")
+                Image(systemName: "gearshape")
                     .font(.title3)
                     .foregroundStyle(.gray)
                     .frame(width: 46, height: 46)

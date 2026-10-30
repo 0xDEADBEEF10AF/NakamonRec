@@ -509,9 +509,31 @@ class MainActivity : AppCompatActivity() {
                                 // パーティ選択のみ、ピッカーを開く前に注意ダイアログを必ず挟む。
                                 // フォーカスなしスクショのインポートが「パーティ選択が認識しない」
                                 // 問い合わせの最頻出原因で、README の注意書きだけでは読まれないため (2026-08-14)。
+                                // 文字だけでは読まれないため、正しいスクショ (水色枠付き) の見本画像を添える (2026-10-30)
+                                val dp = resources.displayMetrics.density
+                                val noticeView = LinearLayout(this@MainActivity).apply {
+                                    orientation = LinearLayout.VERTICAL
+                                    setPadding((20 * dp).toInt(), (12 * dp).toInt(), (20 * dp).toInt(), 0)
+                                    addView(ImageView(this@MainActivity).apply {
+                                        setImageResource(R.drawable.party_import_sample)
+                                        adjustViewBounds = true
+                                        scaleType = ImageView.ScaleType.FIT_CENTER
+                                    })
+                                    addView(TextView(this@MainActivity).apply {
+                                        text = "見本: パーティを選択して水色の枠が付いた状態"
+                                        textSize = 12f
+                                        setTextColor(0xFFF07A72.toInt())
+                                        setPadding(0, (6 * dp).toInt(), 0, (10 * dp).toInt())
+                                    })
+                                    addView(TextView(this@MainActivity).apply {
+                                        text = "パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。"
+                                        textSize = 14f
+                                        setTextColor(0xFFFFFFFF.toInt())
+                                    })
+                                }
                                 AlertDialog.Builder(this@MainActivity, R.style.Theme_NakamonRec_Dialog)
                                     .setTitle("インポート前の確認")
-                                    .setMessage("パーティ1〜3のどれかを選択した状態 (フォーカスの水色枠が付いた状態) のスクリーンショットを使ってください。\n選択していないスクショでは自動校正が失敗します。")
+                                    .setView(noticeView)
                                     .setPositiveButton("画像を選ぶ") { _, _ -> pickImageLauncher.launch("image/*") }
                                     .setNegativeButton("キャンセル", null)
                                     .show()
