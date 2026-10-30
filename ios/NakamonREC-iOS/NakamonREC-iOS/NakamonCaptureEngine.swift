@@ -153,12 +153,42 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     /// テンプレ配列で校正・キャッシュしてしまう事故の防御。Extension 経路は ReplayKit が順序を保証する)
     private var isStarted = false
 
+    // MARK: - 診断: 実行環境 (熱状態・低電力) と CPU 時間
+    //
+    // 解析の壁時計時間が 2 秒 → 40 秒と桁で揺れる事象 (2026-10-30、SCK 886px) の切り分け用。
+    // 「CPU 時間 ≒ 壁時計」なら仕事が増えている (コード側)、「CPU 時間 ≪ 壁時計」なら OS に走らせてもらえていない
+    // (熱・優先度・前面ゲームとの競合 = 環境側)。熱状態は体感で分からない段階 (fair/serious) でも OS は絞り始める。
+
+    private static func thermalLabel() -> String {
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: return "nominal"
+        case .fair: return "fair"
+        case .serious: return "serious"
+        case .critical: return "critical"
+        @unknown default: return "?"
+        }
+    }
+
+    /// 「熱=fair 低電力=off」の形。REC 開始時と解析完了時に添える
+    private static func environmentSummary() -> String {
+        "熱=\(thermalLabel()) 低電力=\(ProcessInfo.processInfo.isLowPowerModeEnabled ? "on" : "off")"
+    }
+
+    /// 呼び出しスレッドの累積 CPU 時間 (秒)。performDeepAnalysis は analysisQueue 上で同期的に走るので、
+    /// 開始・終了で差を取ればその解析が実際に使った CPU 時間になる
+    private static func threadCPUTime() -> Double {
+        var ts = timespec()
+        guard clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0 else { return 0 }
+        return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000
+    }
+
     /// キャプチャ開始時に 1 回呼ぶ (Extension: broadcastStarted / SCK: startCapture の前にフレームキュー上で)。
     /// フレームを渡し始める前に完了させること (loadTemplates はこの中で同期的に走る)。
     func start() {
         logger.log("NakamonREC Engine: Starting...")
         BattleLogger.rotate()
         BattleLogger.append(source == .broadcastExtension ? "Extension起動" : "ホスト内キャプチャ起動 (ScreenCaptureKit)")
+        BattleLogger.append("環境: \(Self.environmentSummary())")
         BroadcastStatus.setActive(true)
         startHeartbeat()
         loadTemplates()
@@ -643,6 +673,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     ///      ランク外に押し出されるケースが実機で確認されたため。)
     private func performDeepAnalysis(frames inputFrames: [UIImage]) {
         let startedAt = Date()
+        let cpuStart = Self.threadCPUTime()
         logger.log("👾 Performing Deep Analysis on \(inputFrames.count) frames (8 slots, Top-K)...")
         BattleLogger.append("モンスター解析開始 (\(inputFrames.count)枚 × 8スロット, Top-K 最適化)")
 
@@ -733,8 +764,9 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         NakamonWrapper.clearPreparedSceneMat()
 
         let elapsed = Date().timeIntervalSince(startedAt)
-        logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s")
-        BattleLogger.append(String(format: "モンスター解析完了 (%.2fs)", elapsed))
+        let cpuElapsed = Self.threadCPUTime() - cpuStart
+        logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s (cpu \(cpuElapsed, format: .fixed(precision: 2))s)")
+        BattleLogger.append(String(format: "モンスター解析完了 (%.2fs, CPU %.2fs, %@)", elapsed, cpuElapsed, Self.environmentSummary()))
 
         // 結果を 8 行で書き出す + pending に格納
         var myParty: [String] = []
@@ -1023,13 +1055,28 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         // グランプリ: レーティング画面を読めないまま STOP されたら未取得レコードを残す
         // (最終戦は次戦の VS が来ないため、ここで書かないとレコード自体が残らない)
         endGrandPrixWaitUnread(reason: "STOP により待機終了")
-        // Android 同様、戦闘終了 (WIN/LOSE) を検知していない進行中バトルは破棄
+        // 進行中バトルの扱い:
+        //  - 勝敗 (WIN/LOSE) を検知済みでモンスター解析だけが未完 → 捨てずに「?」で記録する
+        //    (SCK ストリームが解析中に切断された実例 2026-10-30 21:39。4 秒後に解析が終わっても受け皿が無く結果が消えた。
+        //     iPhone 17 ユーザーの「放送終了 → 進行中バトル破棄」も同じ経路。レコードが残れば切り出し画像を開く手がかりにもなる)
+        //  - 勝敗を検知していない → Android 同様に破棄
         pendingLock.lock()
-        if pending != nil {
-            BattleLogger.append("⚠️ 進行中バトルを破棄 (WIN/LOSE 未検知のためレコード化せず)")
-            pending = nil
+        if var p = pending, p.result != nil {
+            if p.myParty == nil {
+                p.myParty = Array(repeating: "?", count: 4)
+                p.enemyParty = Array(repeating: "?", count: 4)
+            }
+            pending = p
+            pendingLock.unlock()
+            BattleLogger.append("⚠️ キャプチャ停止: 勝敗は検知済みのため、モンスター解析未完のまま「?」で記録")
+            finalizePendingBattle()
+        } else {
+            if pending != nil {
+                BattleLogger.append("⚠️ 進行中バトルを破棄 (WIN/LOSE 未検知のためレコード化せず)")
+                pending = nil
+            }
+            pendingLock.unlock()
         }
-        pendingLock.unlock()
         isBattleInProgress = false
         isAnalyzing = false
         currentBurstImages.removeAll()
