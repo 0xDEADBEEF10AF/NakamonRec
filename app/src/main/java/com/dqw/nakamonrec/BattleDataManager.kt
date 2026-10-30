@@ -13,6 +13,8 @@ class BattleDataManager(private val context: Context) {
     var currentFileName: String = "default_record"
     var history: BattleHistory = BattleHistory()
     var monsterMaster: List<MonsterData> = emptyList()
+    // 略称 (shortName) → 正式名称 (name)。履歴・軽負荷・CSV など読み出し側の正規化に使う
+    private var aliasToName: Map<String, String> = emptyMap()
     var analysisMode: String = "normal" // "normal" or "light"
     val lightModeMonsters = mutableSetOf<String>() // 軽負荷モードの対象モンスター名
 
@@ -46,6 +48,13 @@ class BattleDataManager(private val context: Context) {
             // モンスターマスタの読み込み
             val json = context.assets.open("monsters.json").bufferedReader().use { it.readText() }
             monsterMaster = gson.fromJson(json, Array<MonsterData>::class.java).toList()
+            aliasToName = monsterMaster.mapNotNull { m -> m.shortName?.let { it to m.name } }.toMap()
+            // 保存済みの軽負荷リストに略称が残っていれば正式名称へ寄せる (書き戻しは次回の保存時)
+            if (lightModeMonsters.isNotEmpty()) {
+                val normalized = lightModeMonsters.map { canonicalName(it) }
+                lightModeMonsters.clear()
+                lightModeMonsters.addAll(normalized)
+            }
 
             // 保存データが空（または未存在）の場合に target_monsters.json から初期値を読み込む
             if (lightModeMonsters.isEmpty()) {
@@ -53,7 +62,7 @@ class BattleDataManager(private val context: Context) {
                     val targetJson = context.assets.open("target_monsters.json").bufferedReader().use { it.readText() }
                     val defaultTargets = gson.fromJson(targetJson, Array<MonsterData>::class.java)
                     if (defaultTargets != null) {
-                        lightModeMonsters.addAll(defaultTargets.map { it.name })
+                        lightModeMonsters.addAll(defaultTargets.map { canonicalName(it.name) })
                         // 初回起動時や、意図的に空にした場合でも「初期リスト」は一度保存する
                         saveAnalysisSettings()
                     }
@@ -64,6 +73,29 @@ class BattleDataManager(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+
+        // 前提: name と shortName を合わせて重複なし (略称での逆引きが曖昧にならないため)。
+        // デバッグビルドでは起動時に落として気づけるようにする (try の外に置き、上の catch に飲まれないようにする)
+        val allNames = monsterMaster.map { it.name } + monsterMaster.mapNotNull { it.shortName }
+        val dup = allNames.groupingBy { it }.eachCount().filter { it.value > 1 }.keys
+        if (dup.isNotEmpty()) {
+            android.util.Log.e("DataManager", "monsters.json: name/shortName が重複しています: $dup")
+            val isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            check(!isDebuggable) { "monsters.json: name/shortName が重複しています: $dup" }
+        }
+    }
+
+    /** 略称 (shortName) で保存された名前を正式名称 (name) に寄せる。該当がなければそのまま返す */
+    fun canonicalName(name: String): String = aliasToName[name] ?: name
+
+    /** 正式名称・略称のどちらに一致しても引き当てる (INPUT 側の照合) */
+    fun findMonster(name: String): MonsterData? =
+        monsterMaster.firstOrNull { it.name == name || it.shortName == name }
+
+    /** レコード内のモンスター名を正式名称へ正規化する (履歴の読み込み・CSV 取り込みで使用) */
+    fun normalizeNames(record: BattleRecord) {
+        record.myParty = record.myParty.map { canonicalName(it) }
+        record.enemyParty = record.enemyParty.map { canonicalName(it) }
     }
 
     fun addRecord(
@@ -144,6 +176,9 @@ class BattleDataManager(private val context: Context) {
         if (file.exists()) {
             val json = file.readText()
             history = Gson().fromJson(json, BattleHistory::class.java)
+            // 過去に略称で保存された名前 (例: ラプソーン) を正式名称 (暗黒神ラプソーン) に寄せる。
+            // 読み出し側で吸収するだけでファイルは書き換えない (次に保存されるときは正式名称になる)
+            history.records.forEach { normalizeNames(it) }
         } else {
             history = BattleHistory()
         }

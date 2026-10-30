@@ -6,8 +6,13 @@ import org.opencv.core.Mat
  * モンスターのマスターデータ
  */
 data class MonsterData(
+    // 正式名称。画面表示・レコード/CSV の書き出し (OUTPUT) はこちら
     val name: String,
     val fileName: String,
+    // 略称 (例: 暗黒神ラプソーン → ラプソーン)。読み出し側 (INPUT: 履歴 JSON・CSV 取り込み・軽負荷の保存値) で
+    // name と並んで照合し、BattleDataManager が正式名称へ正規化する。省略可。
+    // 前提: 全モンスターの name と shortName を合わせて重複がないこと (DEBUG で起動時に検証)
+    val shortName: String? = null,
     // 組み合わせ集計の表示順 (左端に並べる) にだけ使う。厳密な「壁役」ではなく
     // 「通常パーティの左端に置くのがセオリーのモンスター」も含む (例: ガチャコッコ、2026-10-30)
     val isWall: Boolean = false,

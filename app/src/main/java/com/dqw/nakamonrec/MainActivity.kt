@@ -448,6 +448,7 @@ class MainActivity : AppCompatActivity() {
 
             val dm = dataManager.apply { currentFileName = csvFileName; resetHistory() }
             decoded.records.forEach { r ->
+                dm.normalizeNames(r)   // CSV 内の略称 (旧名) を正式名称へ
                 dm.history.records.add(r)
                 if (r.result == "WIN") dm.history.totalWins++ else dm.history.totalLosses++
             }
