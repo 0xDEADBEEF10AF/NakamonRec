@@ -4,6 +4,8 @@
 
 #import <opencv2/imgcodecs/ios.h>
 #import "NakamonWrapper.h"
+#include <map>
+#include <string>
 #import "../../../shared_cpp/NakamonAnalyzerCore.h"
 
 @implementation NakamonMatchResult
@@ -57,6 +59,32 @@ static std::vector<std::vector<cv::Mat>> gCachedMonsterTemplateGroups;
 // 同じ UIImage を毎呼び出し変換していたコスト (~3MB ピクセルコピー × 8 = 24MB/フレーム)
 // を 3MB/フレームに削減する。prepareSceneMat: で更新、clearPreparedSceneMat で解放。
 static cv::Mat gPreparedSceneMat;
+
+// 低速コア対策 (2026-10-31):
+// - gCachedMonsterTemplateGroupsHalf: モンスターテンプレの 1/2 縮小版 (Top-K の粗選抜用)
+// - gLogoTemplates: ロゴ (VS/WIN/LOSE/SELECT) の原寸 Mat と 1/4 縮小 Mat
+// - gScanSceneMat: 毎フレーム走査用のフレーム Mat (解析キューの gPreparedSceneMat と別スロット)
+static std::vector<std::vector<cv::Mat>> gCachedMonsterTemplateGroupsHalf;
+static const double kMonsterCoarseScale = 0.5;
+static const int kLogoCoarseFactor = 4;
+struct LogoTemplate { cv::Mat full; cv::Mat coarse; };
+static std::map<std::string, LogoTemplate> gLogoTemplates;
+static cv::Mat gScanSceneMat;
+
+static void rebuildHalfMonsterTemplates() {
+    gCachedMonsterTemplateGroupsHalf.clear();
+    gCachedMonsterTemplateGroupsHalf.reserve(gCachedMonsterTemplateGroups.size());
+    for (const auto& group : gCachedMonsterTemplateGroups) {
+        std::vector<cv::Mat> half;
+        half.reserve(group.size());
+        for (const auto& tpl : group) {
+            cv::Mat small;
+            cv::resize(tpl, small, cv::Size(), kMonsterCoarseScale, kMonsterCoarseScale, cv::INTER_AREA);
+            half.push_back(small);
+        }
+        gCachedMonsterTemplateGroupsHalf.push_back(std::move(half));
+    }
+}
 
 /**
  * UIImage を cv::Mat (RGB) に変換するヘルパー
@@ -129,6 +157,7 @@ static cv::Mat gPreparedSceneMat;
         group.push_back([self cvMatFromUIImage:img]);
         gCachedMonsterTemplateGroups.push_back(std::move(group));
     }
+    rebuildHalfMonsterTemplates();
 }
 
 + (void)cacheMonsterTemplatesGrouped:(NSArray<NSArray<UIImage *> *> *)templateGroups {
@@ -144,6 +173,7 @@ static cv::Mat gPreparedSceneMat;
         }
         gCachedMonsterTemplateGroups.push_back(std::move(mats));
     }
+    rebuildHalfMonsterTemplates();
 }
 
 + (double)findBestMonsterMatchUsingCache:(UIImage *)roi {
@@ -671,4 +701,139 @@ static cv::Mat gPreparedSceneMat;
     return results;
 }
 
+// MARK: - 低速コア対策 (2026-10-31)
+
++ (void)cacheLogoTemplate:(UIImage *)templateImg forKey:(NSString *)key {
+    if (templateImg == nil || key == nil) return;
+    LogoTemplate t;
+    t.full = [self cvMatFromUIImage:templateImg];
+    if (t.full.cols >= kLogoCoarseFactor * 4 && t.full.rows >= kLogoCoarseFactor * 4) {
+        cv::resize(t.full, t.coarse, cv::Size(), 1.0 / kLogoCoarseFactor, 1.0 / kLogoCoarseFactor, cv::INTER_AREA);
+    }
+    gLogoTemplates[std::string(key.UTF8String)] = t;
+}
+
++ (void)prepareScanSceneMat:(UIImage *)scene {
+    gScanSceneMat = [self cvMatFromUIImage:scene];
+}
+
++ (void)clearScanSceneMat {
+    gScanSceneMat.release();
+}
+
++ (double)matchLogoInScanSceneForKey:(NSString *)key
+                             centerX:(int)centerX
+                             centerY:(int)centerY
+                      verticalMargin:(int)vMargin
+                    horizontalMargin:(int)hMargin
+                              coarse:(BOOL)coarse {
+    if (gScanSceneMat.empty() || key == nil) return 0.0;
+    auto it = gLogoTemplates.find(std::string(key.UTF8String));
+    if (it == gLogoTemplates.end()) return 0.0;
+    const cv::Mat& tpl = it->second.full;
+    const cv::Mat& scene = gScanSceneMat;
+    int imgW = scene.cols, imgH = scene.rows;
+    if (tpl.empty() || tpl.cols > imgW || tpl.rows > imgH) return 0.0;
+
+    // 探索窓: performColorMatch と同じ (テンプレ + 各辺マージン)
+    int roiW = std::min(tpl.cols + hMargin * 2, imgW);
+    int roiH = std::min(tpl.rows + vMargin * 2, imgH);
+    int left = std::max(0, std::min(centerX - roiW / 2, imgW - roiW));
+    int top  = std::max(0, std::min(centerY - roiH / 2, imgH - roiH));
+    cv::Rect roiRect(left, top, roiW, roiH);
+    if (roiRect.width < tpl.cols || roiRect.height < tpl.rows) return 0.0;
+    cv::Mat roi = scene(roiRect);
+
+    if (!coarse || it->second.coarse.empty()) {
+        cv::Mat result;
+        cv::matchTemplate(roi, tpl, result, cv::TM_CCOEFF_NORMED);
+        double maxVal;
+        cv::minMaxLoc(result, nullptr, &maxVal);
+        return maxVal;
+    }
+
+    // 粗: 1/4 縮小で最良位置
+    const cv::Mat& tplSmall = it->second.coarse;
+    cv::Mat roiSmall;
+    cv::resize(roi, roiSmall, cv::Size(), 1.0 / kLogoCoarseFactor, 1.0 / kLogoCoarseFactor, cv::INTER_AREA);
+    if (tplSmall.cols > roiSmall.cols || tplSmall.rows > roiSmall.rows) {
+        cv::Mat result;
+        cv::matchTemplate(roi, tpl, result, cv::TM_CCOEFF_NORMED);
+        double maxVal;
+        cv::minMaxLoc(result, nullptr, &maxVal);
+        return maxVal;
+    }
+    cv::Mat coarseResult;
+    cv::matchTemplate(roiSmall, tplSmall, coarseResult, cv::TM_CCOEFF_NORMED);
+    double coarseMax;
+    cv::Point coarseLoc;
+    cv::minMaxLoc(coarseResult, nullptr, &coarseMax, nullptr, &coarseLoc);
+    // 粗スコアが低ければ原寸確認を省く (閾値の下限 0.4 より十分下)
+    if (coarseMax < 0.25) return coarseMax;
+
+    // 精: 粗の最良位置の周辺 (±pad px) だけ原寸で照合
+    const int pad = kLogoCoarseFactor * 3;
+    int fx = coarseLoc.x * kLogoCoarseFactor;
+    int fy = coarseLoc.y * kLogoCoarseFactor;
+    int x0 = std::max(0, fx - pad);
+    int y0 = std::max(0, fy - pad);
+    int x1 = std::min(roi.cols, fx + tpl.cols + pad);
+    int y1 = std::min(roi.rows, fy + tpl.rows + pad);
+    if (x1 - x0 < tpl.cols || y1 - y0 < tpl.rows) return coarseMax;
+    cv::Mat fineRoi = roi(cv::Rect(x0, y0, x1 - x0, y1 - y0));
+    cv::Mat fineResult;
+    cv::matchTemplate(fineRoi, tpl, fineResult, cv::TM_CCOEFF_NORMED);
+    double fineMax;
+    cv::minMaxLoc(fineResult, nullptr, &fineMax);
+    return fineMax;
+}
+
++ (NSArray<NakamonMatchResult *> *)topKMonstersCoarseInPreparedSceneCenterX:(int)centerX
+                                                                     centerY:(int)centerY
+                                                                       width:(int)width
+                                                                      height:(int)height
+                                                                        topK:(int)topK {
+    if (gCachedMonsterTemplateGroupsHalf.empty() || gPreparedSceneMat.empty() || topK <= 0) {
+        return @[];
+    }
+    int imgW = gPreparedSceneMat.cols;
+    int imgH = gPreparedSceneMat.rows;
+    int w = std::min(width, imgW);
+    int h = std::min(height, imgH);
+    int left = std::max(0, std::min(centerX - w / 2, imgW - w));
+    int top  = std::max(0, std::min(centerY - h / 2, imgH - h));
+    cv::Rect roiRect(left, top, w, h);
+    cv::Mat workRoi;
+    cv::resize(gPreparedSceneMat(roiRect), workRoi, cv::Size(), kMonsterCoarseScale, kMonsterCoarseScale, cv::INTER_AREA);
+    Nakamon::NakamonAnalyzerCore::normalizeImage(workRoi);
+
+    std::vector<std::pair<double, int>> scored;
+    scored.reserve(gCachedMonsterTemplateGroupsHalf.size());
+    for (size_t mIdx = 0; mIdx < gCachedMonsterTemplateGroupsHalf.size(); ++mIdx) {
+        const auto& group = gCachedMonsterTemplateGroupsHalf[mIdx];
+        double monsterBest = -1.0;
+        for (const auto& tpl : group) {
+            if (tpl.cols > workRoi.cols || tpl.rows > workRoi.rows) continue;
+            cv::Mat result;
+            cv::matchTemplate(workRoi, tpl, result, cv::TM_CCOEFF_NORMED);
+            double maxVal;
+            cv::minMaxLoc(result, nullptr, &maxVal);
+            if (maxVal > monsterBest) monsterBest = maxVal;
+        }
+        if (monsterBest >= 0.0) scored.emplace_back(monsterBest, (int)mIdx);
+    }
+    int k = std::min(topK, (int)scored.size());
+    if (k <= 0) return @[];
+    std::partial_sort(scored.begin(), scored.begin() + k, scored.end(),
+                      [](const std::pair<double,int>& a,
+                         const std::pair<double,int>& b) { return a.first > b.first; });
+    NSMutableArray<NakamonMatchResult *> *results = [NSMutableArray arrayWithCapacity:k];
+    for (int i = 0; i < k; i++) {
+        [results addObject:[[NakamonMatchResult alloc] initWithScore:scored[i].first
+                                                                index:scored[i].second]];
+    }
+    return results;
+}
+
 @end
+

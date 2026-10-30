@@ -219,6 +219,50 @@ NS_SWIFT_NAME(topKMonstersInPreparedScene(centerX:centerY:width:height:topK:));
                                      height:(int)height
                             templateIndices:(NSArray<NSNumber *> *)indices;
 
+// MARK: - 低速コア対策 (2026-10-31)
+//
+// バックグラウンドのホストアプリ (ScreenCaptureKit 経路) は iOS に低速コア・低優先度で走らされ、
+// 照合 1 回が前面時の約 10 倍かかる (実測: Xcode 接続あり 1.4ms → なし 12ms)。
+// 以下は計算量そのものを下げるための API:
+//   - ロゴ (VS/WIN/LOSE/SELECT) のテンプレを cv::Mat でキャッシュし、フレームも 1 回だけ変換して使い回す
+//   - 大きなロゴは 1/4 縮小で位置を探してから原寸で狭い範囲だけ確認する (粗→精)
+//   - モンスターの Top-K 選抜は 1/2 縮小テンプレで行う (原寸照合は Top-K だけ)
+
+/** ロゴテンプレ (VS/WIN/LOSE/SELECT) を cv::Mat でキャッシュする。校正 (リサイズ) 後に 1 回呼ぶ。 */
++ (void)cacheLogoTemplate:(UIImage *)templateImg forKey:(NSString *)key
+NS_SWIFT_NAME(cacheLogoTemplate(_:forKey:));
+
+/** 毎フレーム走査用に 1 フレームを cv::Mat 化して保持する (解析用 prepareSceneMat: とは別スロット。別キューから同時に使っても衝突しない)。 */
++ (void)prepareScanSceneMat:(UIImage *)scene;
+
+/** prepareScanSceneMat: で保持した Mat を解放する。 */
++ (void)clearScanSceneMat;
+
+/**
+ * prepareScanSceneMat: 済のフレームに対し、cacheLogoTemplate:forKey: 済のテンプレで performMatch 相当の照合を行う。
+ * coarse=YES なら 1/4 縮小で最良位置を探し、原寸ではその周辺だけ照合する (大きなロゴ向け。計算量 1/100 以下)。
+ * coarse=NO は原寸で従来どおり (小さな SELECT 向け)。戻り値は TM_CCOEFF_NORMED の最大値。
+ */
++ (double)matchLogoInScanSceneForKey:(NSString *)key
+                             centerX:(int)centerX
+                             centerY:(int)centerY
+                      verticalMargin:(int)vMargin
+                    horizontalMargin:(int)hMargin
+                              coarse:(BOOL)coarse
+NS_SWIFT_NAME(matchLogoInScanScene(key:centerX:centerY:verticalMargin:horizontalMargin:coarse:));
+
+/**
+ * prepareSceneMat: 済の scene に対し、1/2 縮小テンプレで全モンスターを照合して Top-K を返す。
+ * スコアは縮小側の値なので目安。原寸の確定スコアは bestMonsterInPreparedScene:templateIndices: で取る。
+ */
++ (NSArray<NakamonMatchResult *> *)topKMonstersCoarseInPreparedSceneCenterX:(int)centerX
+                                                                     centerY:(int)centerY
+                                                                       width:(int)width
+                                                                      height:(int)height
+                                                                        topK:(int)topK
+NS_SWIFT_NAME(topKMonstersCoarseInPreparedScene(centerX:centerY:width:height:topK:));
+
 @end
+
 
 NS_ASSUME_NONNULL_END

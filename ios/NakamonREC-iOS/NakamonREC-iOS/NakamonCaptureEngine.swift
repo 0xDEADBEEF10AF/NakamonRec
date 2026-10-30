@@ -327,6 +327,12 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         // C++ 側にもモンスターテンプレを cv::Mat で 1 回だけ変換してキャッシュ
         // (Android と統一: runtime は単一スケール。SE3 のような特殊端末は将来 TODO ③ の詳細校正で個別救済)
         NakamonWrapper.cacheMonsterTemplates(monsterTemplates)
+        // ロゴ (VS/SELECT/WIN/LOSE) も cv::Mat でキャッシュ。毎フレーム走査でテンプレを変換し直さないため
+        // (低速コア対策 2026-10-31。VS/WIN/LOSE は 1/4 縮小版も持ち、粗→精の 2 段で照合する)
+        for (i, vs) in vsLogos.enumerated() { NakamonWrapper.cacheLogoTemplate(vs, forKey: "vs\(i)") }
+        if let select = selectLogo { NakamonWrapper.cacheLogoTemplate(select, forKey: "select") }
+        if let win = winLogo { NakamonWrapper.cacheLogoTemplate(win, forKey: "win") }
+        if let lose = loseLogo { NakamonWrapper.cacheLogoTemplate(lose, forKey: "lose") }
         BattleLogger.append("モンスターテンプレ cv::Mat キャッシュ完了")
     }
 
@@ -384,6 +390,11 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             handleGrandPrixWait(uiImage)
         }
 
+        // フレームを 1 回だけ cv::Mat 化し、このフレーム内の全ロゴ照合 (パーティ 3 窓 / VS / WIN / LOSE) で使い回す。
+        // 以前は照合のたびにフレーム全体を変換していた (1 フレームあたり最大 6 回 × 6.8MB)。
+        // 解析キュー側の prepareSceneMat とは別スロットなので同時実行しても衝突しない
+        NakamonWrapper.prepareScanSceneMat(uiImage)
+        defer { NakamonWrapper.clearScanSceneMat() }
         if !isBattleInProgress {
             scanForPartySelect(uiImage)
             scanForVS(uiImage)
@@ -467,12 +478,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             let cy = Int32(h * (roi.centerYRatio - (upRatio - downRatio) / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
             let vMargin = Int32(h * (upRatio + downRatio) / 2)
-            let score = NakamonWrapper.performMatch(withScene: scene,
-                                                  templateImg: select,
-                                                  centerX: cx,
-                                                  centerY: cy,
-                                                  verticalMargin: vMargin,
-                                                  horizontalMargin: hMargin)
+            // SELECT は小さいので原寸のまま (フレーム変換だけ共有)
+            let score = NakamonWrapper.matchLogoInScanScene(key: "select",
+                                                            centerX: cx,
+                                                            centerY: cy,
+                                                            verticalMargin: vMargin,
+                                                            horizontalMargin: hMargin,
+                                                            coarse: false)
             allScores.append(score)
             if score > bestScore {
                 bestScore = score
@@ -585,13 +597,14 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         // どの index が勝ったかで大会戦かを判定する (vsIsTournament)。
         var score: Double = 0
         var bestIdx: Int = 0
-        for (i, vs) in vsLogos.enumerated() {
-            let s = NakamonWrapper.performMatch(withScene: scene,
-                                              templateImg: vs,
-                                              centerX: cx,
-                                              centerY: cy,
-                                              verticalMargin: vMargin,
-                                              horizontalMargin: hMargin)
+        for i in vsLogos.indices {
+            // 粗 (1/4) → 精 (周辺のみ原寸) の 2 段照合。大きなロゴの毎フレーム照合を 1/100 以下に
+            let s = NakamonWrapper.matchLogoInScanScene(key: "vs\(i)",
+                                                        centerX: cx,
+                                                        centerY: cy,
+                                                        verticalMargin: vMargin,
+                                                        horizontalMargin: hMargin,
+                                                        coarse: true)
             if s > score { score = s; bestIdx = i }
         }
         let bestVS: UIImage = vsLogos[bestIdx]
@@ -718,18 +731,39 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                     let bestScore: Double
                     let bestIndex: Int
                     if isFirstFrame {
-                        // Frame 1: 全テンプレ走査 + Top-K キャッシュ
-                        let topResults = NakamonWrapper.topKMonstersInPreparedScene(centerX: cx,
+                        // Frame 1: 1/2 縮小テンプレで全モンスターを粗選抜 (Top-K) → 原寸は Top-K だけ照合。
+                        // 低速コア対策 (2026-10-31): 原寸の全走査 (133 体 × 8 スロット) が背景アプリでは 14 秒かかった。
+                        // 縮小側は面積 1/4 × テンプレ 1/4 で約 1/16 のコスト。正解が Top-K (10) に入れば原寸で確定する
+                        let coarse = NakamonWrapper.topKMonstersCoarseInPreparedScene(centerX: cx,
+                                                                                       centerY: cy,
+                                                                                       width: rw,
+                                                                                       height: rh,
+                                                                                       topK: topK)
+                        if !coarse.isEmpty {
+                            let indices = coarse.map { NSNumber(value: $0.index) }
+                            let fine = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
+                                                                                 centerY: cy,
+                                                                                 width: rw,
+                                                                                 height: rh,
+                                                                                 templateIndices: indices)
+                            if fine.score >= fallbackThreshold {
+                                bestScore = fine.score
+                                bestIndex = fine.index
+                                slotTopKIndices[slotIdx] = indices
+                                slotTopKDiag[slotIdx] = coarse.map { (index: $0.index, score: $0.score) }
+                                slotFallback[slotIdx] = false
+                            } else {
+                                // 粗選抜の Top-K に 0.7 以上が無い → 従来どおり原寸で全走査し、以降のフレームも全走査
+                                let full = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
                                                                                      centerY: cy,
                                                                                      width: rw,
-                                                                                     height: rh,
-                                                                                     topK: topK)
-                        if let first = topResults.first {
-                            bestScore = first.score
-                            bestIndex = first.index
-                            slotTopKIndices[slotIdx] = topResults.map { NSNumber(value: $0.index) }
-                            slotTopKDiag[slotIdx] = topResults.map { (index: $0.index, score: $0.score) }
-                            slotFallback[slotIdx] = first.score < fallbackThreshold
+                                                                                     height: rh)
+                                bestScore = max(full.score, fine.score)
+                                bestIndex = full.score >= fine.score ? full.index : fine.index
+                                slotTopKIndices[slotIdx] = indices
+                                slotTopKDiag[slotIdx] = coarse.map { (index: $0.index, score: $0.score) }
+                                slotFallback[slotIdx] = true
+                            }
                         } else {
                             bestScore = 0
                             bestIndex = -1
@@ -868,12 +902,12 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             let cy = Int32(scene.size.height * roi.centerYRatio)
             let hMargin = Int32(scene.size.width * roi.searchHMarginRatio)
             let vMargin = Int32(scene.size.height * roi.searchVMarginRatio)
-            let score = NakamonWrapper.performMatch(withScene: scene,
-                                                  templateImg: win,
-                                                  centerX: cx,
-                                                  centerY: cy,
-                                                  verticalMargin: vMargin,
-                                                  horizontalMargin: hMargin)
+            let score = NakamonWrapper.matchLogoInScanScene(key: "win",
+                                                            centerX: cx,
+                                                            centerY: cy,
+                                                            verticalMargin: vMargin,
+                                                            horizontalMargin: hMargin,
+                                                            coarse: true)
             if score > DetectionThresholdsConfig.winThreshold {
                 logger.log("🏆 Battle Won! (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "🏆 勝利検知 Score %.3f", score))
@@ -892,12 +926,12 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             let cy = Int32(scene.size.height * roi.centerYRatio)
             let hMargin = Int32(scene.size.width * roi.searchHMarginRatio)
             let vMargin = Int32(scene.size.height * roi.searchVMarginRatio)
-            let score = NakamonWrapper.performMatch(withScene: scene,
-                                                  templateImg: lose,
-                                                  centerX: cx,
-                                                  centerY: cy,
-                                                  verticalMargin: vMargin,
-                                                  horizontalMargin: hMargin)
+            let score = NakamonWrapper.matchLogoInScanScene(key: "lose",
+                                                            centerX: cx,
+                                                            centerY: cy,
+                                                            verticalMargin: vMargin,
+                                                            horizontalMargin: hMargin,
+                                                            coarse: true)
             if score > DetectionThresholdsConfig.loseThreshold {
                 logger.log("💀 Battle Lost... (Score: \(score, format: .fixed(precision: 3)))")
                 BattleLogger.append(String(format: "💀 敗北検知 Score %.3f", score))
