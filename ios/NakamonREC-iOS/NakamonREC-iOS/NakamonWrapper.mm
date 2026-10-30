@@ -835,5 +835,31 @@ static void rebuildHalfMonsterTemplates() {
     return results;
 }
 
++ (BOOL)saveLogoRegionFromScanSceneForKey:(NSString *)key
+                                  centerX:(int)centerX
+                                  centerY:(int)centerY
+                           verticalMargin:(int)vMargin
+                         horizontalMargin:(int)hMargin
+                                 savePath:(NSString *)savePath {
+    if (gScanSceneMat.empty() || key == nil || savePath == nil) return NO;
+    auto it = gLogoTemplates.find(std::string(key.UTF8String));
+    if (it == gLogoTemplates.end() || it->second.full.empty()) return NO;
+    const cv::Mat& tpl = it->second.full;
+    const cv::Mat& scene = gScanSceneMat;
+    int imgW = scene.cols, imgH = scene.rows;
+    if (tpl.cols > imgW || tpl.rows > imgH) return NO;
+    int roiW = std::min(tpl.cols + hMargin * 2, imgW);
+    int roiH = std::min(tpl.rows + vMargin * 2, imgH);
+    int left = std::max(0, std::min(centerX - roiW / 2, imgW - roiW));
+    int top  = std::max(0, std::min(centerY - roiH / 2, imgH - roiH));
+    cv::Rect roiRect(left, top, roiW, roiH);
+    if (roiRect.x + roiRect.width > imgW || roiRect.y + roiRect.height > imgH) return NO;
+    cv::Mat roi;
+    scene(roiRect).copyTo(roi);
+    [self saveMat:roi toPath:savePath];
+    return YES;
+}
+
 @end
+
 

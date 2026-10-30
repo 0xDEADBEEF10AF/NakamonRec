@@ -647,13 +647,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             let cy = Int32(h * (roi.centerYRatio - (upRatio - downRatio) / 2))
             let hMargin = Int32(w * roi.searchHMarginRatio)
             let vMargin = Int32(h * (upRatio + downRatio) / 2)
-            _ = NakamonWrapper.performMatchAndSave(withScene: scene,
-                                                   templateImg: select,
-                                                   centerX: cx,
-                                                   centerY: cy,
-                                                   verticalMargin: vMargin,
-                                                   horizontalMargin: hMargin,
-                                                   savePath: path)
+            // 走査用に変換済みのフレームから切り出す (従来は 3 窓ぶんフレーム全体を変換し直していた)
+            if let path {
+                _ = NakamonWrapper.saveLogoRegionFromScanScene(key: "select",
+                                                               centerX: cx, centerY: cy,
+                                                               verticalMargin: vMargin, horizontalMargin: hMargin,
+                                                               savePath: path)
+            }
         }
         if let scores {
             MatchingScoreSnapshot.updateMetadata { meta in
@@ -745,13 +745,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
             // マッチングスコア詳細: 古い vs/slot/result サムネをクリアし、新しい vs.png を保存
             MatchingScoreSnapshot.clearBattleArtifacts()
             let vsPath = MatchingScoreSnapshot.path(forFile: "vs.png")
-            _ = NakamonWrapper.performMatchAndSave(withScene: scene,
-                                                   templateImg: bestVS,
-                                                   centerX: cx,
-                                                   centerY: cy,
-                                                   verticalMargin: vMargin,
-                                                   horizontalMargin: hMargin,
-                                                   savePath: vsPath)
+            // 走査用に変換済みのフレームから切り出す (フレームの再変換・再照合をしない)
+            if let vsPath {
+                _ = NakamonWrapper.saveLogoRegionFromScanScene(key: "vs\(bestIdx)",
+                                                               centerX: cx, centerY: cy,
+                                                               verticalMargin: vMargin, horizontalMargin: hMargin,
+                                                               savePath: vsPath)
+            }
             let ts = BattleTimestampFormatter.formatter.string(from: startedAt)
             MatchingScoreSnapshot.updateMetadata { meta in
                 meta.battleTimestamp = ts
@@ -1078,13 +1078,12 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     private func saveResultSnapshot(scene: UIImage, template: UIImage, label: String, score: Double,
                                     cx: Int32, cy: Int32, hMargin: Int32, vMargin: Int32) {
         let path = MatchingScoreSnapshot.path(forFile: "result.png")
-        _ = NakamonWrapper.performMatchAndSave(withScene: scene,
-                                               templateImg: template,
-                                               centerX: cx,
-                                               centerY: cy,
-                                               verticalMargin: vMargin,
-                                               horizontalMargin: hMargin,
-                                               savePath: path)
+        if let path {
+            _ = NakamonWrapper.saveLogoRegionFromScanScene(key: label == "WIN" ? "win" : "lose",
+                                                           centerX: cx, centerY: cy,
+                                                           verticalMargin: vMargin, horizontalMargin: hMargin,
+                                                           savePath: path)
+        }
         MatchingScoreSnapshot.updateMetadata { meta in
             meta.resultLabel = label
             meta.resultScore = score

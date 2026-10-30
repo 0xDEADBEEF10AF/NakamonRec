@@ -262,7 +262,20 @@ NS_SWIFT_NAME(matchLogoInScanScene(key:centerX:centerY:verticalMargin:horizontal
                                                                         topK:(int)topK
 NS_SWIFT_NAME(topKMonstersCoarseInPreparedScene(centerX:centerY:width:height:topK:));
 
+/**
+ * prepareScanSceneMat: 済のフレームから、cacheLogoTemplate:forKey: 済テンプレの探索窓 (テンプレ + 各辺マージン) を
+ * 切り出して PNG 保存する。フレームの再変換も照合もしない (performMatchAndSave の軽量版。診断画像の保存専用)。
+ */
++ (BOOL)saveLogoRegionFromScanSceneForKey:(NSString *)key
+                                  centerX:(int)centerX
+                                  centerY:(int)centerY
+                           verticalMargin:(int)vMargin
+                         horizontalMargin:(int)hMargin
+                                 savePath:(NSString *)savePath
+NS_SWIFT_NAME(saveLogoRegionFromScanScene(key:centerX:centerY:verticalMargin:horizontalMargin:savePath:));
+
 @end
+
 
 
 NS_ASSUME_NONNULL_END
