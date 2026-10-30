@@ -689,16 +689,26 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         // 診断ログ用: Frame 1 の Top-K 候補と各スコアを保持 (グレーゾーン解析用)
         var slotTopKDiag: [[(index: Int, score: Double)]] = Array(repeating: [], count: slotROIs.count)
 
+        // 診断: 解析内訳 (どこに時間が使われたか。2026-10-30 「同じ 886px で 2 秒 ↔ 17 秒」の切り分け用)
+        var frameTimes: [Double] = []          // フレームごとの壁時計 (s)
+        var prepareTime: Double = 0            // UIImage → cv::Mat 変換の合計 (s)
+        var snapshotTime: Double = 0           // slot_<i>.png 保存の合計 (s)
+        var snapshotCount = 0
+        var frame1Max: [Double] = []           // Frame 1 の各スロット最大スコア
+
         var frames = inputFrames
         var isFirstFrame = true
         while !frames.isEmpty {
             autoreleasepool {
+                let frameStart = CACurrentMediaTime()
                 let frame = frames.removeFirst()
                 let w = frame.size.width
                 let h = frame.size.height
                 // Phase 2.1: UIImage → cv::Mat 変換を 1 フレーム = 1 回に集約
                 // (8 スロット × 5 フレーム = 40 回 → 5 回。Android 同等にする)
+                let prepStart = CACurrentMediaTime()
                 NakamonWrapper.prepareSceneMat(frame)
+                prepareTime += CACurrentMediaTime() - prepStart
                 for (slotIdx, roi) in slotROIs.enumerated() {
                     let cx = Int32(w * roi.centerXRatio)
                     let cy = Int32(h * roi.centerYRatio)
@@ -725,6 +735,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                             bestIndex = -1
                             slotFallback[slotIdx] = true
                         }
+                        frame1Max.append(bestScore)
                     } else if slotFallback[slotIdx] {
                         // フォールバック: Frame 1 で max < 0.5 のスロットは全テンプレ走査を継続
                         let r = NakamonWrapper.bestMonsterInPreparedScene(centerX: cx,
@@ -750,14 +761,18 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                         // 新ベスト → このフレームの ROI を slot_<i>.png として上書き保存
                         // (最終的に最高スコアフレームのスナップショットが残る)
                         if let path = MatchingScoreSnapshot.path(forFile: "slot_\(slotIdx).png") {
+                            let snapStart = CACurrentMediaTime()
                             saveSlotSnapshot(frame: frame,
                                              centerX: Int(cx), centerY: Int(cy),
                                              width: Int(rw), height: Int(rh),
                                              toPath: path)
+                            snapshotTime += CACurrentMediaTime() - snapStart
+                            snapshotCount += 1
                         }
                     }
                 }
                 isFirstFrame = false
+                frameTimes.append(CACurrentMediaTime() - frameStart)
             }
         }
         // Phase 2.1: scene Mat キャッシュを解放 (Broadcast Extension 50MB 制限への配慮)
@@ -767,6 +782,13 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         let cpuElapsed = Self.threadCPUTime() - cpuStart
         logger.log("👾 Deep analysis done in \(elapsed, format: .fixed(precision: 2))s (cpu \(cpuElapsed, format: .fixed(precision: 2))s)")
         BattleLogger.append(String(format: "モンスター解析完了 (%.2fs, CPU %.2fs, %@)", elapsed, cpuElapsed, Self.environmentSummary()))
+        // 内訳: Frame1 の各スロット最大 / フォールバック数 / フレームごとの所要 / 変換と保存の合計
+        let f1 = frame1Max.map { String(format: "%.2f", $0) }.joined(separator: " ")
+        let ft = frameTimes.map { String(format: "%.1f", $0) }.joined(separator: "/")
+        BattleLogger.append(String(format: "解析内訳: Frame1最大 [%@], フォールバック %d/%d, フレーム別 %@s, 変換 %.2fs, 切り出し保存 %d回 %.2fs, テンプレ %d体 (%@)",
+                                   f1, slotFallback.filter { $0 }.count, slotFallback.count, ft,
+                                   prepareTime, snapshotCount, snapshotTime, monsterTemplates.count,
+                                   source == .screenCaptureKit ? "SCK" : "RK"))
 
         // 結果を 8 行で書き出す + pending に格納
         var myParty: [String] = []
