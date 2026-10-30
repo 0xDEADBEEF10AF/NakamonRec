@@ -785,10 +785,20 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         // 内訳: Frame1 の各スロット最大 / フォールバック数 / フレームごとの所要 / 変換と保存の合計
         let f1 = frame1Max.map { String(format: "%.2f", $0) }.joined(separator: " ")
         let ft = frameTimes.map { String(format: "%.1f", $0) }.joined(separator: "/")
-        BattleLogger.append(String(format: "解析内訳: Frame1最大 [%@], フォールバック %d/%d, フレーム別 %@s, 変換 %.2fs, 切り出し保存 %d回 %.2fs, テンプレ %d体 (%@)",
+        // 照合窓とテンプレの実寸 (px)。校正データの余白が変わっていれば窓が変わり、照合 1 回のコストが面積ぶん変わる
+        let fw = inputFrames.first?.size.width ?? 0
+        let fh = inputFrames.first?.size.height ?? 0
+        var winW = 0, winH = 0
+        if let roi0 = slotROIs.first {
+            winW = Int(fw * CGFloat(roi0.widthRatio + 2 * roi0.searchHMarginRatio))
+            winH = Int(fh * CGFloat(roi0.heightRatio + 2 * roi0.searchVMarginRatio))
+        }
+        let tplW = Int(monsterTemplates.first?.size.width ?? 0)
+        let tplH = Int(monsterTemplates.first?.size.height ?? 0)
+        BattleLogger.append(String(format: "解析内訳: Frame1最大 [%@], フォールバック %d/%d, フレーム別 %@s, 変換 %.2fs, 切り出し保存 %d回 %.2fs, テンプレ %d体 %dx%dpx, 窓 %dx%dpx (%@)",
                                    f1, slotFallback.filter { $0 }.count, slotFallback.count, ft,
-                                   prepareTime, snapshotCount, snapshotTime, monsterTemplates.count,
-                                   source == .screenCaptureKit ? "SCK" : "RK"))
+                                   prepareTime, snapshotCount, snapshotTime, monsterTemplates.count, tplW, tplH,
+                                   winW, winH, source == .screenCaptureKit ? "SCK" : "RK"))
 
         // 結果を 8 行で書き出す + pending に格納
         var myParty: [String] = []
