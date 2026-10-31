@@ -20,7 +20,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
-import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -37,7 +36,6 @@ import com.dqw.nakamonrec.databinding.ActivityMainBinding
 import com.google.gson.Gson
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.install.model.UpdateAvailability
-import org.opencv.android.OpenCVLoader
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -135,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
         }
 
-        if (OpenCVLoader.initLocal()) Log.i("OpenCV", "OpenCV loaded successfully")
+        // OpenCV の初期化は NakamonApplication.onCreate で済んでいる (26.11.1)
 
         binding.btnToggleService.setOnClickListener {
             if (MediaCaptureService.isRunning) {

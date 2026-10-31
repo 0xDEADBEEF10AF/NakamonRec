@@ -28,7 +28,13 @@ class CalibrationActivity : AppCompatActivity() {
     private var lastWinRecord: BattleRecord? = null
     private var lastLoseRecord: BattleRecord? = null
     private var detectedScale: Float = 1.0f
+    // 校正画面の OpenCV 処理 (テンプレ読み込み・スコア計算・自動校正・テンプレ削除) はすべてこの 1 本で動かす。
+    // 26.11.1: 画面を開いた直後のスコア計算とテンプレ読み込みをメインスレッドで行っていたため、
+    // 低速端末で ANR (入力 5 秒無応答) が多発した (Vitals: findBestMonsterMatchMicroScales 11 件)。
+    // 単一スレッドなので BattleAnalyzer (非スレッドセーフ) への呼び出し順序もそのまま保たれる
     private val executor = Executors.newSingleThreadExecutor()
+    // 枠のスコア計算は世代番号で管理し、古い計算結果が新しい枠 (校正結果・リセット) を上書きしないようにする
+    private var scoreGeneration = 0
 
     // 詳細校正の 8 体指定を Activity セッション中保持する。
     // ダイアログを開き直しても前回の選択が表示され、選び直し負担を抑える。
@@ -50,10 +56,22 @@ class CalibrationActivity : AppCompatActivity() {
             return
         }
 
-        analyzer.loadTemplates(this)
-        analyzer.loadCustomTemplates(this)
+        // テンプレ読み込み (約 120 枚の復号 + Mat 変換) は executor で。以降の executor ジョブ
+        // (スコア計算・校正) はこの後ろに並ぶので、読み込み完了前に走ることはない
+        executor.execute {
+            analyzer.loadTemplates(this)
+            analyzer.loadCustomTemplates(this)
+        }
 
         setupUI()
+    }
+
+    /** メインスレッドへ戻す。Activity が閉じられた後なら何もしない (executor の完了が遅れて届くケース) */
+    private fun postToMain(block: () -> Unit) {
+        Handler(Looper.getMainLooper()).post {
+            if (isDestroyed || isFinishing) return@post
+            block()
+        }
     }
 
     private fun setupUI() {
@@ -163,17 +181,12 @@ class CalibrationActivity : AppCompatActivity() {
         lastWinRecord = null
         lastLoseRecord = null
 
-        // 現在のモードに応じて対象のカスタムテンプレートのみを削除
-        when (mode) {
-            "party" -> analyzer.deleteCustomTemplate("party_custom.png")
-            "vs" -> {
-                analyzer.deleteCustomTemplate("vs_custom.png")
-                // VS をデフォルトに戻す = 大会用でなくなるためグランプリモード解除
-                GrandPrixMode.setEnabled(this, false)
-            }
-            "win" -> analyzer.deleteCustomTemplate("win_custom.png")
-            "lose" -> analyzer.deleteCustomTemplate("lose_custom.png")
-        }
+        // 現在のモードに応じて対象のカスタムテンプレートのみを削除。
+        // テンプレの Mat 解放を伴うので executor 上で行う (進行中のスコア計算との競合を避ける)。
+        // 直後の displayBoxes のスコア計算は同じ executor の後ろに並ぶので、削除後の状態で計算される
+        customTemplateFileName()?.let { file -> executor.execute { analyzer.deleteCustomTemplate(file) } }
+        // VS をデフォルトに戻す = 大会用でなくなるためグランプリモード解除
+        if (mode == "vs") GrandPrixMode.setEnabled(this, false)
 
         val defaultData = CalibrationData()
         detectedScale = defaultData.uiScale
@@ -198,6 +211,7 @@ class CalibrationActivity : AppCompatActivity() {
      * 自動校正の前にカスタムテンプレートを一時退避する。自動校正は既存のカスタムテンプレートも候補に
      * 使うため、古い (不適切な) テンプレートの影響を受けないよう削除してから走らせたい。一方で失敗時は
      * 「前回の校正をそのまま残す」必要があるので、ファイル内容を控えておき失敗時に書き戻す。
+     * analyzer のテンプレを触るので executor 上で呼ぶこと。
      */
     private fun backupCustomTemplate(fileName: String): ByteArray? {
         val f = File(filesDir, fileName)
@@ -206,10 +220,11 @@ class CalibrationActivity : AppCompatActivity() {
         return bytes
     }
 
+    /** 退避したテンプレートを書き戻す (メインスレッドから呼べる。analyzer への再読み込みは executor へ) */
     private fun restoreCustomTemplate(fileName: String, bytes: ByteArray?) {
         if (bytes == null) return
         File(filesDir, fileName).writeBytes(bytes)
-        analyzer.loadCustomTemplates(this)
+        executor.execute { analyzer.loadCustomTemplates(this) }
     }
 
     private fun customTemplateFileName(): String? = when (mode) {
@@ -251,11 +266,12 @@ class CalibrationActivity : AppCompatActivity() {
         // 自動校正の開始前に、既存のカスタムテンプレートを一時退避してクリーンな状態にする
         // (失敗時は書き戻して「前回の校正のまま」にする)
         val templateFile = customTemplateFileName()
-        val templateBackup = templateFile?.let { backupCustomTemplate(it) }
 
         binding.layoutProgress.visibility = View.VISIBLE
 
         executor.execute {
+            // 退避 (= 削除) もテンプレの Mat を触るので executor 上で
+            val templateBackup = templateFile?.let { backupCustomTemplate(it) }
             var newScale = detectedScale
             val results: List<CalibrationView.CalibrationBox>? = when (mode) {
                 "party" -> {
@@ -334,9 +350,10 @@ class CalibrationActivity : AppCompatActivity() {
                 else -> null
             }
 
-            Handler(Looper.getMainLooper()).post {
+            postToMain {
                 binding.layoutProgress.visibility = View.GONE
                 if (results != null) {
+                    scoreGeneration++ // 進行中の枠スコア計算があっても、この結果を上書きさせない
                     detectedScale = newScale
                     binding.calibrationView.setUiScale(detectedScale)
                     binding.calibrationView.setBoxes(results)
@@ -353,9 +370,27 @@ class CalibrationActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 校正データの枠を表示する。枠はスコア無し (-1 = 非表示) で即描画し、スコアは executor で計算して
+     * 後から埋める (OpenCV の照合をメインスレッドで回さない)。persistCalibration は枠の位置しか読まないので、
+     * スコア計算の完了を待たずに呼んでよい
+     */
     private fun displayBoxes(data: CalibrationData) {
-        val bitmap = sourceBitmap
-        val boxes = when (mode) {
+        binding.calibrationView.setBoxes(buildBoxes(data, null))
+        val bitmap = sourceBitmap ?: return
+        val generation = ++scoreGeneration
+        executor.execute {
+            val scored = buildBoxes(data, bitmap)
+            postToMain {
+                if (generation != scoreGeneration) return@postToMain // 校正・リセットで枠が差し替わった後の古い結果
+                binding.calibrationView.setBoxes(scored)
+            }
+        }
+    }
+
+    /** 校正データから表示用の枠を組み立てる。bitmap が null ならスコアは計算しない (-1) */
+    private fun buildBoxes(data: CalibrationData, bitmap: Bitmap?): List<CalibrationView.CalibrationBox> {
+        return when (mode) {
             "party" -> data.partySelectBoxes.mapIndexed { i: Int, config: BoxConfig ->
                 val score = if (bitmap != null) analyzer.detectPartyScore(bitmap, config) else -1.0
                 val actual = lastMeasuredRecord?.partySelectScores?.getOrNull(i) ?: -1.0
@@ -389,7 +424,6 @@ class CalibrationActivity : AppCompatActivity() {
             }
             else -> emptyList()
         }
-        binding.calibrationView.setBoxes(boxes)
     }
 
     private fun loadCalibrationData(): CalibrationData {
@@ -730,11 +764,10 @@ class CalibrationActivity : AppCompatActivity() {
     }
 
     private fun runDetailedAutoCalibration(bitmap: Bitmap, specs: List<String>) {
-        // 既存のカスタムテンプレ (VS) を一時退避して fresh state に (失敗時は書き戻す)
-        val templateBackup = backupCustomTemplate("vs_custom.png")
-
         binding.layoutProgress.visibility = View.VISIBLE
         executor.execute {
+            // 既存のカスタムテンプレ (VS) を一時退避して fresh state に (失敗時は書き戻す)。executor 上で
+            val templateBackup = backupCustomTemplate("vs_custom.png")
             val autoData = analyzer.autoCalibrateBattleSceneWithSpec(bitmap, specs)
             val results: List<CalibrationView.CalibrationBox>? = if (autoData != null) {
                 analyzer.saveCustomTemplate(bitmap, autoData.vsBox, "vs_custom.png")
@@ -757,9 +790,10 @@ class CalibrationActivity : AppCompatActivity() {
                 list
             } else null
 
-            Handler(Looper.getMainLooper()).post {
+            postToMain {
                 binding.layoutProgress.visibility = View.GONE
                 if (results != null) {
+                    scoreGeneration++ // 進行中の枠スコア計算があっても、この結果を上書きさせない
                     binding.calibrationView.setUiScale(detectedScale)
                     binding.calibrationView.setBoxes(results)
                     // 成功 = その場で保存 (通常の自動校正と同じ)

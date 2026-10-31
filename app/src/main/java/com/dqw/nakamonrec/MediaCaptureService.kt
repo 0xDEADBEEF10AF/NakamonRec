@@ -713,13 +713,53 @@ class MediaCaptureService : Service() {
         // 停止時に放置警告通知が残っていれば消す
         (getSystemService(NOTIFICATION_SERVICE) as? NotificationManager)?.cancel(IDLE_WARNING_NOTIFICATION_ID)
         sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
-        clearBurstImages()
-        virtualDisplay?.release()
-        imageReader?.close()
+
+        // 26.11.1: 解放の順序とスレッドを揃える (Vitals: libc __memcpy SIGSEGV 4 件 + リスナーラムダ 2 件)。
+        // 旧実装はメインスレッドで imageReader.close() していたため、キャプチャスレッドが
+        // processImageToBitmap → copyPixelsFromBuffer でフレームをコピーしている最中にバッファが
+        // unmap され (ImageReader.close 後の Plane バッファ読み出しは仕様上「動作未定義」)、memcpy で落ちた。
+        // STOP タップだけでなく、端末側が画面共有を切ったとき (MediaProjection.Callback.onStop → stopSelf)
+        // も同じ経路を通るので、REC 中に「勝手に落ちた」ように見える。
+        //
+        //  1. リスナーを外して新しいフレームの配信を止める (即時)
+        //  2. VirtualDisplay / ImageReader / 最新フレームの解放はキャプチャスレッドに post し、
+        //     進行中のフレーム変換が終わってから同じスレッド上で閉じる
+        //  3. バースト画像とテンプレの解放は解析スレッドに post し、進行中の解析の後ろに並べる
+        //  quitSafely は post 済みのメッセージを処理してから終了するので、解放は必ず実行される
+        imageReader?.setOnImageAvailableListener(null, null)
+        val reader = imageReader
+        val display = virtualDisplay
+        imageReader = null
+        virtualDisplay = null
+        val releaseCapture = {
+            display?.release()
+            reader?.close()
+            synchronized(this) {
+                latestBitmap?.recycle()
+                latestBitmap = null
+            }
+        }
+        val ch = captureHandler
+        if (ch != null) {
+            ch.removeCallbacksAndMessages(null) // バースト取得の postDelayed などを取り消す
+            ch.post { releaseCapture() }
+            captureThread?.quitSafely()
+        } else {
+            releaseCapture()
+        }
         mediaProjection?.stop()
-        if (::analyzer.isInitialized) analyzer.releaseTemplates()
-        captureThread?.quitSafely()
-        analysisThread?.quitSafely()
+
+        val releaseAnalysis = {
+            clearBurstImages()
+            if (::analyzer.isInitialized) analyzer.releaseTemplates()
+        }
+        val ah = analysisHandler
+        if (ah != null) {
+            ah.post { releaseAnalysis() }
+            analysisThread?.quitSafely()
+        } else {
+            releaseAnalysis()
+        }
         super.onDestroy()
     }
 
