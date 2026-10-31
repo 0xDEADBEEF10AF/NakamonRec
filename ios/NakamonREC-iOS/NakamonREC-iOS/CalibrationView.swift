@@ -216,22 +216,24 @@ struct CalibrationView: View {
                 .stroke(Color.green, lineWidth: 2)
                 .frame(width: templateSize.width, height: templateSize.height)
                 .position(center)
-            // ラベル
-            Text(labelText(idx))
-                .font(.caption2.bold().monospacedDigit())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(Color.black.opacity(0.7))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .position(labelPosition(center: center, searchCenter: searchCenter,
-                                        searchSize: searchSize, layout: layout))
+            // ラベル (スコアを計算しないスロットには付けない)
+            if let text = labelText(idx) {
+                Text(text)
+                    .font(.caption2.bold().monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Color.black.opacity(0.7))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .position(labelPosition(center: center, searchCenter: searchCenter,
+                                            searchSize: searchSize, layout: layout))
+            }
         }
     }
 
-    /// ラベル文字列。対戦じゅんびのモンスタースロット (M1〜M8) はスコアを計算しない (常に「—」だった) ので
-    /// ラベルだけ表示する。それ以外は「ラベル: スコア」
-    private func labelText(_ idx: Int) -> String {
-        if screen == .battlePrep && idx >= 1 { return roiLabel(idx) }
+    /// ラベル文字列「ラベル: スコア」。対戦じゅんびのモンスタースロット (8 枠) はスコアを計算しないため
+    /// ラベル自体を出さない (枠と薄緑の探索範囲だけで位置は伝わる)
+    private func labelText(_ idx: Int) -> String? {
+        if screen == .battlePrep && idx >= 1 { return nil }
         return "\(roiLabel(idx)): \(scoreString(idx))"
     }
 
