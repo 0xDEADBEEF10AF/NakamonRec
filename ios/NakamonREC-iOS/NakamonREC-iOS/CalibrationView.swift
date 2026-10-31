@@ -217,14 +217,33 @@ struct CalibrationView: View {
                 .frame(width: templateSize.width, height: templateSize.height)
                 .position(center)
             // ラベル
-            Text("\(roiLabel(idx)): \(scoreString(idx))")
+            Text(labelText(idx))
                 .font(.caption2.bold().monospacedDigit())
                 .foregroundStyle(.white)
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(Color.black.opacity(0.7))
                 .clipShape(RoundedRectangle(cornerRadius: 4))
-                .position(x: center.x + searchSize.width / 2 + 30, y: center.y)
+                .position(labelPosition(center: center, searchCenter: searchCenter,
+                                        searchSize: searchSize, layout: layout))
         }
+    }
+
+    /// ラベル文字列。対戦じゅんびのモンスタースロット (M1〜M8) はスコアを計算しない (常に「—」だった) ので
+    /// ラベルだけ表示する。それ以外は「ラベル: スコア」
+    private func labelText(_ idx: Int) -> String {
+        if screen == .battlePrep && idx >= 1 { return roiLabel(idx) }
+        return "\(roiLabel(idx)): \(scoreString(idx))"
+    }
+
+    /// ラベル位置。基本は探索窓の右隣。勝利/ざんねんロゴのように探索窓が画面幅のほとんどを占めると
+    /// 右隣が画面外に出てスコアが読めなかったため、収まらない場合は探索窓の真上に置く
+    private func labelPosition(center: CGPoint, searchCenter: CGPoint, searchSize: CGSize, layout: Layout) -> CGPoint {
+        let rightX = center.x + searchSize.width / 2 + 30
+        let labelHalfWidth: CGFloat = 40 // 「LOSE: 0.000」程度の半幅 (概算)
+        if rightX + labelHalfWidth <= layout.imageRect.maxX {
+            return CGPoint(x: rightX, y: center.y)
+        }
+        return CGPoint(x: center.x, y: searchCenter.y - searchSize.height / 2 - 12)
     }
 
     private func roiLabel(_ idx: Int) -> String {
