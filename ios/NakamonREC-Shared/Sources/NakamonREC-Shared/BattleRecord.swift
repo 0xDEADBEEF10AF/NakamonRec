@@ -12,10 +12,19 @@ public struct BattleRecord: Codable, Identifiable, Hashable {
     public var enemyPartyScores: [Double]?
     public var resultScore: Double?
     public var partySelectScores: [Double]?
+    /// ユーザーのメモ (最大 BattleRecordMemo.maxLength 文字、2026-11-02)。無ければ nil。
+    /// 旧ファイルはキーが無く nil でデコードされる。CSV では 12 列目「メモ」(Android と同一)
+    public var memo: String?
 
     /// id は timestamp ベース (秒単位精度。同秒の戦闘は実質ありえない想定)
     /// result/partyIndex などが変わっても id が安定するので SwiftUI の ForEach 追跡が破綻しない
     public var id: String { timestamp }
+
+    /// メモがあるか (空白だけは無しとみなす)
+    public var hasMemo: Bool {
+        guard let memo else { return false }
+        return !memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     public init(timestamp: String,
                 result: String,
@@ -26,7 +35,8 @@ public struct BattleRecord: Codable, Identifiable, Hashable {
                 myPartyScores: [Double]? = nil,
                 enemyPartyScores: [Double]? = nil,
                 resultScore: Double? = nil,
-                partySelectScores: [Double]? = nil) {
+                partySelectScores: [Double]? = nil,
+                memo: String? = nil) {
         self.timestamp = timestamp
         self.result = result
         self.partyIndex = partyIndex
@@ -37,7 +47,13 @@ public struct BattleRecord: Codable, Identifiable, Hashable {
         self.enemyPartyScores = enemyPartyScores
         self.resultScore = resultScore
         self.partySelectScores = partySelectScores
+        self.memo = memo
     }
+}
+
+/// レコードのメモに関する定数 (Android `BattleRecordMemo` と同値)
+public enum BattleRecordMemo {
+    public static let maxLength = 60
 }
 
 /// 戦績全体 (Android `BattleHistory` 互換)。複数 JSON ファイル切替時の単位

@@ -10,6 +10,8 @@ struct RecordEditMenu: View {
     let onAddNext: (Int) -> Void
     let onChangeMonsters: () -> Void
     let onShowMatchingScore: () -> Void
+    /// メモの追加 / 編集 (2026-11-02)
+    let onEditMemo: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm = false
@@ -68,6 +70,12 @@ struct RecordEditMenu: View {
                         DispatchQueue.main.async { onShowMatchingScore() }
                     } label: {
                         rowLabel(systemIcon: "scope", title: "マッチングスコアを確認")
+                    }
+                    Button {
+                        dismiss()
+                        DispatchQueue.main.async { onEditMemo() }
+                    } label: {
+                        rowLabel(systemIcon: "note.text", title: record.hasMemo ? "メモを編集" : "メモを追加")
                     }
                 }
             }

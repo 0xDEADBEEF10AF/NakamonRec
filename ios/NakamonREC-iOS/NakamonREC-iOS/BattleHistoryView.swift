@@ -62,6 +62,10 @@ struct BattleHistoryView: View {
     @State private var editingRecord: BattleRecord? = nil
     @State private var editingMonstersFor: BattleRecord? = nil
     @State private var matchingScoreFor: BattleRecord? = nil
+    /// メモ入力シートの対象レコード (2026-11-02)
+    @State private var memoEditingFor: BattleRecord? = nil
+    /// 編集モード中にタップしてメモ表示に切り替えたレコードの id 群
+    @State private var memoShown: Set<String> = []
     @State private var trendPinnedBattleNum: Int? = nil  // タップで設定する選択点。nil = 表示なし (デフォルトは Canvas が最新点を採用)
     @State private var showStatsMenu = false
     @State private var statsTarget: StatsTarget? = nil
@@ -140,9 +144,20 @@ struct BattleHistoryView: View {
                 },
                 onShowMatchingScore: {
                     matchingScoreFor = record
+                },
+                onEditMemo: {
+                    memoEditingFor = record
                 }
             )
             .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $memoEditingFor) { record in
+            MemoEditSheet(record: record) { updated in
+                BattleHistoryStore.shared.updateRecord(updated)
+                if !updated.hasMemo { memoShown.remove(updated.id) }
+                reload()
+            }
+            .presentationDetents([.medium])
         }
         .sheet(item: $editingMonstersFor) { record in
             MonsterPartyEditor(record: record) { updated in
@@ -463,7 +478,19 @@ struct BattleHistoryView: View {
                         mode: mode,
                         myFilter: filter.requiredMyMonsters,
                         enemyFilter: filter.requiredEnemyMonsters,
+                        showMemo: memoShown.contains(record.id),
                         onAddFilter: addFilter,
+                        onTap: {
+                            // 編集モード中: メモのあるレコードはタップで「通常表示 ⇄ メモ表示」を切り替える
+                            guard mode == .edit, record.hasMemo else { return }
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if memoShown.contains(record.id) {
+                                    memoShown.remove(record.id)
+                                } else {
+                                    memoShown.insert(record.id)
+                                }
+                            }
+                        },
                         onLongPress: {
                             if mode == .edit {
                                 editingRecord = record
@@ -534,6 +561,8 @@ struct BattleHistoryView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     mode = (mode == .edit) ? .filter : .edit
+                    // モード切替でメモ表示は通常表示に戻す (Android と同じ)
+                    memoShown.removeAll()
                 }
             } label: {
                 Image(systemName: mode == .edit ? "pencil" : "line.3.horizontal.decrease.circle")
@@ -570,10 +599,51 @@ private struct BattleRecordRow: View {
     let mode: BattleHistoryMode
     let myFilter: Set<String>
     let enemyFilter: Set<String>
+    /// true のとき 1 行の内容をメモの文章に置き換えて表示する (編集モード中のタップで切替)
+    let showMemo: Bool
     let onAddFilter: (FilterEvent) -> Void
+    /// 行のタップ (編集モードでのメモ表示切替に使う。フィルタモードでは個別要素のタップが優先)
+    let onTap: () -> Void
     let onLongPress: () -> Void
 
     var body: some View {
+        Group {
+            if showMemo, let memo = record.memo {
+                memoContent(memo)
+            } else {
+                normalContent
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .frame(minHeight: 38)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
+        .onLongPressGesture(minimumDuration: 0.4) {
+            onLongPress()
+        }
+    }
+
+    /// メモ表示: 行全体をメモの文章に置き換える (Android と同じ、全部置き換え)
+    private func memoContent(_ memo: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "note.text")
+                .font(.caption)
+                .foregroundStyle(Color.recCoral)
+            Text(memo)
+                .font(.caption)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private var normalContent: some View {
         HStack(spacing: 4) {
             VStack(alignment: .center, spacing: 2) {
                 Text(record.result)
@@ -582,11 +652,14 @@ private struct BattleRecordRow: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .onTapGesture {
-                        if mode == .filter { onAddFilter(.winLose(record.result)) }
+                        if mode == .filter { onAddFilter(.winLose(record.result)) } else { onTap() }
                     }
-                Text(record.partyIndex >= 0 ? "P\(record.partyIndex + 1)" : "P?")
+                // メモがあるレコードは P 番号の横にペンの印 (Android と同じ "P1 ✎")
+                Text((record.partyIndex >= 0 ? "P\(record.partyIndex + 1)" : "P?") + (record.hasMemo ? " ✎" : ""))
                     .font(.caption)
                     .foregroundStyle(.gray)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .frame(width: 42, alignment: .center)
 
@@ -600,7 +673,7 @@ private struct BattleRecordRow: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         )
                         .onTapGesture {
-                            if mode == .filter, let name { onAddFilter(.myMonster(name)) }
+                            if mode == .filter { if let name { onAddFilter(.myMonster(name)) } } else { onTap() }
                         }
                 }
                 Text("VS")
@@ -616,7 +689,7 @@ private struct BattleRecordRow: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         )
                         .onTapGesture {
-                            if mode == .filter, let name { onAddFilter(.enemyMonster(name)) }
+                            if mode == .filter { if let name { onAddFilter(.enemyMonster(name)) } } else { onTap() }
                         }
                 }
             }
@@ -629,13 +702,6 @@ private struct BattleRecordRow: View {
             }
             .foregroundStyle(.gray)
             .frame(width: 50)
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 4)
-        .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onLongPressGesture(minimumDuration: 0.4) {
-            onLongPress()
         }
     }
 

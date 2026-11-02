@@ -58,9 +58,10 @@ public enum CSVSupport {
         lines.append("")
 
         // カラムヘッダー (全セル引用符付き)
+        // 12 列目「メモ」(2026-11-02)。旧バージョンの読み込みは 11 列以上なら受け付けるので互換
         let columns = ["戦闘終了時刻", "勝敗", "選択パーティ",
                        "自分1", "自分2", "自分3", "自分4",
-                       "相手1", "相手2", "相手3", "相手4"]
+                       "相手1", "相手2", "相手3", "相手4", "メモ"]
         lines.append(columns.map(quoted).joined(separator: ","))
 
         // データ行
@@ -76,7 +77,7 @@ public enum CSVSupport {
                 let id = record.enemyParty[idx]
                 return id == "?" ? "?" : MonsterCatalog.name(for: id)
             }
-            let cells = [record.timestamp, record.result, party] + myCells + enemyCells
+            let cells = [record.timestamp, record.result, party] + myCells + enemyCells + [record.memo ?? ""]
             lines.append(cells.map(quoted).joined(separator: ","))
         }
 
@@ -155,12 +156,19 @@ public enum CSVSupport {
                 if name == "?" || name.isEmpty { return "?" }
                 return MonsterCatalog.id(for: name) ?? "?"
             }
+            // 12 列目「メモ」は任意 (旧 CSV には無い)。空文字は nil に寄せる
+            var memo: String? = nil
+            if cells.count > 11 {
+                let m = cells[11].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !m.isEmpty { memo = String(m.prefix(BattleRecordMemo.maxLength)) }
+            }
             let record = BattleRecord(
                 timestamp: timestamp,
                 result: result,
                 partyIndex: partyIndex,
                 myParty: myParty,
-                enemyParty: enemyParty
+                enemyParty: enemyParty,
+                memo: memo
             )
             records.append(record)
         }

@@ -26,6 +26,8 @@ struct ContentView: View {
     // App Store 更新通知 (1日1回チェック、バージョン単位で抑止可能)
     @State private var availableUpdate: AppStoreUpdateInfo? = nil
     @State private var showUpdateAlert = false
+    /// 自動エクスポートが失敗して OFF になったときの理由 (iOS 27)。表示したら消す
+    @State private var autoExportFailure: String? = nil
     @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
     @AppStorage("lastUpdateCheckDate") private var lastUpdateCheckDate = ""
 
@@ -93,6 +95,22 @@ struct ContentView: View {
                 // ハートビート鮮度込みの実効状態 (Extension が finished を呼べず死んだ
                 // 場合の STOP 表示残留を自動修復する)
                 isBroadcasting = BroadcastStatus.isEffectivelyActive()
+                if #available(iOS 27.0, *) {
+                    // 自動エクスポート: 戦績の保存フックに登録 (アプリ内キャプチャの iOS 27 のみ)。
+                    // 前回 REC 中に失敗して OFF になっていたら、その理由をここで知らせる
+                    AutoExportManager.install()
+                    if let msg = AutoExportManager.consumeFailureMessage() {
+                        autoExportFailure = msg
+                    }
+                }
+            }
+            .alert("自動エクスポートを OFF にしました", isPresented: Binding(
+                get: { autoExportFailure != nil },
+                set: { if !$0 { autoExportFailure = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("格納先への書き出しに失敗しました。\n\(autoExportFailure ?? "")\n\n格納先フォルダを選び直してから、ユーザー設定で再度 ON にしてください。")
             }
             .task {
                 // Extension からの放送状態と戦績更新シグナルを 0.5 秒ごとに polling。

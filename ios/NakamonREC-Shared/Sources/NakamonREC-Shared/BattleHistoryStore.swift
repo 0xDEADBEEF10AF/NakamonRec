@@ -11,6 +11,11 @@ public final class BattleHistoryStore: @unchecked Sendable {
 
     public static let shared = BattleHistoryStore()
 
+    /// 保存が成功するたびに呼ばれるフック (引数 = 保存したファイル名)。
+    /// ホストアプリが自動エクスポート (iOS 27) の起動に使う。Extension では nil のまま。
+    /// 呼び出しスレッドは保存を行ったスレッド (解析キュー / メイン) なので、受け側で自分のキューへ移すこと
+    nonisolated(unsafe) public static var onSaved: (@Sendable (String) -> Void)?
+
     private let fileManager = FileManager.default
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -100,6 +105,7 @@ public final class BattleHistoryStore: @unchecked Sendable {
         do {
             let data = try encoder.encode(history)
             try data.write(to: url, options: .atomic)
+            Self.onSaved?(fileName)
         } catch {
             NSLog("BattleHistoryStore: save failed for \(fileName): \(error)")
         }

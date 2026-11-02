@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import NakamonREC_Shared
 
 /// ユーザー設定シート (Android `ユーザー設定` 相当)
@@ -13,6 +14,16 @@ struct UserSettingsSheet: View {
     @State private var calibrationTarget: CalibrationScreen? = nil
     @State private var recIsActive: Bool = BroadcastStatus.isEffectivelyActive()
     @State private var statusNotificationsOn: Bool = CaptureNotifier.statusNotificationsEnabled
+
+    // 自動エクスポート (iOS 27 以降)
+    @State private var autoExportOn: Bool = AutoExportManager.isEnabled
+    @State private var autoExportFormat: AutoExportManager.Format = AutoExportManager.format
+    @State private var autoExportFolderName: String? = AutoExportManager.folderDisplayName
+    @State private var autoExportLastAt: String? = AutoExportManager.lastExportAt
+    @State private var showFolderPicker = false
+    /// フォルダ未設定で ON にした場合、フォルダ選択の完了後に ON を確定させるためのフラグ
+    @State private var enableAfterFolderPick = false
+    @State private var autoExportError: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -114,6 +125,9 @@ struct UserSettingsSheet: View {
                                     .foregroundStyle(.gray)
                             }
                         }
+
+                        // 自動エクスポート: REC 中もアプリ本体が動く iOS 27 のホスト内キャプチャでのみ成立する
+                        autoExportSection
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -134,6 +148,167 @@ struct UserSettingsSheet: View {
             .sheet(item: $calibrationTarget) { screen in
                 CalibrationActionMenu(screen: screen)
                     .presentationDetents([.fraction(0.4)])
+            }
+            .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
+                handleFolderPick(result)
+            }
+            .alert("自動エクスポート", isPresented: Binding(
+                get: { autoExportError != nil },
+                set: { if !$0 { autoExportError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(autoExportError ?? "")
+            }
+        }
+    }
+
+    // MARK: - 自動エクスポート (iOS 27 以降)
+
+    private var autoExportSection: some View {
+        Section {
+            HStack {
+                Image(systemName: "square.and.arrow.up.on.square")
+                    .foregroundStyle(autoExportOn ? Color.recCoral : .gray)
+                    .frame(width: 28)
+                Text("自動エクスポート")
+                    .foregroundStyle(.white)
+                Spacer()
+                Toggle("", isOn: $autoExportOn)
+                    .labelsHidden()
+                    .tint(Color.recCoral)
+                    .onChange(of: autoExportOn) { _, newValue in
+                        autoExportToggled(newValue)
+                    }
+            }
+            .listRowBackground(Color.cardBackground)
+            .disabled(recIsActive)
+            .opacity(recIsActive ? 0.4 : 1.0)
+
+            Button {
+                enableAfterFolderPick = false
+                showFolderPicker = true
+            } label: {
+                HStack {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.gray)
+                        .frame(width: 28)
+                    Text("格納先フォルダ")
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(autoExportFolderName ?? "未設定")
+                        .foregroundStyle(.gray)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.gray)
+                }
+            }
+            .listRowBackground(Color.cardBackground)
+            .disabled(recIsActive)
+            .opacity(recIsActive ? 0.4 : 1.0)
+
+            HStack {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.gray)
+                    .frame(width: 28)
+                Text("格納形式")
+                    .foregroundStyle(.white)
+                Spacer()
+                Picker("", selection: $autoExportFormat) {
+                    ForEach(AutoExportManager.Format.allCases) { f in
+                        Text(f.label).tag(f)
+                    }
+                }
+                .labelsHidden()
+                .tint(.gray)
+                .onChange(of: autoExportFormat) { _, newValue in
+                    AutoExportManager.format = newValue
+                    if autoExportOn { runExportNow() }
+                }
+            }
+            .listRowBackground(Color.cardBackground)
+            .disabled(recIsActive)
+            .opacity(recIsActive ? 0.4 : 1.0)
+
+            HStack {
+                Image(systemName: "clock")
+                    .foregroundStyle(.gray)
+                    .frame(width: 28)
+                Text("最終書き出し")
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(autoExportLastAt ?? "—")
+                    .foregroundStyle(.gray)
+            }
+            .listRowBackground(Color.cardBackground)
+        } header: {
+            Text("自動エクスポート")
+                .foregroundStyle(.gray)
+        } footer: {
+            if recIsActive {
+                Text("REC 中は自動エクスポートの設定を変更できません。\nREC を停止してから変更してください。")
+                    .font(.caption2)
+                    .foregroundStyle(Color.recCoral)
+            } else {
+                Text("ON のあいだ、戦績が増えるたびに選択中の戦績ファイルと同じ名前で CSV / HTML を格納先フォルダへ上書きします。格納先に iCloud Drive や Google ドライブのフォルダを選ぶと、配信用 PC などから最新の戦績を参照できます。\nアプリの REC ボタンから始めたときのみ動作します (コントロールセンターから始めた放送は対象外)。")
+                    .font(.caption2)
+                    .foregroundStyle(.gray)
+            }
+        }
+    }
+
+    private func autoExportToggled(_ on: Bool) {
+        if on {
+            if AutoExportManager.hasFolder {
+                AutoExportManager.isEnabled = true
+                runExportNow()
+            } else {
+                // フォルダが未設定なら先に選んでもらい、選べたら ON を確定する
+                enableAfterFolderPick = true
+                showFolderPicker = true
+            }
+        } else {
+            AutoExportManager.isEnabled = false
+            enableAfterFolderPick = false
+        }
+    }
+
+    private func handleFolderPick(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            if AutoExportManager.setFolder(url) {
+                autoExportFolderName = AutoExportManager.folderDisplayName
+                if enableAfterFolderPick {
+                    AutoExportManager.isEnabled = true
+                    enableAfterFolderPick = false
+                }
+                if autoExportOn { runExportNow() }
+            } else {
+                autoExportError = "このフォルダへのアクセス権を保存できませんでした。別のフォルダを選んでください。"
+                if enableAfterFolderPick { autoExportOn = false }
+            }
+        case .failure:
+            // キャンセル: ON にしようとしていたなら OFF に戻す
+            if enableAfterFolderPick { autoExportOn = false }
+        }
+        // ピッカーをキャンセルした場合 (.failure が来ないことがある) も ON のまま残さない
+        if enableAfterFolderPick && !AutoExportManager.hasFolder { autoExportOn = false }
+        enableAfterFolderPick = false
+    }
+
+    /// 設定変更の直後に 1 回書き出し、結果 (最終書き出し時刻 or 失敗) を画面へ反映する
+    private func runExportNow() {
+        let fileName = BattleHistoryStore.shared.activeFileName
+        Task.detached(priority: .utility) {
+            let ok = AutoExportManager.exportNow(fileName: fileName)
+            let last = AutoExportManager.lastExportAt
+            let failure = ok ? nil : AutoExportManager.consumeFailureMessage()
+            await MainActor.run {
+                autoExportLastAt = last
+                if !ok {
+                    autoExportOn = false
+                    autoExportError = "書き出しに失敗したため OFF にしました。\n\(failure ?? "")"
+                }
             }
         }
     }
