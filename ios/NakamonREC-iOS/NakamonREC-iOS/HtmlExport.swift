@@ -134,9 +134,9 @@ nonisolated enum HtmlExport {
         func dp(_ v: Int) -> String { "\(v * s)px" }
         func sp(_ v: Int) -> String { "\(v * s)px" }
         return """
-        html,body{margin:0;padding:0;background:#222222}
+        html,body{margin:0;padding:0;height:100%;background:#222222;overflow-x:auto;overflow-y:hidden}
         body{width:\(pageW)px;font-family:Roboto,"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;color:#FFFFFF;-webkit-font-smoothing:antialiased}
-        .screen{position:relative;width:\(pageW)px;height:\(pageH)px;display:flex;flex-direction:column;overflow:hidden}
+        .screen{position:relative;width:\(pageW)px;height:min(\(pageH)px,100vh);display:flex;flex-direction:column;overflow:hidden}
         .card{background:#333333;box-shadow:0 \(dp(2)) \(dp(4)) rgba(0,0,0,.45)}
         .top{display:flex;height:\(dp(120));margin:\(dp(48)) \(dp(8)) 0 \(dp(8))}
         .top .card{margin:\(dp(4));border-radius:\(dp(16));padding:\(dp(8));box-sizing:border-box;display:flex;flex-direction:column}

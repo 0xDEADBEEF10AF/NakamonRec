@@ -131,9 +131,9 @@ object HtmlExport {
         fun dp(v: Int) = "${v * S}px"
         fun sp(v: Int) = "${v * S}px"
         return """
-        html,body{margin:0;padding:0;background:#222222}
+        html,body{margin:0;padding:0;height:100%;background:#222222;overflow-x:auto;overflow-y:hidden}
         body{width:${PAGE_W}px;font-family:Roboto,"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;color:#FFFFFF;-webkit-font-smoothing:antialiased}
-        .screen{position:relative;width:${PAGE_W}px;height:${PAGE_H}px;display:flex;flex-direction:column;overflow:hidden}
+        .screen{position:relative;width:${PAGE_W}px;height:min(${PAGE_H}px,100vh);display:flex;flex-direction:column;overflow:hidden}
         .card{background:#333333;box-shadow:0 ${dp(2)} ${dp(4)} rgba(0,0,0,.45)}
         .top{display:flex;height:${dp(120)};margin:${dp(48)} ${dp(8)} 0 ${dp(8)}}
         .top .card{margin:${dp(4)};border-radius:${dp(16)};padding:${dp(8)};box-sizing:border-box;display:flex;flex-direction:column}
