@@ -188,6 +188,14 @@ class BattleDataManager(private val context: Context) {
         val file = File(context.filesDir, "$currentFileName.json")
         val json = Gson().toJson(history)
         file.writeText(json)
+        // 自動エクスポート (2026-11-02): ON なら保存のたびに利用者指定フォルダへ CSV/HTML を上書きする
+        // (連続保存は 1 秒でまとめる。失敗しても保存自体には影響させない)
+        AutoExportManager.onHistorySaved(context, this)
+    }
+
+    /** 書き出し用に履歴の深いコピーを返す (解析スレッドの追記と競合しないよう saveLock 下でコピー) */
+    fun snapshotHistory(): BattleHistory = synchronized(saveLock) {
+        gson.fromJson(gson.toJson(history), BattleHistory::class.java)
     }
 
     /**

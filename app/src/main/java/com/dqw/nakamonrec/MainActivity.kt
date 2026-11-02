@@ -87,6 +87,45 @@ class MainActivity : AppCompatActivity() {
         uri?.let { importHistoryFromCsv(it) }
     }
 
+    // 自動エクスポートの格納先フォルダ選択 (SAF)。永続権限を取って保存し、ON なら即 1 回書き出す。
+    // 「ON にしようとしたがフォルダ未設定」から来た場合は、フォルダが決まった時点で ON にする
+    private var enableAutoExportAfterFolderPick = false
+    private val openTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val wantEnable = enableAutoExportAfterFolderPick
+        enableAutoExportAfterFolderPick = false
+        if (uri != null) {
+            AutoExportManager.setFolderUri(this, uri)
+            if (wantEnable) AutoExportManager.setEnabled(this, true)
+            if (AutoExportManager.isEnabled(this)) runAutoExportNow()
+        }
+        // フォルダ名・ON/OFF の表示を更新するため、開いていた設定ダイアログを作り直す
+        if (calibrationSelectorDialog?.isShowing == true) {
+            calibrationSelectorDialog?.dismiss()
+            showCalibrationSelectorDialog()
+        }
+    }
+
+    /** 自動エクスポートを今すぐ 1 回実行する (ON 直後 / フォルダ・形式の変更直後)。IO は別スレッド */
+    private fun runAutoExportNow() {
+        val fileName = getCurrentFileName()
+        thread {
+            val dm = BattleDataManager(this).apply { loadHistory(fileName) }
+            val ok = AutoExportManager.exportNow(this, dm)
+            runOnUiThread {
+                if (ok) {
+                    showTopToast("自動エクスポート: 「$fileName」を書き出しました", true)
+                } else {
+                    val reason = AutoExportManager.consumeFailureMessage(this) ?: ""
+                    showTopToast("自動エクスポートに失敗したため OFF にしました\n$reason", true)
+                    if (calibrationSelectorDialog?.isShowing == true) {
+                        calibrationSelectorDialog?.dismiss()
+                        showCalibrationSelectorDialog()
+                    }
+                }
+            }
+        }
+    }
+
     private val createDocumentLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         uri?.let {
             csvContentToSave?.let { content ->
@@ -662,7 +701,162 @@ class MainActivity : AppCompatActivity() {
             container.addView(pickerRow)
         }
 
+        // === 自動エクスポート (2026-11-02 設計) ===
+        //   ON/OFF Switch / 格納先フォルダ / 格納形式 の 3 行。REC 中はグレーアウト (解析モードと同じ扱い)。
+        //   ON のあいだ、戦績が保存されるたびに格納先へ 〇〇.csv / 〇〇.html を上書きする (AutoExportManager)
+        container.addView(TextView(this).apply {
+            text = "自動エクスポート"
+            setPadding(0, 40, 0, 20)
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(null, Typeface.BOLD)
+        })
+        val aeEnabled = AutoExportManager.isEnabled(this)
+        val aeFolderName = AutoExportManager.folderDisplayName(this)
+        val aeFormat = AutoExportManager.format(this)
+        val aeOnColor = Color.parseColor("#F09199")
+
+        // Row 1: ON/OFF
+        val aeIcon = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(120, 120)
+            setImageResource(android.R.drawable.ic_menu_save)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setColorFilter(if (aeEnabled) aeOnColor else Color.GRAY)
+        }
+        val aeSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            isChecked = aeEnabled
+            isEnabled = !recIsActive
+        }
+        val aeSwitchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 20, 0, 20)
+            addView(aeIcon)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply { text = "自動エクスポート"; textSize = 16f; setTextColor(Color.WHITE) })
+                addView(TextView(this@MainActivity).apply {
+                    text = "戦績が記録されるたびに、選択中のファイル名 (〇〇.csv / 〇〇.html) で格納先に上書き保存します"
+                    textSize = 12f
+                    setTextColor(Color.GRAY)
+                })
+            })
+            addView(aeSwitch)
+        }
+
+        // Row 2: 格納先フォルダ
+        val aeFolderRow = buildSettingRow(
+            android.R.drawable.ic_menu_agenda,
+            "格納先フォルダ",
+            aeFolderName ?: "未設定 (タップして選択)"
+        ) {
+            if (recIsActive) {
+                showTopToast("REC 中は自動エクスポートの設定を変更できません")
+            } else {
+                openTreeLauncher.launch(AutoExportManager.folderUri(this))
+            }
+        }
+
+        // Row 3: 格納形式
+        val aeFormatRow = buildSettingRow(
+            android.R.drawable.ic_menu_sort_by_size,
+            "格納形式",
+            aeFormat.label
+        ) {
+            if (recIsActive) {
+                showTopToast("REC 中は自動エクスポートの設定を変更できません")
+            } else {
+                val formats = AutoExportManager.Format.entries
+                AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+                    .setTitle("格納形式")
+                    .setSingleChoiceItems(formats.map { it.label }.toTypedArray(), formats.indexOf(aeFormat)) { d, which ->
+                        AutoExportManager.setFormat(this, formats[which])
+                        d.dismiss()
+                        if (AutoExportManager.isEnabled(this)) runAutoExportNow()
+                        calibrationSelectorDialog?.dismiss()
+                        showCalibrationSelectorDialog()
+                    }
+                    .setNegativeButton("キャンセル", null)
+                    .show()
+            }
+        }
+
+        val aeStatus = TextView(this).apply {
+            text = "最終書き出し: ${AutoExportManager.lastExportAt(this@MainActivity) ?: "なし"}"
+            textSize = 12f
+            setTextColor(Color.GRAY)
+            setPadding(140, 0, 0, 10)
+        }
+
+        aeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (recIsActive) return@setOnCheckedChangeListener
+            if (isChecked) {
+                if (AutoExportManager.folderUri(this) == null) {
+                    // フォルダ未設定: 選んでもらい、決まった時点で ON にする (キャンセルなら OFF のまま)
+                    enableAutoExportAfterFolderPick = true
+                    aeSwitch.isChecked = false
+                    openTreeLauncher.launch(null)
+                } else {
+                    AutoExportManager.setEnabled(this, true)
+                    aeIcon.setColorFilter(aeOnColor)
+                    runAutoExportNow()
+                }
+            } else {
+                AutoExportManager.setEnabled(this, false)
+                aeIcon.setColorFilter(Color.GRAY)
+            }
+        }
+
+        container.addView(aeSwitchRow)
+        container.addView(aeFolderRow)
+        container.addView(aeFormatRow)
+        container.addView(aeStatus)
+        if (recIsActive) {
+            aeSwitchRow.alpha = 0.4f
+            aeFolderRow.alpha = 0.4f
+            aeFormatRow.alpha = 0.4f
+            container.addView(TextView(this).apply {
+                text = "REC 中は自動エクスポートの設定を変更できません。REC を停止してから変更してください。"
+                textSize = 12f
+                setTextColor(Color.parseColor("#FF9090"))
+                setPadding(0, 10, 0, 0)
+            })
+        }
+
         calibrationSelectorDialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("ユーザー設定").setView(container).setNegativeButton("閉じる", null).show()
+    }
+
+    /** ユーザー設定ダイアログの「アイコン + タイトル + 補足 + ›」の 1 行 (対象モンスター行と同じ見た目) */
+    private fun buildSettingRow(iconRes: Int, title: String, subtitle: String, onClick: () -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 20, 0, 20)
+            isClickable = true
+            setBackgroundResource(android.R.drawable.list_selector_background)
+            addView(ImageView(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(120, 120)
+                setImageResource(iconRes)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setColorFilter(Color.GRAY)
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply { text = title; textSize = 16f; setTextColor(Color.WHITE) })
+                addView(TextView(this@MainActivity).apply { text = subtitle; textSize = 12f; setTextColor(Color.GRAY) })
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "›"
+                textSize = 24f
+                setTextColor(Color.GRAY)
+                setPadding(0, 0, 10, 0)
+            })
+            setOnClickListener { onClick() }
+        }
     }
 
     private fun showMonsterFilterDialog() {
@@ -802,6 +996,14 @@ class MainActivity : AppCompatActivity() {
         updateUI(MediaCaptureService.isRunning)
         // グランプリモードの ON/OFF を弧文字 (NAKAMON ⇔ MONSTER / GRANDPRIX) に反映。設定画面から戻ったときも更新される
         binding.arcTitle.grandPrixMode = GrandPrixMode.isEnabled(this)
+        // 自動エクスポートが REC 中に失敗して OFF になっていたら、理由を 1 回だけ知らせる
+        AutoExportManager.consumeFailureMessage(this)?.let { reason ->
+            AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+                .setTitle("自動エクスポートを OFF にしました")
+                .setMessage("格納先への書き出しに失敗しました。\n$reason\n\n格納先フォルダの権限やフォルダの有無を確認し、ユーザー設定から再度 ON にしてください。")
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
     private fun generateDefaultFileName(): String = "record_${SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault()).format(Date())}"
 
