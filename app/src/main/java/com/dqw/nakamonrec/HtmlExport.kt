@@ -17,8 +17,8 @@ import kotlin.math.floor
  * - ページ幅はスマホ実寸の 1080px、高さ 2364px (Pixel 基準)。dp 値は ×3 で px に、sp も ×3。
  *   レイアウト・色・文字サイズは activity_history.xml / item_battle_record.xml / dimens.xml と同じ値を使う。
  * - 上段: TOTAL WIN RATE カード + RECENT TREND (直近 20 戦の移動勝率グラフ、WinRateGraphView と同じ描画) /
- *   パーティ別 3 カード (最新の構成 4 体、勝率、Use:、W-L) / 戦績リスト (HTML では最新が一番上) /
- *   下部の 3 ボタン (見た目のみ)。
+ *   パーティ別 3 カード (最新の構成 4 体、勝率、Use:、W-L) / 戦績リスト (HTML では最新が一番上)。
+ *   アプリ下部の 3 ボタンは操作できないので載せない (ビーフ判断 2026-11-02)。
  * - 外部参照なし: モンスターのサムネイルは縮小 PNG を base64 で CSS クラスに 1 回だけ埋め込む。
  * - 数秒ごとに自動再読込 (meta refresh)。OBS のブラウザソースや PC のブラウザで開いたまま更新を追える。
  */
@@ -112,8 +112,6 @@ object HtmlExport {
         }
         sb.append("</div>")
 
-        // ===== 下部ボタン (見た目のみ) =====
-        sb.append("<div class=\"fab back\">⟲</div><div class=\"fab mode\">✎</div><div class=\"fab analyze\">⌕</div>")
         sb.append("</div>")
 
         // サムネイルの CSS (使った体だけ)
@@ -157,7 +155,7 @@ object HtmlExport {
         .prate{color:#F09199;font-size:${sp(16)};font-weight:700;line-height:1.3}
         .puse{color:#AAAAAA;font-size:${sp(11)};line-height:1.4}
         .pwl{font-size:${sp(11)};line-height:1.4}
-        .list{flex:1;margin:${dp(4)} 0 ${dp(80)} 0;overflow-y:auto;overflow-x:hidden}
+        .list{flex:1;margin:${dp(4)} 0 ${dp(8)} 0;overflow-y:auto;overflow-x:hidden}
         .list::-webkit-scrollbar{display:none}
         .row{display:flex;align-items:center;background:#333333;border-radius:${dp(2)};margin:${dp(2)} ${dp(4)};padding:${dp(8)} ${dp(4)};box-shadow:0 ${dp(1)} ${dp(2)} rgba(0,0,0,.35)}
         .left{width:${dp(45)};display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
@@ -168,10 +166,6 @@ object HtmlExport {
         .mi{display:inline-block;width:${dp(22)};height:${dp(22)};margin-right:${dp(1)};border-radius:${dp(6)};background:#2c2c2c center/cover no-repeat;flex:none}
         .vs{font-weight:700;font-size:${sp(10)};margin:0 ${dp(2)}}
         .time{width:${dp(65)};flex:none;text-align:right;color:#8E8E93;font-size:${sp(10)};line-height:1.25;margin-left:${dp(2)}}
-        .fab{position:absolute;bottom:${dp(12)};width:${dp(56)};height:${dp(56)};border-radius:50%;background:#333333;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:${sp(26)};box-shadow:0 ${dp(4)} ${dp(8)} rgba(0,0,0,.5)}
-        .fab.back{left:${dp(24)}}
-        .fab.mode{left:50%;transform:translateX(-50%);bottom:${dp(16)};box-sizing:border-box;border:${dp(2)} solid #AAAAAA}
-        .fab.analyze{right:${dp(24)}}
         """.trimIndent()
     }
 
