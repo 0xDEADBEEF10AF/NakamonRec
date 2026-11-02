@@ -2173,7 +2173,7 @@ class HistoryActivity : AppCompatActivity() {
         val input = EditText(this).apply {
             setText(record.memo ?: "")
             setSelection(text.length)
-            hint = "例: 相手の先手ザオリクに注意"
+            hint = "例：初手あまいいき"
             filters = arrayOf(android.text.InputFilter.LengthFilter(max))
             maxLines = 3
             setTextColor(Color.WHITE)
