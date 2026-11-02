@@ -124,6 +124,9 @@ nonisolated enum HtmlExport {
             }
         }
         sb += "</style>"
+        // TOTAL WIN RATE ラベルは表示環境のフォントで幅が変わる (Mac/iPhone の Hiragino 太字は Windows より約 1 割広く
+        // 14sp 相当だとカード幅に収まらない)。基準の 14sp のまま、収まらない環境でだけ 1px ずつ縮めて 1 行に収める
+        sb += "<script>(function(){var l=document.querySelector('.tlabel');if(!l)return;var s=parseFloat(getComputedStyle(l).fontSize);while(l.scrollWidth>l.clientWidth&&s>20){s-=1;l.style.fontSize=s+'px';}})();</script>"
         sb += "</body></html>"
         return sb
     }
@@ -139,10 +142,10 @@ nonisolated enum HtmlExport {
         .screen{position:relative;width:\(pageW)px;height:min(\(pageH)px,100vh);display:flex;flex-direction:column;overflow:hidden}
         .card{background:#333333;box-shadow:0 \(dp(2)) \(dp(4)) rgba(0,0,0,.45)}
         .top{display:flex;height:\(dp(120));margin:\(dp(48)) \(dp(8)) 0 \(dp(8))}
-        .top .card{margin:\(dp(4));border-radius:\(dp(16));padding:\(dp(8));box-sizing:border-box;display:flex;flex-direction:column}
+        .top .card{margin:\(dp(4));border-radius:\(dp(16));padding:\(dp(8));box-sizing:border-box;display:flex;flex-direction:column;min-width:0}
         .total{flex:1;align-items:center;justify-content:center;text-align:center}
         .graph{flex:1.2}
-        .tlabel{color:#AAAAAA;font-weight:700;letter-spacing:.1em;font-size:\(sp(12));line-height:1.2;width:100%;white-space:nowrap}
+        .tlabel{color:#AAAAAA;font-weight:700;letter-spacing:.1em;font-size:\(sp(14));line-height:1.2;width:100%;white-space:nowrap}
         .trate{color:#F09199;font-weight:700;font-size:\(sp(30));line-height:1.15;flex:3;display:flex;align-items:center}
         .tcount{color:#AAAAAA;font-size:\(sp(12));flex:1.2;display:flex;align-items:center}
         .twl{font-size:\(sp(12));flex:1.2;display:flex;align-items:center}
