@@ -5,175 +5,284 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
 import java.io.ByteArrayOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /**
- * 戦績画面ライクな HTML を 1 ファイルで生成する (自動エクスポートの HTML 形式)。
+ * アプリの戦績画面 (HistoryActivity + item_battle_record) をそのまま写した HTML を 1 ファイルで生成する
+ * (自動エクスポートの HTML 形式)。
  *
- * - 外部参照なし: モンスターのサムネイルは半分サイズ (39×65) の PNG を base64 で埋め込む。
- *   同じモンスターは CSS クラス 1 つにまとめ、行ごとに重複させない (100 戦分でも数百 KB)。
- * - 数秒ごとに自動再読込する (meta refresh)。OBS のブラウザソースや PC のブラウザで開いたまま更新を追える。
- * - 配色はアプリと同じ (WIN #F09199 / LOSE #90D7EC、ダーク背景)。
+ * - ページ幅はスマホ実寸の 1080px、高さ 2364px (Pixel 基準)。dp 値は ×3 で px に、sp も ×3。
+ *   レイアウト・色・文字サイズは activity_history.xml / item_battle_record.xml / dimens.xml と同じ値を使う。
+ * - 上段: TOTAL WIN RATE カード + RECENT TREND (直近 20 戦の移動勝率グラフ、WinRateGraphView と同じ描画) /
+ *   パーティ別 3 カード (最新の構成 4 体、勝率、Use:、W-L) / 戦績リスト (アプリと同じく最新が一番下、
+ *   読み込み時に最下部へスクロール) / 下部の 3 ボタン (見た目のみ)。
+ * - 外部参照なし: モンスターのサムネイルは縮小 PNG を base64 で CSS クラスに 1 回だけ埋め込む。
+ * - 数秒ごとに自動再読込 (meta refresh)。OBS のブラウザソースや PC のブラウザで開いたまま更新を追える。
  */
 object HtmlExport {
-    private const val MAX_ROWS = 100
-    private const val MAX_GP_ROWS = 30
     private const val REFRESH_SEC = 5
-    private const val ICON_W = 39
-    private const val ICON_H = 65
+    /** dp → px (1080px 幅 = 360dp 相当) */
+    private const val S = 3
+    private const val PAGE_W = 1080
+    private const val PAGE_H = 2364
+    /** 埋め込むサムネの画素数 (元は 78×130。22dp=66px の正方形に cover で収めるので高さ 100 あれば足りる) */
+    private const val ICON_W = 60
+    private const val ICON_H = 100
+    private const val GRAPH_WINDOW = 20
 
-    /** fileName → data URI。プロセス内で使い回す (同じ体は 1 回だけ縮小・符号化) */
     private val iconCache = ConcurrentHashMap<String, String>()
 
     fun render(context: Context, history: BattleHistory, baseName: String, monsterMaster: List<MonsterData>): String {
         val records = history.records
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val wins = records.count { it.result == "WIN" }
+        val losses = records.count { it.result == "LOSE" }
+        val total = wins + losses
+        val rate = if (total > 0) wins.toDouble() / total * 100.0 else 0.0
 
-        val totalWins = records.count { it.result == "WIN" }
-        val totalLosses = records.count { it.result == "LOSE" }
-        val todayRecords = records.filter { it.timestamp.startsWith(today) }
-        val todayWins = todayRecords.count { it.result == "WIN" }
-        val todayLosses = todayRecords.count { it.result == "LOSE" }
-
-        val shown = records.asReversed().take(MAX_ROWS)
-        val gpAll = history.grandPrixRecords ?: emptyList()
-        val gpShown = gpAll.asReversed().take(MAX_GP_ROWS)
-
-        // 表示する体だけサムネイルを埋め込む
+        // 使用するサムネイルだけ埋め込む (リスト + パーティカードの最新構成)
         val fileByName = monsterMaster.associate { it.name to it.fileName }
-        val iconClass = linkedMapOf<String, String>()   // monster name → css class
-        shown.forEach { r -> (r.myParty + r.enemyParty).forEach { n -> if (n != "?" && n.isNotEmpty()) iconClass.getOrPut(n) { "m${iconClass.size}" } } }
-        val iconCss = StringBuilder()
-        iconClass.forEach { (name, cls) ->
-            val data = fileByName[name]?.let { iconDataUri(context, it) }
-            if (data != null) iconCss.append(".$cls{background-image:url($data)}\n")
+        val iconClass = linkedMapOf<String, String>()
+        fun cls(name: String): String? {
+            if (name.isEmpty() || name == "?") return null
+            return iconClass.getOrPut(name) { "m${iconClass.size}" }
         }
+        records.forEach { r -> (r.myParty + r.enemyParty).forEach { cls(it) } }
 
-        val sb = StringBuilder(64 * 1024)
+        val sb = StringBuilder(96 * 1024)
         sb.append("<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">")
         sb.append("<meta http-equiv=\"refresh\" content=\"$REFRESH_SEC\">")
-        sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
+        sb.append("<meta name=\"viewport\" content=\"width=$PAGE_W\">")
         sb.append("<title>なかモンREC 戦績 - ").append(esc(baseName)).append("</title>")
-        sb.append("<style>")
-        sb.append(
-            """
-            :root{--bg:#15171b;--card:#22252b;--line:#33373f;--fg:#f2f2f2;--muted:#9aa0a8;--win:#F09199;--lose:#90D7EC}
-            *{box-sizing:border-box}
-            body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Yu Gothic",Roboto,sans-serif;font-size:14px}
-            header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-            h1{font-size:18px;margin:0}
-            .file{color:var(--muted)}
-            .updated{margin-left:auto;color:var(--muted);font-size:12px}
-            .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
-            .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-            .card .t{color:var(--muted);font-size:12px;margin-bottom:4px}
-            .card .v{font-size:20px;font-weight:700}
-            .card .s{color:var(--muted);font-size:12px;margin-top:2px}
-            .win{color:var(--win)} .lose{color:var(--lose)}
-            table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-            th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
-            th{color:var(--muted);font-weight:600;font-size:12px}
-            tr:last-child td{border-bottom:none}
-            td.res{font-weight:700}
-            .party{display:flex;gap:3px}
-            .mi{display:inline-block;width:${ICON_W}px;height:${ICON_H}px;border-radius:6px;background:#2c3038 center/cover no-repeat}
-            .vs{color:var(--muted);padding:0 6px}
-            .time{color:var(--muted);font-size:12px}
-            h2{font-size:15px;margin:18px 0 8px;color:var(--muted)}
-            footer{margin-top:16px;color:var(--muted);font-size:11px}
-            """.trimIndent()
-        )
-        sb.append('\n').append(iconCss)
-        sb.append("</style></head><body>")
+        sb.append("<style>").append(css()).append("</style></head><body>")
+        sb.append("<div class=\"screen\">")
 
-        // ---- ヘッダー ----
-        sb.append("<header><h1>なかモンREC 戦績</h1><div class=\"file\">").append(esc(baseName))
-            .append("</div><div class=\"updated\">更新 ").append(now).append("</div></header>")
+        // ===== 上段: TOTAL WIN RATE / RECENT TREND =====
+        sb.append("<div class=\"top\">")
+        sb.append("<div class=\"card total\">")
+        sb.append("<div class=\"tlabel\">TOTAL WIN RATE</div>")
+        sb.append("<div class=\"trate\">").append(if (total > 0) RateFormat.percent(rate) else "□").append("</div>")
+        sb.append("<div class=\"tcount\">").append(if (total > 0) "$total Matches" else "□").append("</div>")
+        sb.append("<div class=\"twl\">").append(winLose(wins, losses)).append("</div>")
+        sb.append("</div>")
+        sb.append("<div class=\"card graph\"><div class=\"glabel\">RECENT TREND</div>")
+        sb.append(graphSvg(records))
+        sb.append("</div></div>")
 
-        // ---- サマリーカード ----
-        sb.append("<div class=\"cards\">")
-        sb.append(card("総合戦績", "${records.size}戦 <span class=\"win\">${totalWins}勝</span> <span class=\"lose\">${totalLosses}敗</span>",
-            "勝率 " + rate(totalWins, records.size)))
-        sb.append(card("今日", "${todayRecords.size}戦 <span class=\"win\">${todayWins}勝</span> <span class=\"lose\">${todayLosses}敗</span>",
-            "勝率 " + rate(todayWins, todayRecords.size)))
-        (0..2).forEach { idx ->
-            val p = records.filter { it.partyIndex == idx }
+        // ===== パーティ別カード =====
+        sb.append("<div class=\"parties\">")
+        for (i in 0..2) {
+            val p = records.filter { it.partyIndex == i }
             val w = p.count { it.result == "WIN" }
-            sb.append(card("パーティ${idx + 1}", "${p.size}戦 <span class=\"win\">${w}勝</span> <span class=\"lose\">${p.size - w}敗</span>",
-                "勝率 " + rate(w, p.size) + " / 使用率 " + rate(p.size, records.size)))
-        }
-        val gpLatest = gpAll.lastOrNull { !it.isUnread }
-        if (gpLatest != null) {
-            val prev = gpAll.filter { !it.isUnread }.dropLast(1).lastOrNull()
-            val diff = prev?.let { gpLatest.currentRating - it.currentRating }
-            val diffText = diff?.let { (if (it >= 0) "+" else "") + String.format(Locale.US, "%.1f", it) } ?: ""
-            sb.append(card("グランプリ レーティング", String.format(Locale.US, "%.1f", gpLatest.currentRating) + (if (diffText.isNotEmpty()) " <span class=\"s\">($diffText)</span>" else ""),
-                "${gpAll.size}戦記録" + (gpLatest.rankTier?.let { " / $it" } ?: "")))
+            val l = p.count { it.result == "LOSE" }
+            val t = w + l
+            val pr = if (t > 0) w.toDouble() / t * 100.0 else 0.0
+            val usage = if (records.isNotEmpty()) p.size.toDouble() / records.size * 100.0 else 0.0
+            val latest = records.lastOrNull { it.partyIndex == i }?.myParty ?: listOf("", "", "", "")
+            sb.append("<div class=\"card party\"><div class=\"pname\">P${i + 1}</div><div class=\"picons\">")
+            for (k in 0..3) {
+                val c = latest.getOrNull(k)?.let { cls(it) }
+                sb.append(if (c != null) "<i class=\"pi $c\"></i>" else "<i class=\"pi hidden\"></i>")
+            }
+            sb.append("</div><div class=\"prate\">").append(if (t > 0) RateFormat.percent(pr) else "□")
+                .append("</div><div class=\"puse\">Use: ").append(RateFormat.percent(usage))
+                .append("</div><div class=\"pwl\">").append(winLose(w, l)).append("</div></div>")
         }
         sb.append("</div>")
 
-        // ---- 対戦履歴 ----
-        sb.append("<h2>対戦履歴").append(if (records.size > shown.size) " (直近 ${shown.size} 戦)" else "").append("</h2>")
-        val hasMemo = shown.any { !it.memo.isNullOrBlank() }
-        sb.append("<table><thead><tr><th>日時</th><th>勝敗</th><th>P</th><th>自分</th><th></th><th>相手</th>")
-        if (hasMemo) sb.append("<th>メモ</th>")
-        sb.append("</tr></thead><tbody>")
-        shown.forEach { r ->
-            val cls = if (r.result == "WIN") "win" else "lose"
-            sb.append("<tr><td class=\"time\">").append(esc(r.timestamp.replace('-', '.')))
-                .append("</td><td class=\"res $cls\">").append(esc(r.result))
-                .append("</td><td>").append(if (r.partyIndex >= 0) "P${r.partyIndex + 1}" else "P?")
-                .append("</td><td>").append(partyHtml(r.myParty, iconClass))
-                .append("</td><td class=\"vs\">vs</td><td>").append(partyHtml(r.enemyParty, iconClass))
-                .append("</td>")
-            if (hasMemo) sb.append("<td class=\"memo\">").append(esc(r.memo ?: "")).append("</td>")
-            sb.append("</tr>")
+        // ===== 戦績リスト (アプリと同じく古い → 新しい、最下部が最新) =====
+        sb.append("<div class=\"list\" id=\"list\">")
+        records.forEach { r ->
+            val resCls = if (r.result == "WIN") "win" else "lose"
+            val hasMemo = !r.memo.isNullOrBlank()
+            sb.append("<div class=\"row\"")
+            if (hasMemo) sb.append(" title=\"").append(esc(r.memo!!)).append("\"")
+            sb.append(">")
+            sb.append("<div class=\"left\"><div class=\"res $resCls\">").append(esc(r.result))
+                .append("</div><div class=\"pno\">P").append(r.partyIndex + 1).append(if (hasMemo) " ✎" else "").append("</div></div>")
+            sb.append("<div class=\"mid\">").append(iconsHtml(r.myParty, ::cls))
+                .append("<div class=\"vs\">vs</div>").append(iconsHtml(r.enemyParty, ::cls)).append("</div>")
+            val ts = r.timestamp.replace('-', '.')
+            val date = ts.substringBefore(' ')
+            val time = ts.substringAfter(' ', "")
+            sb.append("<div class=\"time\">").append(esc(date)).append("<br>").append(esc(time)).append("</div>")
+            sb.append("</div>")
         }
-        if (shown.isEmpty()) sb.append("<tr><td colspan=\"7\" class=\"time\">まだ記録がありません</td></tr>")
-        sb.append("</tbody></table>")
+        sb.append("</div>")
 
-        // ---- グランプリ記録 ----
-        if (gpShown.isNotEmpty()) {
-            sb.append("<h2>グランプリ記録").append(if (gpAll.size > gpShown.size) " (直近 ${gpShown.size} 件)" else "").append("</h2>")
-            sb.append("<table><thead><tr><th>日時</th><th>勝敗</th><th>レーティング</th><th>ボーダー</th><th>ランク帯</th></tr></thead><tbody>")
-            gpShown.forEach { g ->
-                val cls = if (g.result == "WIN") "win" else "lose"
-                sb.append("<tr><td class=\"time\">").append(esc(g.timestamp))
-                    .append("</td><td class=\"res $cls\">").append(esc(g.result))
-                    .append("</td><td>").append(if (g.isUnread) "未取得" else String.format(Locale.US, "%.1f", g.currentRating))
-                    .append("</td><td>").append(g.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "")
-                    .append("</td><td>").append(esc(g.rankTier ?: ""))
-                    .append("</td></tr>")
-            }
-            sb.append("</tbody></table>")
+        // ===== 下部ボタン (見た目のみ) =====
+        sb.append("<div class=\"fab back\">⟲</div><div class=\"fab mode\">✎</div><div class=\"fab analyze\">⌕</div>")
+        sb.append("</div>")
+
+        // サムネイルの CSS (使った体だけ)
+        sb.append("<style>")
+        iconClass.forEach { (name, c) ->
+            val data = fileByName[name]?.let { iconDataUri(context, it) }
+            if (data != null) sb.append(".").append(c).append("{background-image:url(").append(data).append(")}\n")
         }
-
-        sb.append("<footer>なかモンREC 自動エクスポート · ${REFRESH_SEC} 秒ごとに自動更新</footer>")
+        sb.append("</style>")
+        // 読み込みのたびに最新 (最下部) へスクロール (RecyclerView の scrollToPosition(last) と同じ)
+        sb.append("<script>var l=document.getElementById('list');if(l){l.scrollTop=l.scrollHeight;}</script>")
         sb.append("</body></html>")
         return sb.toString()
     }
 
-    private fun card(title: String, value: String, sub: String): String =
-        "<div class=\"card\"><div class=\"t\">${esc(title)}</div><div class=\"v\">$value</div><div class=\"s\">${esc(sub)}</div></div>"
+    // ---- 部品 ----
 
-    private fun rate(num: Int, den: Int): String =
-        if (den > 0) RateFormat.percent(num.toDouble() / den * 100.0) else "-"
+    private fun css(): String {
+        fun dp(v: Int) = "${v * S}px"
+        fun sp(v: Int) = "${v * S}px"
+        return """
+        html,body{margin:0;padding:0;background:#222222}
+        body{width:${PAGE_W}px;font-family:Roboto,"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;color:#FFFFFF;-webkit-font-smoothing:antialiased}
+        .screen{position:relative;width:${PAGE_W}px;height:${PAGE_H}px;display:flex;flex-direction:column;overflow:hidden}
+        .card{background:#333333;box-shadow:0 ${dp(2)} ${dp(4)} rgba(0,0,0,.45)}
+        .top{display:flex;height:${dp(120)};margin:${dp(48)} ${dp(8)} 0 ${dp(8)}}
+        .top .card{margin:${dp(4)};border-radius:${dp(16)};padding:${dp(8)};box-sizing:border-box;display:flex;flex-direction:column}
+        .total{flex:1;align-items:center;justify-content:center;text-align:center}
+        .graph{flex:1.2}
+        .tlabel{color:#AAAAAA;font-weight:700;letter-spacing:.1em;font-size:${sp(14)};line-height:1.2;width:100%}
+        .trate{color:#F09199;font-weight:700;font-size:${sp(30)};line-height:1.15;flex:3;display:flex;align-items:center}
+        .tcount{color:#AAAAAA;font-size:${sp(12)};flex:1.2;display:flex;align-items:center}
+        .twl{font-size:${sp(12)};flex:1.2;display:flex;align-items:center}
+        .win{color:#F09199}.lose{color:#90D7EC}
+        .glabel{color:#666666;font-size:${sp(11)};font-weight:700;text-align:right;margin-right:${dp(4)};line-height:1.2}
+        .graph svg{display:block;width:100%;flex:1;margin-top:${dp(2)}}
+        .parties{display:flex;margin:${dp(4)} ${dp(4)} 0 ${dp(4)}}
+        .party{flex:1;margin:${dp(4)};border-radius:${dp(10)};padding:${dp(4)} ${dp(4)} ${dp(12)} ${dp(4)};display:flex;flex-direction:column;align-items:center}
+        .pname{font-size:${sp(14)};font-weight:700;line-height:1.3}
+        .picons{display:flex;justify-content:center;margin:${dp(4)} 0}
+        .pi{display:inline-block;width:${dp(18)};height:${dp(18)};margin:${dp(1)};border-radius:${dp(6)};background:#2c2c2c center/cover no-repeat}
+        .pi.hidden{visibility:hidden}
+        .prate{color:#F09199;font-size:${sp(16)};font-weight:700;line-height:1.3}
+        .puse{color:#AAAAAA;font-size:${sp(11)};line-height:1.4}
+        .pwl{font-size:${sp(11)};line-height:1.4}
+        .list{flex:1;margin:${dp(4)} 0 ${dp(80)} 0;overflow-y:auto;overflow-x:hidden}
+        .list::-webkit-scrollbar{display:none}
+        .row{display:flex;align-items:center;background:#333333;border-radius:${dp(2)};margin:${dp(2)} ${dp(4)};padding:${dp(8)} ${dp(4)};box-shadow:0 ${dp(1)} ${dp(2)} rgba(0,0,0,.35)}
+        .left{width:${dp(45)};display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
+        .res{font-weight:700;font-size:${sp(14)};line-height:1.2}
+        .pno{font-weight:700;font-size:${sp(10)};line-height:1.3;color:#FFFFFF}
+        .mid{flex:1;display:flex;align-items:center;justify-content:center;min-width:0}
+        .icons{display:flex}
+        .mi{display:inline-block;width:${dp(22)};height:${dp(22)};margin-right:${dp(1)};border-radius:${dp(6)};background:#2c2c2c center/cover no-repeat;flex:none}
+        .vs{font-weight:700;font-size:${sp(10)};margin:0 ${dp(2)}}
+        .time{width:${dp(65)};flex:none;text-align:right;color:#8E8E93;font-size:${sp(10)};line-height:1.25;margin-left:${dp(2)}}
+        .fab{position:absolute;bottom:${dp(12)};width:${dp(56)};height:${dp(56)};border-radius:50%;background:#333333;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:${sp(26)};box-shadow:0 ${dp(4)} ${dp(8)} rgba(0,0,0,.5)}
+        .fab.back{left:${dp(24)}}
+        .fab.mode{left:50%;transform:translateX(-50%);bottom:${dp(16)};box-sizing:border-box;border:${dp(2)} solid #AAAAAA}
+        .fab.analyze{right:${dp(24)}}
+        """.trimIndent()
+    }
 
-    private fun partyHtml(names: List<String>, iconClass: Map<String, String>): String {
-        val sb = StringBuilder("<div class=\"party\">")
+    private fun winLose(w: Int, l: Int): String =
+        "<span class=\"win\">${w}W</span> - <span class=\"lose\">${l}L</span>"
+
+    private fun iconsHtml(names: List<String>, cls: (String) -> String?): String {
+        val sb = StringBuilder("<div class=\"icons\">")
         names.forEach { n ->
-            val cls = iconClass[n]
-            if (cls != null) sb.append("<i class=\"mi $cls\" title=\"").append(esc(n)).append("\"></i>")
-            else sb.append("<i class=\"mi\" title=\"").append(esc(n)).append("\"></i>")
+            val c = cls(n)
+            sb.append("<i class=\"mi").append(if (c != null) " $c" else "").append("\" title=\"").append(esc(n)).append("\"></i>")
         }
         return sb.append("</div>").toString()
     }
 
-    /** templates/<fileName> を半分サイズの PNG にして data URI に。失敗したら null (灰色の枠だけ表示) */
+    /**
+     * WinRateGraphView と同じ描画を SVG で再現する。
+     * 直近 20 戦の移動勝率、表示は最後の 20 点 (scrollOffset 最大)、ダイナミックスケール (10% 刻み・最低 20% 幅)、
+     * 最新点を選択状態 (白い点線 + 丸 + ツールチップ)。グラフ領域の実寸 (px) は右カードの内側から算出する
+     */
+    private fun graphSvg(records: List<BattleRecord>): String {
+        // 右カードの内寸: 上段幅 1080 - 左右 8dp - カード margin 4dp×4、weight 1:1.2、padding 8dp
+        val innerTop = PAGE_W - 2 * 8 * S - 4 * 4 * S
+        val cardW = innerTop * 1.2f / 2.2f
+        val w = cardW - 2 * 8 * S
+        val h = (120 * S - 2 * 8 * S - (11 * S * 1.2f) - 2 * S)
+        if (records.size < 2) {
+            return "<svg viewBox=\"0 0 ${w.toInt()} ${h.toInt()}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+        }
+        // 移動勝率 (直近 20 戦)
+        val rates = records.indices.map { i ->
+            val start = (i - GRAPH_WINDOW + 1).coerceAtLeast(0)
+            val sub = records.subList(start, i + 1)
+            sub.count { it.result == "WIN" }.toDouble() / sub.size * 100.0
+        }
+        val padL = 60f; val padR = 30f; val padT = 40f; val padB = 45f
+        val innerW = w - padL - padR
+        val innerH = h - padT - padB
+        val visible = GRAPH_WINDOW
+        val stepX = innerW / (visible - 1)
+        val scroll = ((rates.size - visible).coerceAtLeast(0)) * stepX
+
+        // 表示範囲内の点だけでスケールを決める
+        var minV = Float.MAX_VALUE; var maxV = -Float.MAX_VALUE
+        rates.forEachIndexed { i, r ->
+            val x = padL + i * stepX - scroll
+            if (x >= padL - 1f && x <= w - padR + 1f) { minV = minOf(minV, r.toFloat()); maxV = maxOf(maxV, r.toFloat()) }
+        }
+        var dMin = (floor(minV / 10.0) * 10.0).toFloat().coerceAtLeast(0f)
+        var dMax = (ceil(maxV / 10.0) * 10.0).toFloat().coerceAtMost(100f)
+        if (dMax - dMin < 20f) { if (dMax <= 80f) dMax = dMin + 20f else dMin = dMax - 20f }
+        val range = dMax - dMin
+        fun yOf(r: Double) = padT + innerH - ((r.toFloat() - dMin) / range * innerH)
+
+        val sb = StringBuilder()
+        sb.append("<svg viewBox=\"0 0 ${w.toInt()} ${h.toInt()}\" xmlns=\"http://www.w3.org/2000/svg\">")
+        // Y 軸目盛り
+        for (i in 0..5) {
+            val rv = dMin + range * i / 5
+            val y = yOf(rv.toDouble())
+            sb.append("<line x1=\"$padL\" y1=\"${f(y)}\" x2=\"${f(w - padR)}\" y2=\"${f(y)}\" stroke=\"#444444\" stroke-width=\"1\"/>")
+            sb.append("<text x=\"5\" y=\"${f(y + 6f)}\" fill=\"#888888\" font-size=\"18\">${rv.toInt()}%</text>")
+        }
+        // クリップ領域
+        sb.append("<defs><clipPath id=\"gc\"><rect x=\"$padL\" y=\"0\" width=\"${f(w - padL - padR)}\" height=\"${f(h)}\"/></clipPath></defs>")
+        sb.append("<g clip-path=\"url(#gc)\">")
+        // X 軸目盛り (1 戦ごと)
+        rates.forEachIndexed { i, _ ->
+            val x = padL + i * stepX - scroll
+            if (x >= padL - 1f && x <= w - padR + 1f) {
+                sb.append("<line x1=\"${f(x)}\" y1=\"$padT\" x2=\"${f(x)}\" y2=\"${f(padT + innerH)}\" stroke=\"#444444\" stroke-width=\"1\"/>")
+            }
+        }
+        // 面と線
+        val line = StringBuilder(); val area = StringBuilder()
+        var first = true
+        var lastX = padL
+        rates.forEachIndexed { i, r ->
+            val x = padL + i * stepX - scroll
+            if (x < padL - stepX || x > w + stepX) return@forEachIndexed
+            val y = yOf(r)
+            if (first) { line.append("M${f(x)} ${f(y)}"); area.append("M${f(x)} ${f(padT + innerH)} L${f(x)} ${f(y)}"); first = false }
+            else { line.append(" L${f(x)} ${f(y)}"); area.append(" L${f(x)} ${f(y)}") }
+            lastX = x
+        }
+        area.append(" L${f(lastX)} ${f(padT + innerH)} Z")
+        sb.append("<path d=\"$area\" fill=\"#F09199\" fill-opacity=\"0.12\"/>")
+        sb.append("<path d=\"$line\" fill=\"none\" stroke=\"#F09199\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>")
+        sb.append("</g>")
+        // 最新点を選択状態で表示 (点線 + 丸 + ツールチップ)
+        val li = rates.size - 1
+        val lx = padL + li * stepX - scroll
+        val ly = yOf(rates[li])
+        sb.append("<line x1=\"${f(lx)}\" y1=\"$padT\" x2=\"${f(lx)}\" y2=\"${f(padT + innerH)}\" stroke=\"#FFFFFF\" stroke-width=\"2\" stroke-dasharray=\"10 10\"/>")
+        sb.append("<circle cx=\"${f(lx)}\" cy=\"${f(ly)}\" r=\"8\" fill=\"#FFFFFF\"/><circle cx=\"${f(lx)}\" cy=\"${f(ly)}\" r=\"6\" fill=\"#F09199\"/>")
+        val tip = String.format(Locale.US, "%s：%dMatches", RateFormat.percent(rates[li]), rates.size)
+        val tipW = tip.length * 12f   // 22px 太字の概算幅 (全角混じり)
+        val tx = lx.coerceIn(padL + tipW / 2, w - padR - tipW / 2)
+        sb.append("<text x=\"${f(tx)}\" y=\"${f(padT - 12f)}\" fill=\"#FFFFFF\" font-size=\"22\" font-weight=\"700\" text-anchor=\"middle\">").append(esc(tip)).append("</text>")
+        if (rates.size > visible) {
+            sb.append("<text x=\"$padL\" y=\"${f(h - 2f)}\" fill=\"#888888\" fill-opacity=\"0.47\" font-size=\"${10 * S}\">SLIDE TO SEE</text>")
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    private fun f(v: Float): String = String.format(Locale.US, "%.1f", v)
+
+    /** templates/<fileName> を縮小 PNG にして data URI に。失敗したら null (灰色の枠だけ表示) */
     private fun iconDataUri(context: Context, fileName: String): String? {
         iconCache[fileName]?.let { return it }
         return try {
