@@ -17,8 +17,8 @@ import kotlin.math.floor
  * - ページ幅はスマホ実寸の 1080px、高さ 2364px (Pixel 基準)。dp 値は ×3 で px に、sp も ×3。
  *   レイアウト・色・文字サイズは activity_history.xml / item_battle_record.xml / dimens.xml と同じ値を使う。
  * - 上段: TOTAL WIN RATE カード + RECENT TREND (直近 20 戦の移動勝率グラフ、WinRateGraphView と同じ描画) /
- *   パーティ別 3 カード (最新の構成 4 体、勝率、Use:、W-L) / 戦績リスト (アプリと同じく最新が一番下、
- *   読み込み時に最下部へスクロール) / 下部の 3 ボタン (見た目のみ)。
+ *   パーティ別 3 カード (最新の構成 4 体、勝率、Use:、W-L) / 戦績リスト (HTML では最新が一番上) /
+ *   下部の 3 ボタン (見た目のみ)。
  * - 外部参照なし: モンスターのサムネイルは縮小 PNG を base64 で CSS クラスに 1 回だけ埋め込む。
  * - 数秒ごとに自動再読込 (meta refresh)。OBS のブラウザソースや PC のブラウザで開いたまま更新を追える。
  */
@@ -92,9 +92,9 @@ object HtmlExport {
         }
         sb.append("</div>")
 
-        // ===== 戦績リスト (アプリと同じく古い → 新しい、最下部が最新) =====
+        // ===== 戦績リスト (HTML では最新を最上部に。配信画面で新しい結果がすぐ目に入るようにするため、ビーフ指定 2026-11-02) =====
         sb.append("<div class=\"list\" id=\"list\">")
-        records.forEach { r ->
+        records.asReversed().forEach { r ->
             val resCls = if (r.result == "WIN") "win" else "lose"
             val hasMemo = !r.memo.isNullOrBlank()
             sb.append("<div class=\"row\"")
@@ -123,8 +123,6 @@ object HtmlExport {
             if (data != null) sb.append(".").append(c).append("{background-image:url(").append(data).append(")}\n")
         }
         sb.append("</style>")
-        // 読み込みのたびに最新 (最下部) へスクロール (RecyclerView の scrollToPosition(last) と同じ)
-        sb.append("<script>var l=document.getElementById('list');if(l){l.scrollTop=l.scrollHeight;}</script>")
         sb.append("</body></html>")
         return sb.toString()
     }
