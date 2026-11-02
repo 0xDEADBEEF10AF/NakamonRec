@@ -2143,7 +2143,8 @@ class HistoryActivity : AppCompatActivity() {
             getString(R.string.edit_option_change_monsters),
             getString(R.string.edit_option_delete),
             getString(R.string.edit_option_insert_after),
-            "マッチングスコアを確認"
+            "マッチングスコアを確認",
+            if (record.memo.isNullOrBlank()) "メモを追加" else "メモを編集"
         )
         AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(R.string.edit_record_title)
@@ -2155,9 +2156,61 @@ class HistoryActivity : AppCompatActivity() {
                     3 -> deleteRecord(position)
                     4 -> insertRecordAfter(position)
                     5 -> showScoreDetailsDialog(position)
+                    6 -> showMemoDialog(position)
                 }
             }
             .show()
+    }
+
+    /**
+     * レコードのメモ入力 (2026-11-02)。最大 BattleRecordMemo.MAX_LENGTH 文字、残数表示付き。
+     * 「保存」で空にするか「削除」でメモを消す。保存は updateAndSave 経由 (REC 中の追記を消さない読み直し付き)
+     */
+    private fun showMemoDialog(position: Int) {
+        val record = dataManager.history.records.getOrNull(position) ?: return
+        val max = BattleRecordMemo.MAX_LENGTH
+        val density = resources.displayMetrics.density
+        val input = EditText(this).apply {
+            setText(record.memo ?: "")
+            setSelection(text.length)
+            hint = "例: 相手の先手ザオリクに注意"
+            filters = arrayOf(android.text.InputFilter.LengthFilter(max))
+            maxLines = 3
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+        }
+        val counter = TextView(this).apply {
+            text = "${input.text.length}/$max"
+            textSize = 12f
+            setTextColor(Color.GRAY)
+            gravity = Gravity.END
+        }
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { counter.text = "${s?.length ?: 0}/$max" }
+        })
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = (20 * density).toInt()
+            setPadding(p, (8 * density).toInt(), p, 0)
+            addView(input)
+            addView(counter)
+        }
+        val builder = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+            .setTitle(if (record.memo.isNullOrBlank()) "メモを追加" else "メモを編集")
+            .setView(container)
+            .setPositiveButton("保存") { _, _ ->
+                val text = input.text.toString().trim().take(max)
+                updateAndSave(position, record.copy(memo = text.ifEmpty { null }))
+            }
+            .setNegativeButton("キャンセル", null)
+        if (!record.memo.isNullOrBlank()) {
+            builder.setNeutralButton("削除") { _, _ -> updateAndSave(position, record.copy(memo = null)) }
+        }
+        val dialog = builder.show()
+        input.requestFocus()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
     }
 
     private fun showScoreDetailsDialog(position: Int) {

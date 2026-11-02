@@ -35,9 +35,17 @@ class BattleHistoryAdapter(
         set(value) {
             if (field != value) {
                 field = value
+                // モード切替でメモ表示の一時状態はすべて解除 (メモ表示は編集モード専用)
+                memoShownTimestamps.clear()
                 notifyItemRangeChanged(0, itemCount)
             }
         }
+
+    /**
+     * メモ表示に切り替えている行 (timestamp で識別)。画面内だけの一時状態で保存しない。
+     * 編集モードでメモ付きの行をタップすると行の内容全体がメモの文章に置き換わり、もう一度タップで戻る (2026-11-02)
+     */
+    private val memoShownTimestamps = mutableSetOf<String>()
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val result: TextView = view.findViewById(R.id.textResult)
@@ -46,6 +54,8 @@ class BattleHistoryAdapter(
         val vsScore: TextView = view.findViewById(R.id.textVsScore)
         val layoutMyMonsters: LinearLayout = view.findViewById(R.id.layoutMyMonsters)
         val layoutEnemyMonsters: LinearLayout = view.findViewById(R.id.layoutEnemyMonsters)
+        val content: View = view.findViewById(R.id.layoutRecordContent)
+        val memo: TextView = view.findViewById(R.id.textMemo)
     }
 
     fun updateData(newRecords: List<BattleRecord>) {
@@ -75,7 +85,16 @@ class BattleHistoryAdapter(
 
         holder.result.text = record.result
         holder.result.setTextColor(if (record.result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt())
-        holder.party.text = "P${record.partyIndex + 1}"
+        // メモ付きの行は P 番号の横に小さなペン記号を目印として付ける
+        val hasMemo = !record.memo.isNullOrBlank()
+        holder.party.text = if (hasMemo) "P${record.partyIndex + 1} ✎" else "P${record.partyIndex + 1}"
+
+        // メモ表示の切り替え (編集モードのみ)。表示中は行の内容を INVISIBLE にして高さを保ち、メモだけ見せる
+        val showMemo = hasMemo && !isFilterMode && memoShownTimestamps.contains(record.timestamp)
+        holder.content.visibility = if (showMemo) View.INVISIBLE else View.VISIBLE
+        holder.memo.visibility = if (showMemo) View.VISIBLE else View.GONE
+        holder.memo.text = record.memo ?: ""
+        holder.itemView.setOnClickListener { toggleMemoDisplay(holder) }
         // 表示専用: 日付をドット区切り (2026.08.14) にして横幅を詰める
         // (保存形式・CSV は yyyy-MM-dd のまま変更しない。時刻の「:」は影響なし)
         // 日付と時刻を明示的に改行で分け、欄幅に収まるよう自動縮小させる (レイアウト側 autoSize と対)
@@ -88,7 +107,11 @@ class BattleHistoryAdapter(
         // - バインド時の position/record を捕捉しない (DiffUtil 部分更新で陳腐化するため)
         // - bindingAdapterPosition は NO_POSITION (削除アニメーション中など) を弾く
         holder.result.setOnClickListener {
-            if (!isFilterMode) return@setOnClickListener
+            if (!isFilterMode) {
+                // 編集モードでは WIN/LOSE の部分をタップしてもメモ表示の切り替えとして扱う (行全体と同じ動き)
+                toggleMemoDisplay(holder)
+                return@setOnClickListener
+            }
             val rec = recordAt(holder) ?: return@setOnClickListener
             onResultClick(rec.result)
         }
@@ -101,6 +124,15 @@ class BattleHistoryAdapter(
 
         setupMonsterIcons(context, holder.layoutMyMonsters, record.myParty, record.myPartyScores, isFilterMode, false)
         setupMonsterIcons(context, holder.layoutEnemyMonsters, record.enemyParty, record.enemyPartyScores, isFilterMode, true)
+    }
+
+    /** 編集モードでメモ付きの行がタップされたとき、通常表示とメモ表示を入れ替える。メモが無い行では何もしない */
+    private fun toggleMemoDisplay(holder: ViewHolder) {
+        if (isFilterMode) return
+        val rec = recordAt(holder) ?: return
+        if (rec.memo.isNullOrBlank()) return
+        if (!memoShownTimestamps.add(rec.timestamp)) memoShownTimestamps.remove(rec.timestamp)
+        notifyItemChanged(holder.bindingAdapterPosition)
     }
 
     /** クリック時点の adapter position から現在のレコードを取得する (陳腐化・範囲外は null) */

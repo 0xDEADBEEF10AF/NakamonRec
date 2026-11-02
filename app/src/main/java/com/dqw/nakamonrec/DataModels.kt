@@ -19,6 +19,11 @@ data class MonsterData(
     var templateMat: Mat? = null
 )
 
+/** レコードのメモに関する定数 (iOS と同値に揃える) */
+object BattleRecordMemo {
+    const val MAX_LENGTH = 60
+}
+
 /**
  * 戦闘記録の1セッション
  */
@@ -32,7 +37,10 @@ data class BattleRecord(
     var myPartyScores: List<Double>? = null,
     var enemyPartyScores: List<Double>? = null,
     var resultScore: Double? = null,
-    var partySelectScores: List<Double>? = null
+    var partySelectScores: List<Double>? = null,
+    // ユーザーのメモ (最大 60 文字、2026-11-02)。無ければ null。旧ファイルは項目が無く null で読まれる。
+    // CSV では 12 列目「メモ」(両 OS とも 11 列以上を戦績行と見なすので、旧バージョンは無視して読める)
+    var memo: String? = null
 )
 
 /**

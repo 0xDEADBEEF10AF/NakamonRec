@@ -46,13 +46,15 @@ object CsvSupport {
         }
         sb.appendLine()
         sb.appendLine(
-            listOf("戦闘終了時刻", "勝敗", "選択パーティ", "自分1", "自分2", "自分3", "自分4", "相手1", "相手2", "相手3", "相手4")
+            listOf("戦闘終了時刻", "勝敗", "選択パーティ", "自分1", "自分2", "自分3", "自分4", "相手1", "相手2", "相手3", "相手4", "メモ")
                 .joinToString(",") { quote(it) }
         )
         history.records.forEach { r ->
+            // 12 列目「メモ」(2026-11-02)。旧バージョンの読み込みは 11 列以上なら受け付けるので互換
             val cells = listOf(r.timestamp, r.result, "パーティ${r.partyIndex + 1}") +
                 (0..3).map { r.myParty.getOrElse(it) { "" } } +
-                (0..3).map { r.enemyParty.getOrElse(it) { "" } }
+                (0..3).map { r.enemyParty.getOrElse(it) { "" } } +
+                listOf(r.memo ?: "")
             sb.appendLine(cells.joinToString(",") { quote(it) })
         }
 
@@ -103,7 +105,9 @@ object CsvSupport {
             val partyIndex = partyName.replace(Regex("[^0-9]"), "").toIntOrNull()?.minus(1) ?: 0
             val myParty = listOf(cells[3], cells[4], cells[5], cells[6])
             val enemyParty = listOf(cells[7], cells[8], cells[9], cells[10])
-            out.add(BattleRecord(timestamp, result, partyIndex, myParty, enemyParty))
+            // 12 列目「メモ」は任意 (旧 CSV には無い)。空文字は null に寄せる
+            val memo = cells.getOrNull(11)?.trim()?.takeIf { it.isNotEmpty() }?.take(BattleRecordMemo.MAX_LENGTH)
+            out.add(BattleRecord(timestamp, result, partyIndex, myParty, enemyParty, memo = memo))
         }
         return out
     }

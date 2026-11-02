@@ -118,7 +118,10 @@ object HtmlExport {
 
         // ---- 対戦履歴 ----
         sb.append("<h2>対戦履歴").append(if (records.size > shown.size) " (直近 ${shown.size} 戦)" else "").append("</h2>")
-        sb.append("<table><thead><tr><th>日時</th><th>勝敗</th><th>P</th><th>自分</th><th></th><th>相手</th></tr></thead><tbody>")
+        val hasMemo = shown.any { !it.memo.isNullOrBlank() }
+        sb.append("<table><thead><tr><th>日時</th><th>勝敗</th><th>P</th><th>自分</th><th></th><th>相手</th>")
+        if (hasMemo) sb.append("<th>メモ</th>")
+        sb.append("</tr></thead><tbody>")
         shown.forEach { r ->
             val cls = if (r.result == "WIN") "win" else "lose"
             sb.append("<tr><td class=\"time\">").append(esc(r.timestamp.replace('-', '.')))
@@ -126,9 +129,11 @@ object HtmlExport {
                 .append("</td><td>").append(if (r.partyIndex >= 0) "P${r.partyIndex + 1}" else "P?")
                 .append("</td><td>").append(partyHtml(r.myParty, iconClass))
                 .append("</td><td class=\"vs\">vs</td><td>").append(partyHtml(r.enemyParty, iconClass))
-                .append("</td></tr>")
+                .append("</td>")
+            if (hasMemo) sb.append("<td class=\"memo\">").append(esc(r.memo ?: "")).append("</td>")
+            sb.append("</tr>")
         }
-        if (shown.isEmpty()) sb.append("<tr><td colspan=\"6\" class=\"time\">まだ記録がありません</td></tr>")
+        if (shown.isEmpty()) sb.append("<tr><td colspan=\"7\" class=\"time\">まだ記録がありません</td></tr>")
         sb.append("</tbody></table>")
 
         // ---- グランプリ記録 ----

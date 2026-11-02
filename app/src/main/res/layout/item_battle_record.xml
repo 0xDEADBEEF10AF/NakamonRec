@@ -7,7 +7,23 @@
     android:layout_marginVertical="2dp"
     app:cardBackgroundColor="#333333">
 
+    <!-- メモ表示 (2026-11-02): 編集モードでメモ付きの行をタップすると、下の行内容 (layoutRecordContent) を
+         INVISIBLE にして (高さは維持) このテキストだけを表示する。もう一度タップで元に戻る -->
+    <TextView
+        android:id="@+id/textMemo"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:paddingVertical="8dp"
+        android:paddingHorizontal="12dp"
+        android:textColor="#FFFFFF"
+        android:textSize="@dimen/battle_history_text_sub"
+        android:maxLines="3"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
     <LinearLayout
+        android:id="@+id/layoutRecordContent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
