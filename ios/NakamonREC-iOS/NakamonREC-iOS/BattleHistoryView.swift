@@ -149,7 +149,9 @@ struct BattleHistoryView: View {
                     memoEditingFor = record
                 }
             )
-            .presentationDetents([.medium, .large])
+            // medium だと下の区画 (マッチングスコア / メモ) がスクロールしないと見えないため、
+            // 最初から全高で開いて全項目を表示する (ビーフ指摘 2026-11-03)
+            .presentationDetents([.large])
         }
         .sheet(item: $memoEditingFor) { record in
             MemoEditSheet(record: record) { updated in
