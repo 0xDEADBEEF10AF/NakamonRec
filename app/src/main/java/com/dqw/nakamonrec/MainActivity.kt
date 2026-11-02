@@ -825,7 +825,13 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
-        calibrationSelectorDialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("ユーザー設定").setView(container).setNegativeButton("閉じる", null).show()
+        // 項目が増えて (自動エクスポート追加、2026-11-02) 小さい画面では下が見切れるため、全体をスクロール可能にする
+        val scroller = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = true
+            setBackgroundColor(0xFF222222.toInt())
+            addView(container)
+        }
+        calibrationSelectorDialog = AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog).setTitle("ユーザー設定").setView(scroller).setNegativeButton("閉じる", null).show()
     }
 
     /** ユーザー設定ダイアログの「アイコン + タイトル + 補足 + ›」の 1 行 (対象モンスター行と同じ見た目) */
