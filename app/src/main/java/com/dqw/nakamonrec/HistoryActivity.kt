@@ -2208,9 +2208,17 @@ class HistoryActivity : AppCompatActivity() {
         if (!record.memo.isNullOrBlank()) {
             builder.setNeutralButton("削除") { _, _ -> updateAndSave(position, record.copy(memo = null)) }
         }
-        val dialog = builder.show()
+        // キーボードを最初から出す (ビーフ指摘 2026-11-03)。show() の後に setSoftInputMode しても効かないため、
+        // 表示前に ALWAYS_VISIBLE を指定し、念のため表示後に showSoftInput も呼ぶ
+        val dialog = builder.create()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        dialog.show()
         input.requestFocus()
-        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        input.post {
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun showScoreDetailsDialog(position: Int) {

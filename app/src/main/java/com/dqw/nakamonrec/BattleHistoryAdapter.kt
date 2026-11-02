@@ -91,6 +91,12 @@ class BattleHistoryAdapter(
 
         // メモ表示の切り替え (編集モードのみ)。表示中は行の内容を INVISIBLE にして高さを保ち、メモだけ見せる
         val showMemo = hasMemo && !isFilterMode && memoShownTimestamps.contains(record.timestamp)
+        // 再バインド時は切替アニメーションの途中状態 (平行移動・透明度) を必ず初期値に戻す (ビューは使い回されるため)
+        for (v in listOf(holder.content, holder.memo)) {
+            v.animate().cancel()
+            v.translationX = 0f
+            v.alpha = 1f
+        }
         holder.content.visibility = if (showMemo) View.INVISIBLE else View.VISIBLE
         holder.memo.visibility = if (showMemo) View.VISIBLE else View.GONE
         holder.memo.text = record.memo ?: ""
@@ -131,8 +137,43 @@ class BattleHistoryAdapter(
         if (isFilterMode) return
         val rec = recordAt(holder) ?: return
         if (rec.memo.isNullOrBlank()) return
-        if (!memoShownTimestamps.add(rec.timestamp)) memoShownTimestamps.remove(rec.timestamp)
-        notifyItemChanged(holder.bindingAdapterPosition)
+        val showMemo = memoShownTimestamps.add(rec.timestamp)
+        if (!showMemo) memoShownTimestamps.remove(rec.timestamp)
+        // 再バインド (notifyItemChanged) ではなくその場でアニメーションさせる。状態は memoShownTimestamps に
+        // 入れてあるので、スクロールで再バインドされても正しい表示になる
+        animateMemoSwitch(holder, showMemo)
+    }
+
+    /**
+     * 通常表示 ⇄ メモ表示の切替アニメーション (iOS 版と同じ「左からスライド + フェード」、2026-11-03)。
+     * 出ていく側は左へ少し動きながら消え、入ってくる側は左から少し動きながら現れる
+     */
+    private fun animateMemoSwitch(holder: ViewHolder, showMemo: Boolean) {
+        val outgoing = if (showMemo) holder.content else holder.memo
+        val incoming = if (showMemo) holder.memo else holder.content
+        val shift = -holder.itemView.width * 0.25f
+        outgoing.animate().cancel()
+        incoming.animate().cancel()
+        outgoing.animate()
+            .translationX(shift)
+            .alpha(0f)
+            .setDuration(150L)
+            .withEndAction {
+                // 行の高さは通常表示側で決まるので、通常表示は GONE にせず INVISIBLE で高さを残す
+                outgoing.visibility = if (outgoing === holder.content) View.INVISIBLE else View.GONE
+                outgoing.translationX = 0f
+                outgoing.alpha = 1f
+            }
+            .start()
+        incoming.translationX = shift
+        incoming.alpha = 0f
+        incoming.visibility = View.VISIBLE
+        incoming.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(200L)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
     }
 
     /** クリック時点の adapter position から現在のレコードを取得する (陳腐化・範囲外は null) */
