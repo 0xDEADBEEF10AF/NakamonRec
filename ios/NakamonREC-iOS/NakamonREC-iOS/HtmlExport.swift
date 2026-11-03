@@ -34,6 +34,8 @@ nonisolated enum HtmlExport {
 
     static func render(history: BattleHistory, baseName: String) -> String {
         let records = history.records
+        // グランプリ記録 (時系列昇順)。1 件以上あるときだけ「グランプリ集計」タブを出す (2026-11-03)
+        let gp = (history.grandPrixRecords ?? []).sorted { $0.timestamp < $1.timestamp }
         let wins = records.filter { $0.result == "WIN" }.count
         let losses = records.filter { $0.result == "LOSE" }.count
         let total = wins + losses
@@ -55,11 +57,18 @@ nonisolated enum HtmlExport {
         var sb = ""
         sb.reserveCapacity(96 * 1024)
         sb += "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">"
-        sb += "<meta http-equiv=\"refresh\" content=\"\(refreshSec)\">"
+        // 自動再読込は末尾のスクリプト (location.reload) で行う。meta refresh だと URL 末尾の #gp (タブ指定) が
+        // 落ちる環境があるため
         sb += "<meta name=\"viewport\" content=\"width=\(pageW)\">"
         sb += "<title>なかモンREC 戦績 - \(esc(baseName))</title>"
-        sb += "<style>\(css())</style></head><body>"
+        sb += "<style>\(css())\(gpCss())</style></head><body>"
         sb += "<div class=\"screen\">"
+        // タブ (グランプリ記録があるときだけ)。上端 48dp の空き (アプリではステータスバー領域) に重ねる
+        if !gp.isEmpty {
+            sb += "<div class=\"tabs\"><div class=\"tab active\" data-t=\"history\">戦績</div>"
+            sb += "<div class=\"tab\" data-t=\"gp\">グランプリ集計</div></div>"
+        }
+        sb += "<div class=\"pane active\" id=\"pane-history\">"
 
         // ===== 上段 =====
         sb += "<div class=\"top\">"
@@ -113,8 +122,15 @@ nonisolated enum HtmlExport {
             sb += "<div class=\"time\">\(esc(date))<br>\(esc(time))</div>"
             sb += "</div>"
         }
-        sb += "</div>"
-        sb += "</div>"
+        sb += "</div>"   // list
+        sb += "</div>"   // pane-history
+
+        // ===== グランプリ集計タブ =====
+        if !gp.isEmpty {
+            sb += "<div class=\"pane gp\" id=\"pane-gp\">\(gpPane(gp))</div>"
+        }
+
+        sb += "</div>"   // screen
 
         // サムネイルの CSS (使った体だけ)
         sb += "<style>"
@@ -124,11 +140,272 @@ nonisolated enum HtmlExport {
             }
         }
         sb += "</style>"
-        // TOTAL WIN RATE ラベルは表示環境のフォントで幅が変わる (Mac/iPhone の Hiragino 太字は Windows より約 1 割広く
-        // 14sp 相当だとカード幅に収まらない)。基準の 14sp のまま、収まらない環境でだけ 1px ずつ縮めて 1 行に収める
-        sb += "<script>(function(){var l=document.querySelector('.tlabel');if(!l)return;var s=parseFloat(getComputedStyle(l).fontSize);while(l.scrollWidth>l.clientWidth&&s>20){s-=1;l.style.fontSize=s+'px';}})();</script>"
+        sb += script()
         sb += "</body></html>"
         return sb
+    }
+
+    /// ページ末尾のスクリプト (両 OS 同一)。
+    /// - TOTAL WIN RATE ラベルは表示環境のフォントで幅が変わる (Mac/iPhone の Hiragino 太字は Windows より約 1 割広く
+    ///   14sp 相当だとカード幅に収まらない)。基準の 14sp のまま、収まらない環境でだけ 1px ずつ縮めて 1 行に収める
+    /// - タブ: URL 末尾の #history / #gp → 前回選んだタブ (localStorage、ファイル名ごと) → 戦績 の順で決める。
+    ///   OBS では URL に #gp を付けたブラウザソースを置けばグランプリ集計だけを映せる
+    /// - 自動再読込: location.reload は URL 末尾の # を保つので、再読込後も同じタブが開く
+    private static func script() -> String {
+        """
+        <script>(function(){
+        var panes={history:document.getElementById('pane-history'),gp:document.getElementById('pane-gp')};
+        var key='nakamonrec.tab.'+document.title;
+        function fit(){var l=document.querySelector('.tlabel');if(!l)return;var s=parseFloat(getComputedStyle(l).fontSize);while(l.scrollWidth>l.clientWidth&&s>20){s-=1;l.style.fontSize=s+'px';}}
+        function show(t){if(!panes[t])t='history';
+          for(var k in panes){if(panes[k])panes[k].classList.toggle('active',k===t);}
+          var tabs=document.querySelectorAll('.tab');for(var i=0;i<tabs.length;i++){tabs[i].classList.toggle('active',tabs[i].getAttribute('data-t')===t);}
+          if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}}
+        var t=location.hash.replace('#','');if(!t){try{t=localStorage.getItem(key)||'';}catch(e){}}
+        show(t||'history');
+        var tabs=document.querySelectorAll('.tab');for(var i=0;i<tabs.length;i++){tabs[i].onclick=function(){var v=this.getAttribute('data-t');location.hash=v;show(v);};}
+        setTimeout(function(){location.reload();},\(refreshSec * 1000));
+        })();</script>
+        """
+    }
+
+    // MARK: - グランプリ集計タブ (2026-11-03)
+    // Android HistoryActivity.showGrandPrixDialog (サマリ 2 カード) / buildGrandPrixGraph (情報枠 + GrandPrixGraphView + 凡例) /
+    // buildGrandPrixList (日時・ランク・戦・レーティング・変動・ボーダー) の写し (iOS の GrandPrixStatsView と同じ構成)。
+    // アプリではグラフとテキスト一覧を切り替えるが、HTML は操作できないのでグラフの下に一覧を並べる (Android 版と同一出力)。
+    // ズーム (直近 N 戦) と横軸切替の操作も載せない (既定 = 全体表示・戦闘数軸)。
+
+    /// 埋め込むエンブレムの高さ (28dp)
+    private static let emblemH = 84
+    nonisolated(unsafe) private static var emblemCache: [String: String] = [:]
+
+    private struct GpPoint {
+        let rating: Double
+        let border: Double?
+        let label: String
+        let tier: String?
+        let dateLabel: String
+    }
+
+    private static func gpPane(_ gp: [GrandPrixRecord]) -> String {
+        var sb = ""
+        sb.reserveCapacity(16 * 1024)
+        func emblemImg(_ tier: String?, _ cls: String) -> String {
+            guard let uri = emblemDataUri(tier: tier) else { return "" }
+            return "<img class=\"\(cls)\" src=\"\(uri)\" alt=\"\">"
+        }
+        func r1(_ v: Double) -> String { String(format: "%.1f", v) }
+        // サマリはレーティングが読めているレコードだけ (未取得レコードは対象外)
+        let readable = gp.filter { !$0.isUnread }
+        let maxRec = readable.max { $0.currentRating < $1.currentRating }
+        let curRec = readable.last
+
+        // 現在レーティング | 最高レーティング
+        sb += "<div class=\"gpsum\">"
+        sb += "<div class=\"gpcard\"><div class=\"gplabel\">現在レーティング</div><div class=\"gpval\">"
+        sb += emblemImg(curRec?.rankTier, "gpemblem")
+        sb += "<span class=\"gpcur\">\(curRec.map { r1($0.currentRating) } ?? "—")</span></div></div>"
+        sb += "<div class=\"gpcard\"><div class=\"gplabel\">最高レーティング</div><div class=\"gpval\">"
+        sb += emblemImg(maxRec?.rankTier, "gpemblem")
+        sb += "<span class=\"gpmax\">\(maxRec.map { r1($0.currentRating) } ?? "—")</span></div></div>"
+        sb += "</div>"
+
+        // グラフカード: 情報枠 (最新点 = アプリの選択なし既定) + グラフ + 凡例
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        func fmt(_ pattern: String) -> DateFormatter {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = pattern
+            return f
+        }
+        let selFmt = fmt("M/d HH:mm")
+        var points: [GpPoint] = []
+        for (idx, r) in gp.enumerated() where !r.isUnread {
+            let d = parser.date(from: r.timestamp)
+            points.append(GpPoint(rating: r.currentRating, border: r.borderRating, label: "\(idx + 1)", tier: r.rankTier,
+                                  dateLabel: d.map { selFmt.string(from: $0) } ?? String(r.timestamp.suffix(5))))
+        }
+        sb += "<div class=\"gpgraph\"><div class=\"gpsel\">"
+        if let sel = points.last {
+            sb += emblemImg(sel.tier, "gpselemblem")
+            sb += "<span class=\"win\">R:\(r1(sel.rating))</span>&nbsp;&nbsp;"
+            sb += "<span class=\"lose\">\(sel.border.map { "B:" + r1($0) } ?? "B:—")</span>&nbsp;&nbsp;"
+            sb += "<span class=\"gpdim\">\(esc(sel.dateLabel))</span>"
+        }
+        sb += "</div>\(gpGraphSvg(points))"
+        sb += "<div class=\"gplegend\"><span class=\"win\">● 自分</span><span class=\"lose\">&nbsp;&nbsp;&nbsp;● ボーダー</span></div></div>"
+
+        // テキスト一覧 (最新が上)。変動 = 直前の読めているレコードとの差 (未取得は飛ばす)
+        let dateFmt = fmt("yyyy.MM.dd")
+        let timeFmt = fmt("HH:mm")
+        var deltas: [String: Double] = [:]
+        var prev: GrandPrixRecord? = nil
+        for r in gp where !r.isUnread {
+            if let p = prev { deltas[r.timestamp] = r.currentRating - p.currentRating }
+            prev = r
+        }
+        sb += "<div class=\"gphead\"><span class=\"c1\">日時</span><span class=\"c2\">ランク</span><span class=\"c3\">戦</span>"
+        sb += "<span class=\"c4\">レーティング</span><span class=\"c5\">変動</span><span class=\"c6\">ボーダー</span></div>"
+        sb += "<div class=\"gplist\">"
+        for (revIdx, r) in gp.reversed().enumerated() {
+            let battleNo = gp.count - revIdx
+            let parsed = parser.date(from: r.timestamp)
+            let dateStr = parsed.map { dateFmt.string(from: $0) } ?? String(r.timestamp.prefix(10))
+            let timeStr = parsed.map { timeFmt.string(from: $0) } ?? String(r.timestamp.suffix(8).prefix(5))
+            let delta = deltas[r.timestamp]
+            let deltaStr = delta.map { String(format: "%+.1f", $0) } ?? "—"
+            let deltaCls = delta == nil ? "gpdim" : (delta! >= 0 ? "win" : "lose")
+            sb += "<div class=\"gprow\"><span class=\"c1\">\(esc(dateStr))<br>\(esc(timeStr))</span>"
+            sb += "<span class=\"c2\">\(emblemImg(r.rankTier, "gprowemblem"))</span>"
+            sb += "<span class=\"c3 gpdim\">\(battleNo)</span>"
+            if r.isUnread {
+                sb += "<span class=\"c4 gpunread\">未取得</span>"
+            } else {
+                sb += "<span class=\"c4 gprating\">\(r1(r.currentRating))</span>"
+            }
+            sb += "<span class=\"c5 \(deltaCls)\">\(deltaStr)</span>"
+            sb += "<span class=\"c6 lose\">\(r.borderRating.map { r1($0) } ?? "—")</span></div>"
+        }
+        sb += "</div>"
+        return sb
+    }
+
+    /// GrandPrixGraphView.onDraw (Android) の写し (全体表示・戦闘数軸・選択 = 最新点)。
+    /// 余白 16/88/40/40 px、Y 軸 4 分割の目盛りを右側に、線 4px、点が 100 以下ならリング、最新点に白い縦線と強調点
+    private static func gpGraphSvg(_ points: [GpPoint]) -> String {
+        let w = Double(pageW - 2 * 20 * s - 2 * 12 * s)   // ペイン余白 20dp + カード余白 12dp
+        let h = Double(265 * s)
+        if points.isEmpty {
+            return "<svg class=\"gpsvg\" viewBox=\"0 0 \(Int(w)) \(Int(h))\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+        }
+        let padL = 16.0, padR = 88.0, padT = 40.0, padB = 40.0
+        let innerW = w - padL - padR
+        let innerH = h - padT - padB
+        let n = points.count
+        let stepX = n > 1 ? innerW / Double(n - 1) : innerW
+        var vals: [Double] = []
+        for p in points { vals.append(p.rating); if let b = p.border { vals.append(b) } }
+        let minV = vals.min() ?? 0
+        let maxV = vals.max() ?? 1
+        let range = max(maxV - minV, 1.0)
+        let yMin = minV - range * 0.1
+        let yMax = maxV + range * 0.1
+        let yspan = max(yMax - yMin, 1.0)
+        func yOf(_ v: Double) -> Double { padT + innerH - ((v - yMin) / yspan * innerH) }
+        func xOf(_ i: Int) -> Double { padL + Double(i) * stepX }
+
+        var sb = "<svg class=\"gpsvg\" viewBox=\"0 0 \(Int(w)) \(Int(h))\" xmlns=\"http://www.w3.org/2000/svg\">"
+        for i in 0...4 {
+            let v = yMin + (yMax - yMin) * Double(i) / 4.0
+            let y = yOf(v)
+            sb += "<line x1=\"\(f(padL))\" y1=\"\(f(y))\" x2=\"\(f(w - padR))\" y2=\"\(f(y))\" stroke=\"#444444\" stroke-width=\"1\"/>"
+            sb += "<text x=\"\(f(w - padR + 8))\" y=\"\(f(y + 6))\" fill=\"#888888\" font-size=\"18\">\(String(format: "%.0f", v))</text>"
+        }
+        // X 軸ラベル (戦闘番号)。前のラベルと重なるものは描かない
+        var lastRight = -Double.greatestFiniteMagnitude
+        for (i, p) in points.enumerated() {
+            let x = xOf(i)
+            let tw = Double(p.label.count) * 10.0
+            let left = x - tw / 2
+            if left > lastRight + 16 && x + tw / 2 <= w - padR {
+                sb += "<text x=\"\(f(left))\" y=\"\(f(h - 10))\" fill=\"#888888\" font-size=\"18\">\(esc(p.label))</text>"
+                lastRight = x + tw / 2
+            }
+        }
+        var pr = ""
+        var pb = ""
+        for (i, p) in points.enumerated() {
+            let x = xOf(i)
+            pr += (pr.isEmpty ? "M" : " L") + "\(f(x)) \(f(yOf(p.rating)))"
+            if let b = p.border { pb += (pb.isEmpty ? "M" : " L") + "\(f(x)) \(f(yOf(b)))" }
+        }
+        sb += "<path d=\"\(pb)\" fill=\"none\" stroke=\"#90D7EC\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+        sb += "<path d=\"\(pr)\" fill=\"none\" stroke=\"#F09199\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+        if n <= 100 {
+            for (i, p) in points.enumerated() {
+                let x = xOf(i)
+                if let b = p.border {
+                    sb += "<circle cx=\"\(f(x))\" cy=\"\(f(yOf(b)))\" r=\"4\" fill=\"#333333\" stroke=\"#90D7EC\" stroke-width=\"2\"/>"
+                }
+                sb += "<circle cx=\"\(f(x))\" cy=\"\(f(yOf(p.rating)))\" r=\"4\" fill=\"#333333\" stroke=\"#F09199\" stroke-width=\"2\"/>"
+            }
+        }
+        // 最新点のインジケーター (白い縦線 + 強調点)
+        let lp = points[n - 1]
+        let lx = xOf(n - 1)
+        sb += "<line x1=\"\(f(lx))\" y1=\"\(f(padT))\" x2=\"\(f(lx))\" y2=\"\(f(padT + innerH))\" stroke=\"#FFFFFF\" stroke-width=\"2\"/>"
+        sb += "<circle cx=\"\(f(lx))\" cy=\"\(f(yOf(lp.rating)))\" r=\"6\" fill=\"#FFFFFF\"/>"
+        sb += "<circle cx=\"\(f(lx))\" cy=\"\(f(yOf(lp.rating)))\" r=\"4\" fill=\"#F09199\"/>"
+        if let b = lp.border {
+            sb += "<circle cx=\"\(f(lx))\" cy=\"\(f(yOf(b)))\" r=\"6\" fill=\"#FFFFFF\"/>"
+            sb += "<circle cx=\"\(f(lx))\" cy=\"\(f(yOf(b)))\" r=\"4\" fill=\"#90D7EC\"/>"
+        }
+        sb += "</svg>"
+        return sb
+    }
+
+    /// ランク帯エンブレム (Asset Catalog の PNG) を高さ emblemH に縮小して data URI に。未設定/無しなら nil
+    private static func emblemDataUri(tier: String?) -> String? {
+        guard let asset = GrandPrixRecord.rankEmblemAsset(tier) else { return nil }
+        iconCacheLock.lock()
+        if let cached = emblemCache[asset] { iconCacheLock.unlock(); return cached }
+        iconCacheLock.unlock()
+        guard let src = UIImage(named: asset), src.size.height > 0 else { return nil }
+        let h = CGFloat(emblemH)
+        let w = max(1, (src.size.width / src.size.height * h).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let size = CGSize(width: w, height: h)
+        let scaled = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            src.draw(in: CGRect(origin: .zero, size: size))
+        }
+        guard let png = scaled.pngData() else { return nil }
+        let uri = "data:image/png;base64," + png.base64EncodedString()
+        iconCacheLock.lock()
+        emblemCache[asset] = uri
+        iconCacheLock.unlock()
+        return uri
+    }
+
+    /// タブ + グランプリ集計ペインの CSS (dp×3 / sp×3 の px 直書き。両 OS 同一)
+    private static func gpCss() -> String {
+        """
+        .tabs{position:absolute;top:0;left:0;right:0;height:132px;display:flex;align-items:flex-end;padding:0 60px;gap:48px;z-index:2}
+        .tab{font-size:39px;font-weight:700;color:#888888;padding:0 6px 10px;border-bottom:6px solid transparent;cursor:pointer}
+        .tab.active{color:#F09199;border-bottom-color:#F09199}
+        .pane{display:none;flex:1;min-height:0;flex-direction:column}
+        .pane.active{display:flex}
+        .gp{padding:192px 60px 24px}
+        .gpsum{display:flex}
+        .gpcard{flex:1;margin:0 12px;background:#333333;border-radius:30px;padding:30px 24px;display:flex;flex-direction:column;align-items:center}
+        .gplabel{color:#888888;font-size:33px;line-height:1.3}
+        .gpval{display:flex;align-items:center}
+        .gpemblem{height:84px;margin-right:18px}
+        .gpcur{color:#FFFFFF;font-size:78px;font-weight:700;line-height:1.2}
+        .gpmax{color:#F09199;font-size:78px;font-weight:700;line-height:1.2}
+        .gpgraph{margin-top:24px;background:#333333;border-radius:36px;padding:24px 36px;flex:none}
+        .gpsel{display:flex;align-items:center;padding:12px 0;font-size:39px;min-height:60px}
+        .gpselemblem{height:60px;margin-right:18px}
+        .gpdim{color:#888888}
+        .gpsvg{display:block;width:100%;height:795px}
+        .gplegend{padding-top:12px;font-size:36px}
+        .gphead{display:flex;align-items:center;padding:18px 24px;margin-top:24px}
+        .gphead span{font-size:33px;color:#888888}
+        .gplist{flex:1;min-height:0;overflow-y:auto}
+        .gplist::-webkit-scrollbar{display:none}
+        .gprow{display:flex;align-items:center;background:#333333;border-radius:24px;padding:24px;margin:6px 0}
+        .c1{flex:1.6;font-size:30px;color:#FFFFFF;line-height:1.3}
+        .c2{flex:1;display:flex;align-items:center}
+        .c3{flex:1;text-align:right;font-size:36px}
+        .c4{flex:1.8;text-align:right}
+        .c5{flex:1.1;text-align:right;font-size:36px}
+        .c6{flex:1.3;text-align:right;font-size:36px}
+        .gprowemblem{height:72px}
+        .gprating{color:#FFFFFF;font-size:42px;font-weight:700}
+        .gpunread{color:#FFB74D;font-size:33px;font-weight:700}
+        """
     }
 
     // MARK: - 部品
