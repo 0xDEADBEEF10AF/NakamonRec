@@ -110,7 +110,8 @@ object HtmlExport {
         records.asReversed().forEach { r ->
             val resCls = if (r.result == "WIN") "win" else "lose"
             val hasMemo = !r.memo.isNullOrBlank()
-            sb.append("<div class=\"row\"")
+            // data-k = レコードの識別子 (timestamp)。再読込後にスクロール位置をレコード単位で復元するために使う
+            sb.append("<div class=\"row\" data-k=\"").append(esc(r.timestamp)).append("\"")
             if (hasMemo) sb.append(" title=\"").append(esc(r.memo!!)).append("\"")
             sb.append(">")
             sb.append("<div class=\"left\"><div class=\"res $resCls\">").append(esc(r.result))
@@ -304,7 +305,13 @@ object HtmlExport {
         <script>(function(){
         var root=document.documentElement;var key='nakamonrec.tab.'+document.title;
         function fit(){var l=document.querySelector('.tlabel');if(!l)return;var s=parseFloat(getComputedStyle(l).fontSize);while(l.scrollWidth>l.clientWidth&&s>20){s-=1;l.style.fontSize=s+'px';}}
-        function show(t){if(t==='gp'&&!document.getElementById('pane-gp'))t='history';root.className='tab-'+t;if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}}
+        var lists=[document.getElementById('list'),document.querySelector('.gplist')];
+        function rowTop(l,el){return el.offsetTop-l.offsetTop;}
+        function restore(){lists.forEach(function(l,i){if(!l||!l.offsetParent)return;var k=null;try{k=localStorage.getItem(key+'.scroll'+i);}catch(e){}
+          if(!k){l.scrollTop=0;return;}var rows=l.children;for(var j=0;j<rows.length;j++){if(rows[j].getAttribute('data-k')===k){l.scrollTop=rowTop(l,rows[j]);return;}}});}
+        lists.forEach(function(l,i){if(!l)return;l.addEventListener('scroll',function(){var k='';if(l.scrollTop>0){var rows=l.children;for(var j=0;j<rows.length;j++){if(rowTop(l,rows[j])>=l.scrollTop-1){k=rows[j].getAttribute('data-k')||'';break;}}}
+          try{if(k)localStorage.setItem(key+'.scroll'+i,k);else localStorage.removeItem(key+'.scroll'+i);}catch(e){}});});
+        function show(t){if(t==='gp'&&!document.getElementById('pane-gp'))t='history';root.className='tab-'+t;if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}restore();}
         show(root.className==='tab-gp'?'gp':'history');
         var tabs=document.querySelectorAll('.tab');for(var i=0;i<tabs.length;i++){tabs[i].onclick=function(){var v=this.getAttribute('data-t');location.hash=v;show(v);};}
         setTimeout(function(){location.reload();},${REFRESH_SEC * 1000});
@@ -390,7 +397,8 @@ object HtmlExport {
             val delta = deltas[r.timestamp]
             val deltaStr = delta?.let { String.format(Locale.US, "%+.1f", it) } ?: "—"
             val deltaCls = if (delta == null) "gpdim" else if (delta >= 0) "win" else "lose"
-            sb.append("<div class=\"gprow\"><span class=\"c1\">").append(esc(dateStr)).append("<br>").append(esc(timeStr)).append("</span>")
+            sb.append("<div class=\"gprow\" data-k=\"").append(esc(r.timestamp)).append("\"><span class=\"c1\">")
+                .append(esc(dateStr)).append("<br>").append(esc(timeStr)).append("</span>")
             sb.append("<span class=\"c2\">").append(emblemImg(r.rankTier, "gprowemblem")).append("</span>")
             sb.append("<span class=\"c3 gpdim\">").append(battleNo).append("</span>")
             if (r.isUnread) sb.append("<span class=\"c4 gpunread\">未取得</span>")

@@ -111,7 +111,8 @@ nonisolated enum HtmlExport {
         for r in records.reversed() {
             let resCls = r.result == "WIN" ? "win" : "lose"
             let hasMemo = r.hasMemo
-            sb += "<div class=\"row\""
+            // data-k = レコードの識別子 (timestamp)。再読込後にスクロール位置をレコード単位で復元するために使う
+            sb += "<div class=\"row\" data-k=\"\(esc(r.timestamp))\""
             if hasMemo, let memo = r.memo { sb += " title=\"\(esc(memo))\"" }
             sb += ">"
             let pno = r.partyIndex >= 0 ? "P\(r.partyIndex + 1)" : "P?"
@@ -159,7 +160,13 @@ nonisolated enum HtmlExport {
         <script>(function(){
         var root=document.documentElement;var key='nakamonrec.tab.'+document.title;
         function fit(){var l=document.querySelector('.tlabel');if(!l)return;var s=parseFloat(getComputedStyle(l).fontSize);while(l.scrollWidth>l.clientWidth&&s>20){s-=1;l.style.fontSize=s+'px';}}
-        function show(t){if(t==='gp'&&!document.getElementById('pane-gp'))t='history';root.className='tab-'+t;if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}}
+        var lists=[document.getElementById('list'),document.querySelector('.gplist')];
+        function rowTop(l,el){return el.offsetTop-l.offsetTop;}
+        function restore(){lists.forEach(function(l,i){if(!l||!l.offsetParent)return;var k=null;try{k=localStorage.getItem(key+'.scroll'+i);}catch(e){}
+          if(!k){l.scrollTop=0;return;}var rows=l.children;for(var j=0;j<rows.length;j++){if(rows[j].getAttribute('data-k')===k){l.scrollTop=rowTop(l,rows[j]);return;}}});}
+        lists.forEach(function(l,i){if(!l)return;l.addEventListener('scroll',function(){var k='';if(l.scrollTop>0){var rows=l.children;for(var j=0;j<rows.length;j++){if(rowTop(l,rows[j])>=l.scrollTop-1){k=rows[j].getAttribute('data-k')||'';break;}}}
+          try{if(k)localStorage.setItem(key+'.scroll'+i,k);else localStorage.removeItem(key+'.scroll'+i);}catch(e){}});});
+        function show(t){if(t==='gp'&&!document.getElementById('pane-gp'))t='history';root.className='tab-'+t;if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}restore();}
         show(root.className==='tab-gp'?'gp':'history');
         var tabs=document.querySelectorAll('.tab');for(var i=0;i<tabs.length;i++){tabs[i].onclick=function(){var v=this.getAttribute('data-t');location.hash=v;show(v);};}
         setTimeout(function(){location.reload();},\(refreshSec * 1000));
@@ -261,7 +268,7 @@ nonisolated enum HtmlExport {
             let delta = deltas[r.timestamp]
             let deltaStr = delta.map { String(format: "%+.1f", $0) } ?? "—"
             let deltaCls = delta == nil ? "gpdim" : (delta! >= 0 ? "win" : "lose")
-            sb += "<div class=\"gprow\"><span class=\"c1\">\(esc(dateStr))<br>\(esc(timeStr))</span>"
+            sb += "<div class=\"gprow\" data-k=\"\(esc(r.timestamp))\"><span class=\"c1\">\(esc(dateStr))<br>\(esc(timeStr))</span>"
             sb += "<span class=\"c2\">\(emblemImg(r.rankTier, "gprowemblem"))</span>"
             sb += "<span class=\"c3 gpdim\">\(battleNo)</span>"
             if r.isUnread {
