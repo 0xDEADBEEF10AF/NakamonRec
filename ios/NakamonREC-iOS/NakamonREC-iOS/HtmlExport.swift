@@ -61,14 +61,17 @@ nonisolated enum HtmlExport {
         // 落ちる環境があるため
         sb += "<meta name=\"viewport\" content=\"width=\(pageW)\">"
         sb += "<title>なかモンREC 戦績 - \(esc(baseName))</title>"
+        // 表示するタブは本文を描く前に決める (<html> の class で CSS が出し分ける)。末尾のスクリプトで切り替えると
+        // 再読込のたびに「戦績 → グランプリ集計」の切替が一瞬見えてちらつく (ビーフ指摘 2026-11-03)
+        sb += headScript()
         sb += "<style>\(css())\(gpCss())</style></head><body>"
         sb += "<div class=\"screen\">"
         // タブ (グランプリ記録があるときだけ)。上端 48dp の空き (アプリではステータスバー領域) に重ねる
         if !gp.isEmpty {
-            sb += "<div class=\"tabs\"><div class=\"tab active\" data-t=\"history\">戦績</div>"
+            sb += "<div class=\"tabs\"><div class=\"tab\" data-t=\"history\">戦績</div>"
             sb += "<div class=\"tab\" data-t=\"gp\">グランプリ集計</div></div>"
         }
-        sb += "<div class=\"pane active\" id=\"pane-history\">"
+        sb += "<div class=\"pane\" id=\"pane-history\">"
 
         // ===== 上段 =====
         sb += "<div class=\"top\">"
@@ -154,19 +157,20 @@ nonisolated enum HtmlExport {
     private static func script() -> String {
         """
         <script>(function(){
-        var panes={history:document.getElementById('pane-history'),gp:document.getElementById('pane-gp')};
-        var key='nakamonrec.tab.'+document.title;
+        var root=document.documentElement;var key='nakamonrec.tab.'+document.title;
         function fit(){var l=document.querySelector('.tlabel');if(!l)return;var s=parseFloat(getComputedStyle(l).fontSize);while(l.scrollWidth>l.clientWidth&&s>20){s-=1;l.style.fontSize=s+'px';}}
-        function show(t){if(!panes[t])t='history';
-          for(var k in panes){if(panes[k])panes[k].classList.toggle('active',k===t);}
-          var tabs=document.querySelectorAll('.tab');for(var i=0;i<tabs.length;i++){tabs[i].classList.toggle('active',tabs[i].getAttribute('data-t')===t);}
-          if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}}
-        var t=location.hash.replace('#','');if(!t){try{t=localStorage.getItem(key)||'';}catch(e){}}
-        show(t||'history');
+        function show(t){if(t==='gp'&&!document.getElementById('pane-gp'))t='history';root.className='tab-'+t;if(t==='history')fit();try{localStorage.setItem(key,t);}catch(e){}}
+        show(root.className==='tab-gp'?'gp':'history');
         var tabs=document.querySelectorAll('.tab');for(var i=0;i<tabs.length;i++){tabs[i].onclick=function(){var v=this.getAttribute('data-t');location.hash=v;show(v);};}
         setTimeout(function(){location.reload();},\(refreshSec * 1000));
         })();</script>
         """
+    }
+
+    /// head 内で <html> に tab-history / tab-gp を付ける (本文描画前に決めるのでタブ切替のちらつきが出ない)
+    private static func headScript() -> String {
+        "<script>(function(){var t=location.hash.replace('#','');if(!t){try{t=localStorage.getItem('nakamonrec.tab.'+document.title)||'';}catch(e){}}"
+            + "document.documentElement.className=(t==='gp')?'tab-gp':'tab-history';})();</script>"
     }
 
     // MARK: - グランプリ集計タブ (2026-11-03)
@@ -374,9 +378,9 @@ nonisolated enum HtmlExport {
         """
         .tabs{position:absolute;top:0;left:0;right:0;height:132px;display:flex;align-items:flex-end;padding:0 60px;gap:48px;z-index:2}
         .tab{font-size:39px;font-weight:700;color:#888888;padding:0 6px 10px;border-bottom:6px solid transparent;cursor:pointer}
-        .tab.active{color:#F09199;border-bottom-color:#F09199}
+        html:not(.tab-gp) .tab[data-t=history],html.tab-gp .tab[data-t=gp]{color:#F09199;border-bottom-color:#F09199}
         .pane{display:none;flex:1;min-height:0;flex-direction:column}
-        .pane.active{display:flex}
+        html:not(.tab-gp) #pane-history,html.tab-gp #pane-gp{display:flex}
         .gp{padding:192px 60px 24px}
         .gpsum{display:flex}
         .gpcard{flex:1;margin:0 12px;background:#333333;border-radius:30px;padding:30px 24px;display:flex;flex-direction:column;align-items:center}
