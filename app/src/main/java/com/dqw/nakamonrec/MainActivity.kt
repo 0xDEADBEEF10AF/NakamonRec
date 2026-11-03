@@ -328,9 +328,17 @@ class MainActivity : AppCompatActivity() {
             .setView(root)
             .create()
 
+        // ダイアログ背景は常にダーク (#252525) なので、文字色は端末のライト/ダーク設定に依らず白に固定する
+        // (simple_list_item_1 やボタンの既定色はアプリテーマ由来で、ライトモードでは黒くなり見えなくなる。ビーフ指摘 2026-11-03)
         if (fileNames.isNotEmpty()) {
             val listView = android.widget.ListView(this).apply {
-                adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_list_item_1, fileNames)
+                adapter = object : android.widget.ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_list_item_1, fileNames) {
+                    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                        val v = super.getView(position, convertView, parent)
+                        (v as? TextView)?.setTextColor(Color.WHITE)
+                        return v
+                    }
+                }
                 // ファイルが多い場合に備えて高さを調整（重み付け）
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
                 setOnItemClickListener { _, _, idx, _ ->
@@ -344,6 +352,7 @@ class MainActivity : AppCompatActivity() {
                 text = "保存されたファイルがありません。"
                 setPadding(50, 50, 50, 50)
                 gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
             }
             root.addView(emptyText)
         }
@@ -360,6 +369,7 @@ class MainActivity : AppCompatActivity() {
             text = label
             textSize = 10f
             setPadding(0, 0, 0, 0)
+            setTextColor(Color.WHITE)  // 他ダイアログのボタン (NakamonRec.Dialog.Button) と同じ白。ライトモード対策
             setOnClickListener { onClick() }
         }
 
