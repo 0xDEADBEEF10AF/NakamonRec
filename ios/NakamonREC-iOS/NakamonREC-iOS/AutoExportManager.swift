@@ -111,7 +111,10 @@ nonisolated enum AutoExportManager {
 
     // MARK: - 書き出し
 
-    private static let queue = DispatchQueue(label: "com.android.NakamonREC-iOS.autoexport", qos: .utility)
+    /// 書き出しキュー。当初は utility (低優先度) にしていたが、AirPlay ミラーリング (Reflector 4) 中の背景アプリでは
+    /// 低優先度の仕事がいつまでも順番を回してもらえず、アプリを前面に出すまで書き出されなかった (配信者報告 2026-11-04)。
+    /// 書き出し自体は数十 ms の軽い処理なので、通常操作相当 (userInitiated) で即座に流す
+    private static let queue = DispatchQueue(label: "com.android.NakamonREC-iOS.autoexport", qos: .userInitiated)
     private static let pendingLock = NSLock()
     nonisolated(unsafe) private static var pending: DispatchWorkItem?
 
@@ -127,15 +130,21 @@ nonisolated enum AutoExportManager {
         guard isEnabled else { return }
         pendingLock.lock(); defer { pendingLock.unlock() }
         pending?.cancel()
-        let item = DispatchWorkItem { _ = exportNow(fileName: fileName) }
+        let scheduledAt = Date()
+        // enforceQoS: 呼び出し元 (解析キュー) の QoS に引きずられず、常に userInitiated で実行する
+        let item = DispatchWorkItem(qos: .userInitiated, flags: .enforceQoS) {
+            _ = exportNow(fileName: fileName, scheduledAt: scheduledAt)
+        }
         pending = item
         queue.asyncAfter(deadline: .now() + debounceSeconds, execute: item)
     }
 
     /// 今すぐ書き出す (呼び出しスレッドで IO を行う。メインスレッドから呼ばないこと)。
-    /// 成功なら true。失敗したら自動エクスポートを OFF にし、理由を飛行記録と設定に残して false
+    /// 成功なら true。失敗したら自動エクスポートを OFF にし、理由を飛行記録と設定に残して false。
+    /// `scheduledAt` を渡すと、予約から実際に開始するまでの待ち時間を飛行記録に残す (処理待ちか同期遅延かの切り分け用)
     @discardableResult
-    static func exportNow(fileName: String) -> Bool {
+    static func exportNow(fileName: String, scheduledAt: Date? = nil) -> Bool {
+        let startedAt = Date()
         guard let folder = resolveFolder() else {
             fail("格納先フォルダが未設定です")
             return false
@@ -158,7 +167,12 @@ nonisolated enum AutoExportManager {
                 try write(Data(html.utf8), name: "\(base).html", in: folder)
             }
             defaults.set(BattleTimestampFormatter.now(), forKey: keyLastExport)
-            BattleLogger.append("自動エクスポート: \(base) (\(fmt.label))")
+            // 待ち = 予約 (保存直後) から開始まで (1 秒のまとめ待ちを含む)。これが数秒以上ならアプリ側の処理待ち、
+            // 書き出しが済んでいるのに PC に出ないなら iCloud 側の同期遅延、と切り分けられる
+            let waitMs = scheduledAt.map { Int(startedAt.timeIntervalSince($0) * 1000) }
+            let writeMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            let waitText = waitMs.map { " 待ち \($0) ms" } ?? ""
+            BattleLogger.append("自動エクスポート: \(base) (\(fmt.label))\(waitText) 書き出し \(writeMs) ms")
             return true
         } catch {
             fail(error.localizedDescription)
