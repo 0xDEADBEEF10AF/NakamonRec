@@ -385,6 +385,9 @@ class MediaCaptureService : Service() {
                         record.enemyParty = enemy
                         record.myPartyScores = scores.first
                         record.enemyPartyScores = scores.second
+                        if (PartyReverseLookup.isEnabled(this@MediaCaptureService)) {
+                            record.partyIndex = resolvePartyByReverseLookup(my, record.partyIndex, exclude = record)
+                        }
                         dataManager.updateRecord(record)
                         dataManager.appendFlightLog("📝 戦績レコードをモンスター解析結果で更新しました")
                     }
@@ -521,20 +524,43 @@ class MediaCaptureService : Service() {
         }
     }
 
+    /**
+     * 選択パーティ逆引きで番号を決め、飛行記録に 1 行残す。[before] は書き換える前の値 (記録時は画面からの検知値、
+     * 解析完了時の更新では記録時に決めた値)。[exclude] は判定対象のレコード自身 (記録前なら null)
+     */
+    private fun resolvePartyByReverseLookup(myParty: List<String>, before: Int, exclude: BattleRecord?): Int {
+        val match = dataManager.reverseLookupParty(myParty, exclude)
+        val ts = match.matchedTimestamp
+        if (ts != null) {
+            dataManager.appendFlightLog(String.format(Locale.US, "🔁 パーティ逆引き: P%d (%s の記録と一致、変更前 P[%d])",
+                match.partyIndex + 1, ts, before + 1))
+        } else if (myParty.contains("?")) {
+            dataManager.appendFlightLog(String.format(Locale.US, "🔁 パーティ逆引き: 味方に未識別 (?) を含む → P? (変更前 P[%d])", before + 1))
+        } else {
+            dataManager.appendFlightLog(String.format(Locale.US, "🔁 パーティ逆引き: 一致なし → P? (変更前 P[%d])", before + 1))
+        }
+        return match.partyIndex
+    }
+
     private fun finalizeBattle(result: String, vsScore: Double, resultScore: Double) {
         synchronized(this) {
             // すでにレコードが作成済みの場合は重複させない
             if (lastActiveRecord != null) return
             
             val (myParty, enemyParty, scores) = analyzer.getCurrentResults()
+            // 選択パーティ逆引き (ON のときだけ): 画面からの検知結果に関わらず、味方 4 体の一致で決めた番号を使う。
+            // 解析が未完了で味方に "?" が残っていれば一旦 P? とし、解析完了時の更新で引き直す
+            val partyIndex = if (PartyReverseLookup.isEnabled(this)) {
+                resolvePartyByReverseLookup(myParty, sessionPartyIndex, exclude = null)
+            } else sessionPartyIndex
             lastActiveRecord = dataManager.addRecord(
-                result, myParty, enemyParty, sessionPartyIndex,
+                result, myParty, enemyParty, partyIndex,
                 vsScore, scores.first, scores.second, resultScore,
                 sessionPartyScores
             )
-            
+
             dataManager.appendFlightLog(String.format(Locale.US, "📝 戦績記録: %s P[%d] 味方=%s vs 敵=%s",
-                result, sessionPartyIndex + 1, myParty.joinToString(","), enemyParty.joinToString(",")))
+                result, partyIndex + 1, myParty.joinToString(","), enemyParty.joinToString(",")))
 
             // グランプリ二段ゲート: モード ON かつ大会 VS で始まった戦闘なら
             // レーティング画面待ちへ。それ以外は従来どおり IDLE に戻る。

@@ -1117,10 +1117,26 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         pending = nil
         pendingLock.unlock()
 
+        // 選択パーティ逆引き (ON のときだけ): 画面からの検知結果に関わらず、味方 4 体の一致で決めた番号を使う
+        var partyIndex = p.partyIndex
+        if PartyReverseLookup.isEnabled {
+            let match = PartyReverseLookup.lookup(myParty: myParty,
+                                                  in: BattleHistoryStore.shared.loadActive().records)
+            partyIndex = match.partyIndex
+            if let ts = match.matchedTimestamp {
+                BattleLogger.append(String(format: "🔁 パーティ逆引き: P%d (%@ の記録と一致、変更前 P[%d])",
+                                           partyIndex + 1, ts, p.partyIndex + 1))
+            } else if myParty.contains("?") {
+                BattleLogger.append(String(format: "🔁 パーティ逆引き: 味方に未識別 (?) を含む → P? (変更前 P[%d])", p.partyIndex + 1))
+            } else {
+                BattleLogger.append(String(format: "🔁 パーティ逆引き: 一致なし → P? (変更前 P[%d])", p.partyIndex + 1))
+            }
+        }
+
         let record = BattleRecord(
             timestamp: BattleTimestampFormatter.formatter.string(from: p.startedAt),
             result: result,
-            partyIndex: p.partyIndex,
+            partyIndex: partyIndex,
             myParty: myParty,
             enemyParty: enemyParty,
             vsScore: p.vsScore,
@@ -1135,7 +1151,7 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         events?.engineDidFinalizeBattle(result: result)
         BattleLogger.append(String(format: "📝 戦績記録: %@ P[%d] 味方=%@ vs 敵=%@",
                                    result,
-                                   p.partyIndex + 1,
+                                   partyIndex + 1,
                                    myParty.joined(separator: ","),
                                    enemyParty.joined(separator: ",")))
     }

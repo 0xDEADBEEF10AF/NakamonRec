@@ -30,7 +30,8 @@ object BattleRecordMemo {
 data class BattleRecord(
     val timestamp: String,
     val result: String,
-    val partyIndex: Int,
+    // var: 選択パーティ逆引き (2026-11-09) がモンスター解析完了時に記録済みレコードの番号を書き換えるため
+    var partyIndex: Int,
     var myParty: List<String>,
     var enemyParty: List<String>,
     var vsScore: Double? = null,

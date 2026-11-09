@@ -193,6 +193,19 @@ class BattleDataManager(private val context: Context) {
         AutoExportManager.onHistorySaved(context, this)
     }
 
+    /**
+     * 選択パーティ逆引き: 現在の戦績ファイルから [myParty] と同じ並びのレコードを新しい順に探す。
+     * [exclude] は判定対象のレコード自身 (解析完了時の更新では既に履歴に入っているため探索から外す)。
+     * 名前は正式名称に寄せてから比べる (略称で保存された旧レコードとも一致させる)
+     */
+    fun reverseLookupParty(myParty: List<String>, exclude: BattleRecord? = null): PartyReverseLookup.Match =
+        synchronized(saveLock) {
+            PartyReverseLookup.lookup(
+                myParty.map { canonicalName(it) },
+                history.records.filter { it !== exclude }
+            )
+        }
+
     /** 書き出し用に履歴の深いコピーを返す (解析スレッドの追記と競合しないよう saveLock 下でコピー) */
     fun snapshotHistory(): BattleHistory = synchronized(saveLock) {
         gson.fromJson(gson.toJson(history), BattleHistory::class.java)

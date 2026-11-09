@@ -14,6 +14,7 @@ struct UserSettingsSheet: View {
     @State private var calibrationTarget: CalibrationScreen? = nil
     @State private var recIsActive: Bool = BroadcastStatus.isEffectivelyActive()
     @State private var statusNotificationsOn: Bool = CaptureNotifier.statusNotificationsEnabled
+    @State private var partyReverseLookupOn: Bool = PartyReverseLookup.isEnabled
 
     // 自動エクスポート (iOS 27 以降)
     @State private var autoExportOn: Bool = AutoExportManager.isEnabled
@@ -85,6 +86,39 @@ struct UserSettingsSheet: View {
                                 .foregroundStyle(Color.recCoral)
                         } else {
                             Text("通常モード: monsters.json の全 \(MonsterCatalog.all.count) 体を識別\n軽負荷モード: 対象モンスターのみを識別し、解析時間を短縮")
+                                .font(.caption2)
+                                .foregroundStyle(.gray)
+                        }
+                    }
+
+                    Section {
+                        HStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundStyle(partyReverseLookupOn ? Color.recCoral : .gray)
+                                .frame(width: 28)
+                            Text("選択パーティ逆引き")
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Toggle("", isOn: $partyReverseLookupOn)
+                                .labelsHidden()
+                                .tint(Color.recCoral)
+                                .onChange(of: partyReverseLookupOn) { _, newValue in
+                                    PartyReverseLookup.isEnabled = newValue
+                                }
+                        }
+                        .listRowBackground(Color.cardBackground)
+                        .disabled(recIsActive)
+                        .opacity(recIsActive ? 0.4 : 1.0)
+                    } header: {
+                        Text("パーティ識別")
+                            .foregroundStyle(.gray)
+                    } footer: {
+                        if recIsActive {
+                            Text("REC 中は選択パーティ逆引きを変更できません。\nREC を停止してから変更してください。")
+                                .font(.caption2)
+                                .foregroundStyle(Color.recCoral)
+                        } else {
+                            Text("パーティ選択画面を識別できない端末向けの機能です。ON にすると、画面からの識別結果は使わず、味方 4 体が同じ並びの過去の記録 (選択中の戦績ファイル内、新しい順) からパーティ番号を決めます。見つからなければ P? になります。\n最初に P1〜P3 の戦闘を記録したら、手動でパーティ番号を割り当ててください。パーティを編集したときも、その都度割り当て直してください。")
                                 .font(.caption2)
                                 .foregroundStyle(.gray)
                         }

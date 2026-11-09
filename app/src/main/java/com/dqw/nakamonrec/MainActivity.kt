@@ -711,6 +711,61 @@ class MainActivity : AppCompatActivity() {
             container.addView(pickerRow)
         }
 
+        // === 選択パーティ逆引き (2026-11-09 設計) ===
+        //   パーティ選択画面を識別できない端末 (タブレット等) 向け。ON なら味方 4 体の一致で過去の記録から
+        //   パーティ番号を決める (PartyReverseLookup)。REC 中はグレーアウト (解析モードと同じ扱い)
+        container.addView(TextView(this).apply {
+            text = "パーティ識別"
+            setPadding(0, 40, 0, 20)
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(null, Typeface.BOLD)
+        })
+        val prlEnabled = PartyReverseLookup.isEnabled(this)
+        val prlIcon = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(120, 120)
+            setImageResource(android.R.drawable.ic_popup_sync)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setColorFilter(if (prlEnabled) Color.parseColor("#F09199") else Color.GRAY)
+        }
+        val prlSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            isChecked = prlEnabled
+            isEnabled = !recIsActive
+        }
+        val prlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 20, 0, 20)
+            addView(prlIcon)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply { text = "選択パーティ逆引き"; textSize = 16f; setTextColor(Color.WHITE) })
+                addView(TextView(this@MainActivity).apply {
+                    text = "パーティ選択画面を識別できない端末向けの機能です。ON にすると、画面からの識別結果は使わず、味方 4 体が同じ並びの過去の記録 (選択中の戦績ファイル内、新しい順) からパーティ番号を決めます。見つからなければ P? になります。\n最初に P1〜P3 の戦闘を記録したら、手動でパーティ番号を割り当ててください。パーティを編集したときも、その都度割り当て直してください。"
+                    textSize = 12f
+                    setTextColor(Color.GRAY)
+                })
+            })
+            addView(prlSwitch)
+        }
+        prlSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (recIsActive) return@setOnCheckedChangeListener
+            PartyReverseLookup.setEnabled(this, isChecked)
+            prlIcon.setColorFilter(if (isChecked) Color.parseColor("#F09199") else Color.GRAY)
+        }
+        container.addView(prlRow)
+        if (recIsActive) {
+            prlRow.alpha = 0.4f
+            container.addView(TextView(this).apply {
+                text = "REC 中は選択パーティ逆引きを変更できません。REC を停止してから変更してください。"
+                textSize = 12f
+                setTextColor(Color.parseColor("#FF9090"))
+                setPadding(0, 10, 0, 0)
+            })
+        }
+
         // === 自動エクスポート (2026-11-02 設計) ===
         //   ON/OFF Switch / 格納先フォルダ / 格納形式 の 3 行。REC 中はグレーアウト (解析モードと同じ扱い)。
         //   ON のあいだ、戦績が保存されるたびに格納先へ 〇〇.csv / 〇〇.html を上書きする (AutoExportManager)
