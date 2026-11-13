@@ -280,12 +280,21 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         } catch (_: Exception) { null }
     }
 
+    /**
+     * [fineAroundWidthRef] = true なら、既定の飛び飛びの倍率に加えて「画面幅 / 1080」の 0.90〜1.10 倍を
+     * 0.025 刻みで試す (1080 基準のベース VS テンプレ用、iOS の autoCalMicroScales と同じ考え方)。
+     * 大会用 VS ロゴは正解倍率から 5% ずれるだけでスコアが急落するため、720 幅 (正解 0.65) や
+     * 960 幅 (正解 0.87) では既定の 0.5 / 0.7 / 0.9 の間に落ちて取り逃がし、別の場所に誤って
+     * 当たっていた (2026-11-13 GP 中の Oukitel C61 Pro / Pixel 9 Pro 報告、Mac で再現確認)。
+     * 既定の倍率も残すので、画面幅と表示倍率が比例しない端末 (Fold・画面分割) の結果は変わらない
+     */
     private fun findTemplateWithScale(
         scene: Mat,
         template: Mat?,
         useGray: Boolean,
         topLimit: Float,
-        bottomLimit: Float
+        bottomLimit: Float,
+        fineAroundWidthRef: Boolean = false
     ): ScanResult? {
         if (template == null) return null
 
@@ -301,7 +310,11 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
         var bestPos = Point()
         var bestScale = 1.0
 
-        val scales = listOf(0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 1.9, 2.1, 2.3, 2.5)
+        val coarseScales = listOf(0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 1.7, 1.9, 2.1, 2.3, 2.5)
+        val scales = if (fineAroundWidthRef) {
+            val ref = workScene.cols() / TEMPLATE_BASE_WIDTH
+            coarseScales + (0..8).map { ref * (0.90 + 0.025 * it) }
+        } else coarseScales
         for (s in scales) {
             val workTpl = Mat()
             Imgproc.resize(template, workTpl, Size(), s, s, Imgproc.INTER_CUBIC)
@@ -353,8 +366,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         // 各種テンプレートで個別に検索
         val customRes = findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)
-        val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)
-        val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)
+        val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f, fineAroundWidthRef = true)
+        val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f, fineAroundWidthRef = true)
 
         // 最もスコアの高い結果を位置基準として採用
         val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
@@ -584,8 +597,8 @@ class BattleAnalyzer(private val monsterMaster: List<MonsterData>) {
 
         // VS マッチング (autoCalibrateBattleScene と同じ)
         val customRes = findTemplateWithScale(fullMat, vsCustomTemplate, true, 0.3f, 0.8f)
-        val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f)
-        val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f)
+        val fmRes = findTemplateWithScale(fullMat, vsFmTemplate, true, 0.3f, 0.8f, fineAroundWidthRef = true)
+        val mgRes = findTemplateWithScale(fullMat, vsMgTemplate, true, 0.3f, 0.8f, fineAroundWidthRef = true)
         // 大会用 (MG) が通常 (FM) を上回れば大会 VS と判定 (通常経路と同じ、GP モード連動用)
         lastVsCalibrationWasTournament = (mgRes?.score ?: -1.0) > (fmRes?.score ?: -1.0)
         val bestRes = listOfNotNull(customRes, fmRes, mgRes).maxByOrNull { it.score }
