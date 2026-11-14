@@ -156,7 +156,8 @@ class CalibrationActivity : AppCompatActivity() {
         }
         option(getString(R.string.btn_auto), getString(R.string.calib_method_auto_desc)) { runAutoCalibration() }
         option(getString(R.string.btn_auto_detail), getString(R.string.calib_method_detail_desc)) { showDetailCalibrationSpec() }
-        dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+        // 中の文字は白固定なので、ライトモード端末でも背景が暗くなるようアプリのダイアログテーマを明示する
+        dialog = androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
             .setTitle(getString(R.string.calib_method_title))
             .setView(root)
             .setNegativeButton(getString(R.string.btn_cancel), null)
