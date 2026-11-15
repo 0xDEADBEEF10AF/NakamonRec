@@ -749,14 +749,19 @@ class HistoryActivity : AppCompatActivity() {
         }
         // 現在レーティング | 最高レーティング (メイン画面と同じ独立カード2枚)。
         // 数値の左にそのレコードのランク帯エンブレム (現在=最新 / 最高=最高値のレコード)。
-        val curRatingView = android.widget.TextView(this).apply {
-            setTextColor(android.graphics.Color.WHITE); textSize = 26f
+        // 数値は 1 行固定。カード幅に収まらない (エンブレム + 6 桁、文字サイズ拡大端末など) ときだけ 14sp まで
+        // 自動縮小する (26.11.2 までは 2 行に折り返していた、GP 本番フィードバック 2026-11-15)
+        fun ratingValueView(color: Int) = android.widget.TextView(this).apply {
+            setTextColor(color); textSize = 26f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            maxLines = 1
+            gravity = android.view.Gravity.CENTER
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(36), 1f)
+            androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 14, 26, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
         }
-        val maxRatingView = android.widget.TextView(this).apply {
-            setTextColor("#F09199".toColorInt()); textSize = 26f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
+        val curRatingView = ratingValueView(android.graphics.Color.WHITE)
+        val maxRatingView = ratingValueView("#F09199".toColorInt())
         fun emblemView() = android.widget.ImageView(this).apply {
             adjustViewBounds = true
             visibility = View.GONE
@@ -785,6 +790,10 @@ class HistoryActivity : AppCompatActivity() {
                 addView(android.widget.LinearLayout(this@HistoryActivity).apply {
                     orientation = android.widget.LinearLayout.HORIZONTAL
                     gravity = android.view.Gravity.CENTER_VERTICAL
+                    // 数値側は残り幅いっぱい (自動縮小の基準幅を確定させるため MATCH_PARENT)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
                     addView(emblem)
                     addView(value)
                 })

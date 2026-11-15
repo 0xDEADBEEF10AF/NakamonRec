@@ -333,6 +333,15 @@ object HtmlExport {
     private const val EMBLEM_H = 84
     private val emblemCache = ConcurrentHashMap<String, String>()
 
+    /** raw 以上で最小の「1・2・5 × 10^n」(グラフの目盛り間隔。GrandPrixGraphView.niceStep と同じ) */
+    private fun niceStep(raw: Double): Double {
+        if (raw <= 0.0) return 1.0
+        val mag = Math.pow(10.0, kotlin.math.floor(kotlin.math.log10(raw)))
+        val f = raw / mag
+        val nice = when { f <= 1.0 -> 1.0; f <= 2.0 -> 2.0; f <= 5.0 -> 5.0; else -> 10.0 }
+        return nice * mag
+    }
+
     private data class GpPoint(val rating: Double, val border: Double?, val label: String, val tier: String?, val dateLabel: String)
 
     private fun gpPane(context: Context, gp: List<GrandPrixRecord>): String {
@@ -436,20 +445,27 @@ object HtmlExport {
 
         val sb = StringBuilder(8 * 1024)
         sb.append("<svg class=\"gpsvg\" viewBox=\"0 0 ${w.toInt()} ${h.toInt()}\" xmlns=\"http://www.w3.org/2000/svg\">")
-        for (i in 0..4) {
-            val v = yMin + (yMax - yMin) * i / 4
-            val y = yOf(v)
+        // Y 目盛りは「1・2・5 × 10^n」の切りの良い間隔で約 5 本 (アプリの GrandPrixGraphView / iOS Swift Charts と同じ)
+        val yStep = niceStep((yMax - yMin) / 5.0)
+        var tv = kotlin.math.ceil(yMin / yStep) * yStep
+        while (tv <= yMax) {
+            val y = yOf(tv)
             sb.append("<line x1=\"${fx(padL)}\" y1=\"${fx(y)}\" x2=\"${fx(w - padR)}\" y2=\"${fx(y)}\" stroke=\"#444444\" stroke-width=\"1\"/>")
             sb.append("<text x=\"${fx(w - padR + 8)}\" y=\"${fx(y + 6)}\" fill=\"#888888\" font-size=\"18\">")
-                .append(String.format(Locale.US, "%.0f", v)).append("</text>")
+                .append(String.format(Locale.US, "%.0f", tv)).append("</text>")
+            tv += yStep
         }
-        // X 軸ラベル (戦闘番号)。前のラベルと重なるものは描かない
+        // X 軸ラベル (戦闘番号) + 縦の目盛り線。約 5 本になる切りの良い戦闘番号だけ、前のラベルと重なるものは描かない
+        val xStep = niceStep(n.coerceAtLeast(1) / 5.0).coerceAtLeast(1.0).toInt()
         var lastRight = Double.NEGATIVE_INFINITY
         points.forEachIndexed { i, p ->
+            val no = p.label.toIntOrNull()
+            if (no != null && no % xStep != 0) return@forEachIndexed
             val x = xOf(i)
             val tw = p.label.length * 10.0
             val left = x - tw / 2
             if (left > lastRight + 16 && x + tw / 2 <= w - padR) {
+                sb.append("<line x1=\"${fx(x)}\" y1=\"${fx(padT)}\" x2=\"${fx(x)}\" y2=\"${fx(padT + innerH)}\" stroke=\"#444444\" stroke-width=\"1\"/>")
                 sb.append("<text x=\"${fx(left)}\" y=\"${fx(h - 10)}\" fill=\"#888888\" font-size=\"18\">").append(esc(p.label)).append("</text>")
                 lastRight = x + tw / 2
             }

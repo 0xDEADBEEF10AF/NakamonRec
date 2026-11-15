@@ -163,6 +163,15 @@ class GrandPrixGraphView @JvmOverloads constructor(
         return (minV - range * 0.1) to (maxV + range * 0.1)
     }
 
+    /** raw 以上で最小の「1・2・5 × 10^n」(目盛り間隔用。例: 320 → 500、1400 → 2000、3 → 5) */
+    private fun niceStep(raw: Double): Double {
+        if (raw <= 0.0) return 1.0
+        val mag = Math.pow(10.0, kotlin.math.floor(kotlin.math.log10(raw)))
+        val f = raw / mag
+        val nice = when { f <= 1.0 -> 1.0; f <= 2.0 -> 2.0; f <= 5.0 -> 5.0; else -> 10.0 }
+        return nice * mag
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (dataPoints.isEmpty()) return
@@ -175,14 +184,18 @@ class GrandPrixGraphView @JvmOverloads constructor(
 
         fun yOf(v: Double): Float = (paddingTop + innerH - ((v - yMin) / yspan * innerH)).toFloat()
 
-        // Y軸目盛り (レーティング値)
-        val steps = 4
-        for (i in 0..steps) {
-            val v = yMin + (yMax - yMin) * i / steps
+        // Y軸目盛り (レーティング値)。iOS Swift Charts の自動目盛りと同じく「1・2・5 × 10^n」の切りの良い
+        // 間隔で約 5 本引く (26.11.2 までは範囲を 4 等分した半端な値だった、GP 本番フィードバック 2026-11-15)
+        val yStep = niceStep((yMax - yMin) / 5.0)
+        var v = kotlin.math.ceil(yMin / yStep) * yStep
+        while (v <= yMax) {
             val y = yOf(v)
             canvas.drawLine(paddingLeft, y, w - paddingRight, y, gridPaint)
             canvas.drawText(String.format(Locale.US, "%.0f", v), w - paddingRight + 8f, y + 6f, textPaint)
+            v += yStep
         }
+        // 戦闘数軸の縦の目盛り: 画面に見えている点の数から約 5 本になる切りの良い戦闘番号ごと (iOS と同じ)
+        val xStep = niceStep(visibleCount.coerceAtMost(dataPoints.size).coerceAtLeast(1) / 5.0).coerceAtLeast(1.0).toInt()
 
         val pathRating = Path()
         val pathBorder = Path()
@@ -205,11 +218,15 @@ class GrandPrixGraphView @JvmOverloads constructor(
                 if (pathBorder.isEmpty) pathBorder.moveTo(x, yB) else pathBorder.lineTo(x, yB)
             }
 
-            // X軸ラベル（前ラベルと重ならない範囲で描画）。戦闘数軸では戦闘番号、日時軸では日時 (iOS と統一)
+            // X軸ラベル（前ラベルと重ならない範囲で描画）+ ラベル位置の縦の目盛り線 (iOS の AxisGridLine と統一)。
+            // 戦闘数軸では切りの良い戦闘番号 (xStep の倍数) だけ、日時軸では日時を重ならない範囲で
+            val battleNo = data.battleLabel.toIntOrNull()
+            if (!timeAxis && battleNo != null && battleNo % xStep != 0) return@forEachIndexed
             val labelText = if (!timeAxis && data.battleLabel.isNotEmpty()) data.battleLabel else data.dateLabel
             val textW = textPaint.measureText(labelText)
             val left = x - textW / 2
-            if (left > lastLabelRight + labelGap && x + textW / 2 <= w - paddingRight) {
+            if (left > lastLabelRight + labelGap && x + textW / 2 <= w - paddingRight && x >= paddingLeft) {
+                canvas.drawLine(x, paddingTop, x, paddingTop + innerH, gridPaint)
                 canvas.drawText(labelText, left, h - 10f, textPaint)
                 lastLabelRight = x + textW / 2
             }

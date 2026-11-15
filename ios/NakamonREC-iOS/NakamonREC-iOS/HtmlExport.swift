@@ -308,19 +308,25 @@ nonisolated enum HtmlExport {
         func xOf(_ i: Int) -> Double { padL + Double(i) * stepX }
 
         var sb = "<svg class=\"gpsvg\" viewBox=\"0 0 \(Int(w)) \(Int(h))\" xmlns=\"http://www.w3.org/2000/svg\">"
-        for i in 0...4 {
-            let v = yMin + (yMax - yMin) * Double(i) / 4.0
-            let y = yOf(v)
+        // Y 目盛りは「1・2・5 × 10^n」の切りの良い間隔で約 5 本 (アプリの Swift Charts / Android GrandPrixGraphView と同じ)
+        let yStep = niceStep((yMax - yMin) / 5.0)
+        var tv = (yMin / yStep).rounded(.up) * yStep
+        while tv <= yMax {
+            let y = yOf(tv)
             sb += "<line x1=\"\(f(padL))\" y1=\"\(f(y))\" x2=\"\(f(w - padR))\" y2=\"\(f(y))\" stroke=\"#444444\" stroke-width=\"1\"/>"
-            sb += "<text x=\"\(f(w - padR + 8))\" y=\"\(f(y + 6))\" fill=\"#888888\" font-size=\"18\">\(String(format: "%.0f", v))</text>"
+            sb += "<text x=\"\(f(w - padR + 8))\" y=\"\(f(y + 6))\" fill=\"#888888\" font-size=\"18\">\(String(format: "%.0f", tv))</text>"
+            tv += yStep
         }
-        // X 軸ラベル (戦闘番号)。前のラベルと重なるものは描かない
+        // X 軸ラベル (戦闘番号) + 縦の目盛り線。約 5 本になる切りの良い戦闘番号だけ、前のラベルと重なるものは描かない
+        let xStep = max(Int(niceStep(Double(max(points.count, 1)) / 5.0)), 1)
         var lastRight = -Double.greatestFiniteMagnitude
         for (i, p) in points.enumerated() {
+            if let no = Int(p.label), no % xStep != 0 { continue }
             let x = xOf(i)
             let tw = Double(p.label.count) * 10.0
             let left = x - tw / 2
             if left > lastRight + 16 && x + tw / 2 <= w - padR {
+                sb += "<line x1=\"\(f(x))\" y1=\"\(f(padT))\" x2=\"\(f(x))\" y2=\"\(f(padT + innerH))\" stroke=\"#444444\" stroke-width=\"1\"/>"
                 sb += "<text x=\"\(f(left))\" y=\"\(f(h - 10))\" fill=\"#888888\" font-size=\"18\">\(esc(p.label))</text>"
                 lastRight = x + tw / 2
             }
@@ -564,6 +570,15 @@ nonisolated enum HtmlExport {
         }
         sb += "</svg>"
         return sb
+    }
+
+    /// raw 以上で最小の「1・2・5 × 10^n」(グラフの目盛り間隔。Android GrandPrixGraphView.niceStep と同じ)
+    private static func niceStep(_ raw: Double) -> Double {
+        guard raw > 0 else { return 1 }
+        let mag = pow(10.0, floor(log10(raw)))
+        let f = raw / mag
+        let nice: Double = f <= 1 ? 1 : (f <= 2 ? 2 : (f <= 5 ? 5 : 10))
+        return nice * mag
     }
 
     private static func f(_ v: Double) -> String { String(format: "%.1f", v) }
