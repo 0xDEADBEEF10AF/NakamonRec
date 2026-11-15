@@ -179,12 +179,27 @@ class BattleDataManager(private val context: Context) {
             // 過去に略称で保存された名前 (例: ラプソーン) を正式名称 (暗黒神ラプソーン) に寄せる。
             // 読み出し側で吸収するだけでファイルは書き換えない (次に保存されるときは正式名称になる)
             history.records.forEach { normalizeNames(it) }
+            // 保存済みのカウンターが古くても (下記 saveHistory のコメント参照)、読み込んだ時点で正しい値に戻す
+            recomputeTotals()
         } else {
             history = BattleHistory()
         }
     }
 
+    /**
+     * 勝ち数・負け数をレコードから数え直す (iOS BattleHistory.recomputeTotals と同じ)。
+     * 26.11.3 までは記録・編集・削除のたびに ++/-- で増減させていたが、勝敗の切り替え
+     * (HistoryActivity.toggleResult) が増減の後にファイルを読み直していたため調整が捨てられ、
+     * 通知の勝率 (= カウンター由来) が戦績画面 (= レコードを数える) とずれていた (ビーフ指摘 2026-11-15)。
+     * 読み込み・保存のたびに数え直して、どの経路でもずれないようにする
+     */
+    private fun recomputeTotals() {
+        history.totalWins = history.records.count { it.result == "WIN" }
+        history.totalLosses = history.records.count { it.result == "LOSE" }
+    }
+
     fun saveHistory() {
+        recomputeTotals()
         val file = File(context.filesDir, "$currentFileName.json")
         val json = Gson().toJson(history)
         file.writeText(json)
