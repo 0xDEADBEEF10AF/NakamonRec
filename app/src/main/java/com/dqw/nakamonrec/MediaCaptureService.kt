@@ -55,6 +55,9 @@ class MediaCaptureService : Service() {
     private var grandPrixResult = ""
     private var grandPrixAttempts = 0                                 // 読み取りを試したフレーム数 (診断用)
     private val grandPrixFailures = HashMap<String, Int>()            // 失敗分類ごとの件数
+    // 記録済みの値 (現在レーティングが読めた時点で保存したもの)。null = まだ読めていない。
+    // 保存後もレーティング画面が見えている間は読み続け、欠けている必要レーティング・ランク帯だけを埋める (iOS と同じ)
+    private var grandPrixRecorded: GrandPrixRecord? = null
     private var lastAnalysisTime = 0L
     private var lastBitmapUpdateTime = 0L
     private var latestBitmap: Bitmap? = null
@@ -577,6 +580,7 @@ class MediaCaptureService : Service() {
                 grandPrixTimestamp = recordTs
                 grandPrixResult = result
                 grandPrixAttempts = 0
+                grandPrixRecorded = null
                 grandPrixFailures.clear()
                 currentState = State.AWAITING_RATING
                 dataManager.appendFlightLog("グランプリ: レーティング画面を待機中…")
@@ -601,6 +605,8 @@ class MediaCaptureService : Service() {
     private fun endGrandPrixWaitUnread(reason: String, notify: Boolean = true) {
         if (currentState != State.AWAITING_RATING) return
         currentState = State.IDLE
+        // 記録済み (欠けている項目を埋めている途中) なら未取得レコードは足さない
+        if (grandPrixRecorded != null) { grandPrixRecorded = null; return }
         val summary = grandPrixFailures.entries.sortedByDescending { it.value }
             .joinToString(" / ") { "${it.key}×${it.value}" }
         val lastDiag = RatingPanelReader.lastDiagnostic
@@ -618,6 +624,7 @@ class MediaCaptureService : Service() {
      * 読めない間は次戦の VS 検知か STOP まで待ち続ける (タイムアウトなし)。GrandPrixMode OFF / 通常戦ではこの状態に入らない。
      */
     private fun handleAwaitingRating(bitmap: Bitmap) {
+        grandPrixRecorded?.let { fillMissingGrandPrixFields(it, bitmap); return }
         val reading = RatingPanelReader.read(this, bitmap)
         if (reading == null) {
             // 失敗分類を集計 (待機終了時にまとめてログへ)
@@ -638,16 +645,22 @@ class MediaCaptureService : Service() {
         val rankTier = RankTierReader.read(this, bitmap, reading.rowOffsetY)
         synchronized(this) {
             if (currentState != State.AWAITING_RATING) return
-            dataManager.appendGrandPrix(
-                GrandPrixRecord(
-                    timestamp = grandPrixTimestamp,
-                    result = grandPrixResult,
-                    currentRating = reading.currentRating,
-                    neededRating = reading.neededRating,
-                    rankTier = rankTier
-                )
+            val record = GrandPrixRecord(
+                timestamp = grandPrixTimestamp,
+                result = grandPrixResult,
+                currentRating = reading.currentRating,
+                neededRating = reading.neededRating,
+                rankTier = rankTier
             )
-            currentState = State.IDLE
+            dataManager.appendGrandPrix(record)
+            // 必要レーティング・ランク帯はパネル内で現在レーティングより遅れて表示されることがあり、
+            // 最初のフレームで確定すると両方まとめて欠けていた (S10 実績: ボーダー欠けの 87% がランク帯も欠け、
+            // ランク帯が読めた戦ではボーダー 95%)。欠けがあれば画面が見えている間は読み続けて埋める
+            if (record.neededRating == null || rankTier == null) {
+                grandPrixRecorded = record
+            } else {
+                currentState = State.IDLE
+            }
         }
         val borderStr = reading.borderRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
         val neededStr = reading.neededRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
@@ -658,6 +671,44 @@ class MediaCaptureService : Service() {
         // A 方針: レーティング値のみの記録確認通知
         updateNotification(dataManager.history.totalWins, dataManager.history.totalLosses,
             String.format(Locale.US, "🎖 GP記録 %.1f", reading.currentRating))
+    }
+
+    /**
+     * 記録済みのグランプリ記録に、後から読めた必要レーティング・ランク帯を埋める (埋まった項目は上書きしない)。
+     * レーティング画面が読めなくなった (画面が切り替わった) か、両方そろった時点で待機を終える。
+     * 時間で打ち切らない (次戦の VS 検知・STOP でも endGrandPrixWaitUnread 経由で終わる)。iOS と同じ
+     */
+    private fun fillMissingGrandPrixFields(rec: GrandPrixRecord, bitmap: Bitmap) {
+        val reading = RatingPanelReader.read(this, bitmap)
+        if (reading == null) {
+            synchronized(this) {
+                if (currentState != State.AWAITING_RATING) return
+                grandPrixRecorded = null
+                currentState = State.IDLE
+            }
+            dataManager.appendFlightLog("グランプリ: レーティング画面が閉じたため補完を終了 (必要${if (rec.neededRating == null) "—" else "済"} ランク${rec.rankTier ?: "—"})")
+            // 画面が切り替わった = 次戦の準備に入った可能性があるので、このフレームも通常の探索に回す
+            handleIdleState(bitmap)
+            return
+        }
+        var updated = rec
+        if (updated.neededRating == null && reading.neededRating != null) updated = updated.copy(neededRating = reading.neededRating)
+        if (updated.rankTier == null) {
+            RankTierReader.read(this, bitmap, reading.rowOffsetY)?.let { updated = updated.copy(rankTier = it) }
+        }
+        if (updated == rec) return
+        synchronized(this) {
+            if (currentState != State.AWAITING_RATING) return
+            dataManager.updateGrandPrix(updated)
+            if (updated.neededRating != null && updated.rankTier != null) {
+                grandPrixRecorded = null
+                currentState = State.IDLE
+            } else {
+                grandPrixRecorded = updated
+            }
+        }
+        dataManager.appendFlightLog(String.format(Locale.US, "🎖 グランプリ補完 必要%s ランク%s",
+            updated.neededRating?.let { String.format(Locale.US, "%.1f", it) } ?: "—", updated.rankTier ?: "—"))
     }
 
     private fun createNotificationChannel() {

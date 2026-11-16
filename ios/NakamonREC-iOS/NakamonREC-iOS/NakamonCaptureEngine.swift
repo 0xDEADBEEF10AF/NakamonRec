@@ -98,6 +98,9 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
         let result: String          // "WIN" / "LOSE"
         var attempts = 0                       // 読み取りを試したフレーム数 (診断用)
         var failures: [String: Int] = [:]      // 失敗分類ごとの件数 (RatingPanelReader.lastFailureCategory)
+        /// 記録済みの値 (現在レーティングが読めた時点で保存したもの)。nil = まだ読めていない。
+        /// 保存後もレーティング画面が見えている間は読み続け、欠けている必要レーティング・ランク帯だけを埋める
+        var recorded: GrandPrixRecord? = nil
     }
     private var grandPrixWait: GrandPrixWait?
 
@@ -518,6 +521,10 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     private func handleGrandPrixWait(_ scene: UIImage) {
         guard let wait = grandPrixWait else { return }
         guard let cg = scene.cgImage else { return }
+        if let rec = wait.recorded {
+            fillMissingGrandPrixFields(rec, scene: cg)
+            return
+        }
         guard let reading = RatingPanelReader.read(cg) else {
             // 失敗分類を集計 (待機終了時にまとめてログへ)
             grandPrixWait?.attempts += 1
@@ -536,7 +543,14 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                                      neededRating: reading.neededRating,
                                      rankTier: rankTier)
         BattleHistoryStore.shared.appendGrandPrix(record)
-        grandPrixWait = nil
+        // 必要レーティング・ランク帯はパネル内で現在レーティングより遅れて表示されることがあり、
+        // 最初のフレームで確定すると両方まとめて欠けていた (S10 実績: ボーダー欠けの 87% がランク帯も欠け、
+        // ランク帯が読めた戦ではボーダー 95%)。欠けがあれば画面が見えている間は読み続けて埋める
+        if record.neededRating == nil || rankTier == nil {
+            grandPrixWait?.recorded = record
+        } else {
+            grandPrixWait = nil
+        }
         events?.engineDidRecordGrandPrix(rating: reading.currentRating)
         let tierDiag = rankTier == nil ? " ランク診断: \(RankTierReader.lastDiagnostic)" : ""
         BattleLogger.append(String(format: "🎖 グランプリ記録 現在%.1f 必要%@ ボーダー%@ ランク%@%@%@",
@@ -546,6 +560,30 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
                                    rankTier ?? "—",
                                    reading.rowOffsetY == 0 ? "" : " (行Δ\(reading.rowOffsetY >= 0 ? "+" : "")\(reading.rowOffsetY)px)",
                                    tierDiag))
+    }
+
+    /// 記録済みのグランプリ記録に、後から読めた必要レーティング・ランク帯を埋める (埋まった項目は上書きしない)。
+    /// レーティング画面が読めなくなった (画面が切り替わった) か、両方そろった時点で待機を終える。
+    /// 時間で打ち切らない (次戦の VS 検知・STOP でも endGrandPrixWaitUnread 経由で終わる)
+    private func fillMissingGrandPrixFields(_ rec: GrandPrixRecord, scene cg: CGImage) {
+        guard let reading = RatingPanelReader.read(cg) else {
+            grandPrixWait = nil
+            BattleLogger.append("グランプリ: レーティング画面が閉じたため補完を終了 (必要\(rec.neededRating == nil ? "—" : "済") ランク\(rec.rankTier ?? "—"))")
+            return
+        }
+        var updated = rec
+        if updated.neededRating == nil, let n = reading.neededRating { updated.neededRating = n }
+        if updated.rankTier == nil, let t = RankTierReader.read(cg, rowOffsetY: reading.rowOffsetY) { updated.rankTier = t }
+        guard updated != rec else { return }
+        BattleHistoryStore.shared.updateGrandPrix(updated)
+        BattleLogger.append(String(format: "🎖 グランプリ補完 必要%@ ランク%@",
+                                   updated.neededRating.map { String(format: "%.1f", $0) } ?? "—",
+                                   updated.rankTier ?? "—"))
+        if updated.neededRating != nil && updated.rankTier != nil {
+            grandPrixWait = nil
+        } else {
+            grandPrixWait?.recorded = updated
+        }
     }
 
     // MARK: - Party Selection (戦闘開始前のパーティ選択画面)
@@ -1047,6 +1085,8 @@ nonisolated final class NakamonCaptureEngine: @unchecked Sendable {
     private func endGrandPrixWaitUnread(reason: String) {
         guard let wait = grandPrixWait else { return }
         grandPrixWait = nil
+        // 記録済み (欠けている項目を埋めている途中) なら未取得レコードは足さない
+        if wait.recorded != nil { return }
         let summary = wait.failures.sorted { $0.value > $1.value }
             .map { "\($0.key)×\($0.value)" }.joined(separator: " / ")
         let lastDiag = RatingPanelReader.lastDiagnostic
