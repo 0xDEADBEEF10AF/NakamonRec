@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 戦績リストの 1 行。2026-11-16 に iOS の BattleRecordRow と同じ寸法・色に統一した
+     (背景 #2E2E2E・角丸 8dp・上下 6dp / 左右 4dp・最小高 38dp、左欄 42dp / 右欄 50dp、欄の間 4dp、
+     勝敗 15sp 太字、P 番号 12sp 灰色、VS 9sp 太字、日時 8sp 灰色)。
+     26.11.3 までは左右の欄幅の差 (45/65dp) で中央のサムネイルが左に寄り、上下 8dp と太字の P 番号で
+     行が高いわりにサムネイルが小さく見えていた (ビーフ指摘)。 -->
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="4dp"
     android:layout_marginVertical="2dp"
-    app:cardBackgroundColor="#333333">
+    app:cardBackgroundColor="#2E2E2E"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="0dp">
 
     <!-- メモ表示 (2026-11-02): 編集モードでメモ付きの行をタップすると、下の行内容 (layoutRecordContent) を
          INVISIBLE にして (高さは維持) このテキストだけを表示する。もう一度タップで元に戻る。
@@ -15,14 +22,14 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center_vertical"
-        android:paddingVertical="8dp"
-        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:paddingHorizontal="10dp"
         android:drawableStart="@drawable/ic_memo"
         android:drawableTint="#F09199"
         android:drawablePadding="6dp"
         android:textColor="#FFFFFF"
-        android:textSize="@dimen/battle_history_text_sub"
-        android:maxLines="3"
+        android:textSize="@dimen/battle_row_text_memo"
+        android:maxLines="2"
         android:ellipsize="end"
         android:visibility="gone" />
 
@@ -30,14 +37,15 @@
         android:id="@+id/layoutRecordContent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="38dp"
         android:orientation="horizontal"
-        android:paddingVertical="8dp"
+        android:paddingVertical="6dp"
         android:paddingHorizontal="4dp"
         android:gravity="center_vertical">
 
         <!-- 左側: 勝敗とパーティ番号 (縦並び) -->
         <LinearLayout
-            android:layout_width="@dimen/battle_history_side_width_left"
+            android:layout_width="@dimen/battle_row_side_width_left"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center">
@@ -46,22 +54,26 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textStyle="bold"
-                android:textSize="@dimen/battle_history_text_result"
+                android:textSize="@dimen/battle_row_text_result"
+                android:maxLines="1"
                 android:textColor="#FFFFFF" />
             <TextView
                 android:id="@+id/textParty"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textStyle="bold"
-                android:textSize="@dimen/battle_history_text_sub"
-                android:textColor="#FFFFFF" />
+                android:layout_marginTop="2dp"
+                android:textStyle="normal"
+                android:textSize="@dimen/battle_row_text_party"
+                android:maxLines="1"
+                android:textColor="#8E8E93" />
         </LinearLayout>
 
-        <!-- 中央: モンスター画像 (味方 vs 相手) -->
+        <!-- 中央: モンスター画像 (味方 vs 相手)。サムネイルの大きさは Adapter が行幅から決める -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginHorizontal="4dp"
             android:orientation="horizontal"
             android:gravity="center">
 
@@ -76,6 +88,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center">
+                <!-- VS スコア (現在は非表示、Adapter で GONE) -->
                 <TextView
                     android:id="@+id/textVsScore"
                     android:layout_width="wrap_content"
@@ -87,8 +100,8 @@
                     android:layout_height="wrap_content"
                     android:text="@string/label_vs"
                     android:textColor="#FFFFFF"
-                    android:layout_marginHorizontal="2dp"
-                    android:textSize="@dimen/battle_history_text_sub"
+                    android:layout_marginHorizontal="1dp"
+                    android:textSize="@dimen/battle_row_text_vs"
                     android:textStyle="bold" />
             </LinearLayout>
 
@@ -99,25 +112,22 @@
                 android:orientation="horizontal" />
         </LinearLayout>
 
-        <!-- 右側: 日時 (2行表示想定)。iOS 版 (BattleHistoryView: .gray / 標準ウェイト) に合わせて
-             太字・白ではなく細字・グレーにする (26.10.2) -->
-        <!-- 文字サイズ/表示サイズを大きくした端末で「2026.10.30」が欄幅に収まらず 1 文字ずつ折り返す崩れが
-             あったため (26.11.1)、日付と時刻を明示的に 2 行にし、欄幅に収まるよう文字を自動縮小する -->
+        <!-- 右側: 日時 (2 行: 日付 / 時刻)。iOS と同じ 8sp・灰色。
+             文字サイズを大きくした端末でも欄幅に収まるよう自動縮小する (26.11.1 の崩れ対策を維持) -->
         <TextView
             android:id="@+id/textTimestamp"
-            android:layout_width="@dimen/battle_history_side_width_right"
+            android:layout_width="@dimen/battle_row_side_width_right"
             android:layout_height="wrap_content"
             android:gravity="end"
             android:textStyle="normal"
-            android:textSize="@dimen/battle_history_text_sub"
+            android:textSize="@dimen/battle_row_text_time"
             android:textColor="#8E8E93"
             android:maxLines="2"
             android:lines="2"
             app:autoSizeTextType="uniform"
-            app:autoSizeMinTextSize="7sp"
-            app:autoSizeMaxTextSize="@dimen/battle_history_text_sub"
-            app:autoSizeStepGranularity="1sp"
-            android:layout_marginStart="2dp" />
+            app:autoSizeMinTextSize="6sp"
+            app:autoSizeMaxTextSize="@dimen/battle_row_text_time"
+            app:autoSizeStepGranularity="1sp" />
 
     </LinearLayout>
 </androidx.cardview.widget.CardView>

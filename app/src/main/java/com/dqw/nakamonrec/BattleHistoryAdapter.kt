@@ -74,7 +74,29 @@ class BattleHistoryAdapter(
         diffResult.dispatchUpdatesTo(this)
     }
 
+    /**
+     * サムネイル 1 体の大きさ (px)。リストの幅から「8 体 + VS」が中央欄にちょうど収まる大きさを計算し、
+     * battle_row_thumb_min〜max (22〜30dp) に収める (2026-11-16、iOS の 26pt 固定に相当する見え方を
+     * 端末の画面幅によらず得るため。従来は画面幅 400dp を境に 22dp / 28dp の 2 段階だった)。
+     * 一度決めたら使い回す (幅が変わる回転・分割は onCreateViewHolder のたびに計算し直す)
+     */
+    private var thumbPx = 0
+
+    private fun computeThumbPx(parent: ViewGroup): Int {
+        val res = parent.resources
+        val d = res.displayMetrics.density
+        val listWidth = (if (parent.width > 0) parent.width else res.displayMetrics.widthPixels) -
+            parent.paddingLeft - parent.paddingRight
+        // 行の外側の余白 4dp×2 + 内側 4dp×2 + 左欄 42dp + 右欄 50dp + 中央欄の左右 4dp×2 + 「VS」約 14dp + サムネ間 1dp×8
+        val fixed = res.getDimensionPixelSize(R.dimen.battle_row_side_width_left) +
+            res.getDimensionPixelSize(R.dimen.battle_row_side_width_right) + ((8 + 8 + 8 + 14 + 8) * d).toInt()
+        val raw = (listWidth - fixed) / 8
+        return raw.coerceIn(res.getDimensionPixelSize(R.dimen.battle_row_thumb_min),
+            res.getDimensionPixelSize(R.dimen.battle_row_thumb_max))
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        thumbPx = computeThumbPx(parent)
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_battle_record, parent, false)
         return ViewHolder(view)
     }
@@ -87,7 +109,9 @@ class BattleHistoryAdapter(
         holder.result.setTextColor(if (record.result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt())
         // メモ付きの行は P 番号の横に小さなペン記号を目印として付ける
         val hasMemo = !record.memo.isNullOrBlank()
-        holder.party.text = if (hasMemo) "P${record.partyIndex + 1} ✎" else "P${record.partyIndex + 1}"
+        // 未検知 (-1) は「P?」(iOS と同じ。26.11.3 までは "P0" と表示されていた)
+        val partyLabel = if (record.partyIndex >= 0) "P${record.partyIndex + 1}" else "P?"
+        holder.party.text = if (hasMemo) "$partyLabel ✎" else partyLabel
 
         // メモ表示の切り替え (編集モードのみ)。表示中は行の内容を INVISIBLE にして高さを保ち、メモだけ見せる
         val showMemo = hasMemo && !isFilterMode && memoShownTimestamps.contains(record.timestamp)
@@ -192,7 +216,8 @@ class BattleHistoryAdapter(
         isEnemy: Boolean
     ) {
         layout.removeAllViews()
-        val iconSize = context.resources.getDimensionPixelSize(R.dimen.battle_history_icon_size)
+        val iconSize = if (thumbPx > 0) thumbPx
+            else context.resources.getDimensionPixelSize(R.dimen.battle_row_thumb_min)
 
         monsterNames.forEach { name ->
             val container = LinearLayout(context).apply {
@@ -205,8 +230,8 @@ class BattleHistoryAdapter(
             imageView.layoutParams = params
             imageView.scaleType = ImageView.ScaleType.CENTER_CROP
 
-            // 角丸 (iOS の RoundedRectangle(cornerRadius: 6) と同程度の見た目)
-            val cornerRadiusPx = 6 * context.resources.displayMetrics.density
+            // 角丸 (iOS MonsterThumb の RoundedRectangle(cornerRadius: 4) と同じ)
+            val cornerRadiusPx = 4 * context.resources.displayMetrics.density
             imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
                 override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
                     outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)

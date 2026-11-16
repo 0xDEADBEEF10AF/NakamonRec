@@ -3,10 +3,18 @@
     <!-- 戦績リスト項目 -->
     <dimen name="none">0dp</dimen>
     <dimen name="battle_history_icon_size">22dp</dimen>
-    <dimen name="battle_history_text_result">14sp</dimen>
-    <dimen name="battle_history_text_sub">10sp</dimen>
-    <dimen name="battle_history_side_width_left">45dp</dimen>
-    <dimen name="battle_history_side_width_right">65dp</dimen>
+
+    <!-- 戦績リスト 1 行 (2026-11-16 iOS BattleRecordRow と同じ値に統一、画面幅バケットで変えない)。
+         サムネイルの大きさは BattleHistoryAdapter が行の幅から計算する (battle_row_thumb_min〜max) -->
+    <dimen name="battle_row_side_width_left">42dp</dimen>
+    <dimen name="battle_row_side_width_right">50dp</dimen>
+    <dimen name="battle_row_text_result">15sp</dimen>
+    <dimen name="battle_row_text_party">12sp</dimen>
+    <dimen name="battle_row_text_vs">9sp</dimen>
+    <dimen name="battle_row_text_time">8sp</dimen>
+    <dimen name="battle_row_text_memo">12sp</dimen>
+    <dimen name="battle_row_thumb_min">22dp</dimen>
+    <dimen name="battle_row_thumb_max">30dp</dimen>
 
     <!-- パーティサマリー（上部カード） -->
     <dimen name="party_summary_icon_size">18dp</dimen>
