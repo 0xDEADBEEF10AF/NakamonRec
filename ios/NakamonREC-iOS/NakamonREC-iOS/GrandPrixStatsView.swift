@@ -15,7 +15,6 @@ struct GrandPrixStatsView: View {
     @State private var chartPoints: [ChartPoint] = []       // グラフ用の点 (id は安定)
     @State private var deltas: [Double?] = []               // sorted と同じ並びの「変動」(reload() で計算)
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
-    @State private var chartZoomed = false         // true = 直近N戦ズーム+横スクロール
     /// 横軸。false = 戦闘の順番 (既定、1 戦 = 1 目盛で等間隔) / true = 実時間 (日時)。
     /// 実時間軸はプレイが集中するセッションが縦に潰れ、空白期間が長い直線になって形が読めない
     /// (2026-09-27 ビーフ確認) ため、Android と同じ戦闘数軸を既定にしトグルで日時軸も選べるようにした。
@@ -27,12 +26,10 @@ struct GrandPrixStatsView: View {
     @State private var rawSelection: Date? = nil            // 日時軸でのドラッグ/タップ選択 (生値)
     @State private var pinnedIndex: Int? = nil              // 確定した選択点 (sorted の添字、nil = 最新)
 
-    /// ズーム時に表示する直近の戦闘数 (大会中は4桁になり得るため全体表示だと潰れる)
-    private let zoomBattleCount = 50
     /// 各点の小さなシンボルを描く上限 (表示中の点がこれ以下のときだけ。多いと線を覆って読めない。Android と同じ値)
     private let dotLimit = 100
-    /// 点シンボルを描くか: ズーム中 (=直近 zoomBattleCount 点) または全体で dotLimit 以下
-    private var showDots: Bool { chartZoomed || sorted.count <= dotLimit }
+    /// 点シンボルを描くか: 全体で dotLimit 以下のときだけ (多いと線を覆って読めない)
+    private var showDots: Bool { sorted.count <= dotLimit }
     @Environment(\.dismiss) private var dismiss
 
     /// レーティングが読めているレコードだけ (未取得レコードはサマリ・グラフ・変動計算の対象外)
@@ -248,23 +245,10 @@ struct GrandPrixStatsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("レーティング推移").font(.caption.bold()).foregroundStyle(.gray)
             selectionInfoRow
-            if chartZoomed, sorted.count > zoomBattleCount {
-                if timeAxis, let domain = zoomDomain {
-                    ratingChart
-                        .chartScrollableAxes(.horizontal)
-                        .chartXVisibleDomain(length: domain.length)
-                        .chartScrollPosition(initialX: domain.start)
-                } else {
-                    // 戦闘数軸: 可視範囲 = ちょうど zoomBattleCount 戦ぶん、初期位置 = 最新側
-                    ratingChart
-                        .chartScrollableAxes(.horizontal)
-                        .chartXVisibleDomain(length: zoomBattleCount)
-                        .chartScrollPosition(initialX: sorted.count - zoomBattleCount + 1)
-                }
-            } else {
-                ratingChart
-            }
-            // 凡例 + 横軸トグル + ズームトグルはグラフ (横軸ラベル) の下 (Android と統一)
+            // 常に大会全体を表示する (26.11.2 までの「直近50戦」ズームは、50 戦程度では推移の面白みがないため
+            // 2026-11-16 ビーフ判断で撤去。1000 戦規模の大会全体の推移を思い出として見せる)
+            ratingChart
+            // 凡例 + 横軸トグルはグラフ (横軸ラベル) の下 (Android と統一)
             HStack(spacing: 12) {
                 Text("● 自分").font(.caption).foregroundStyle(Color.recCoral)
                 Text("● ボーダー").font(.caption).foregroundStyle(.cyan)
@@ -274,13 +258,6 @@ struct GrandPrixStatsView: View {
                     timeAxis.toggle()
                 }
                 .font(.caption.bold()).foregroundStyle(Color.recCoral)
-                // レコードが多いときだけ「直近N戦ズーム+横スクロール」への切替を出す
-                if sorted.count > zoomBattleCount {
-                    Button(chartZoomed ? "全体表示" : "直近\(zoomBattleCount)戦") {
-                        chartZoomed.toggle()
-                    }
-                    .font(.caption.bold()).foregroundStyle(Color.recCoral)
-                }
             }
             .lineLimit(1).minimumScaleFactor(0.8)
         }
@@ -401,16 +378,6 @@ struct GrandPrixStatsView: View {
         }
         .chartLegend(.hidden)
         .frame(height: 300)
-    }
-
-    /// 日時軸でのズーム時の可視範囲: 直近 zoomBattleCount 戦ぶんの時間幅 (最低10分)。
-    /// initialX = その先頭日時 (開いた時点で最新側が見える)。戦闘数軸では chartCard 側で件数指定
-    private var zoomDomain: (start: Date, length: TimeInterval)? {
-        let dates = sortedDates.filter { $0 != .distantPast }
-        guard let last = dates.last, dates.count > zoomBattleCount else { return nil }
-        let start = dates[dates.count - zoomBattleCount]
-        let length = max(last.timeIntervalSince(start), 600)
-        return (start, length)
     }
 
     // MARK: - List

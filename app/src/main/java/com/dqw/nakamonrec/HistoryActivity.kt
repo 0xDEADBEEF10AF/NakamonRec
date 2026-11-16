@@ -873,26 +873,15 @@ class HistoryActivity : AppCompatActivity() {
             GrandPrixGraphView.RatingPoint(r.currentRating, r.borderRating, label, r.rankTier, date?.time ?: 0L,
                 battleLabel = "${idx + 1}")
         }
-        // 大会中は4桁レコードになり得るため、全体表示 (既定) と
-        // 直近N戦ズーム+横スクロールをトグルで切替できるようにする
-        val zoomCount = 50
+        // 常に大会全体を表示する (26.11.2 までの「直近50戦」ズームは、50 戦程度では推移の面白みがないため
+        // 2026-11-16 ビーフ判断で撤去。1000 戦規模の大会全体の推移を思い出として見せる。iOS と統一)
         val graph = GrandPrixGraphView(this)
-        var zoomed = false
         fun toggleTextView() = android.widget.TextView(this).apply {
             textSize = 12f
             setTextColor("#F09199".toColorInt())
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(dp(8), dp(2), dp(8), dp(2))
         }
-        val toggleBtn = toggleTextView().apply {
-            visibility = if (points.size > zoomCount) View.VISIBLE else View.GONE
-        }
-        fun applyZoom() {
-            graph.visibleCount = (if (zoomed) minOf(zoomCount, points.size) else points.size).coerceAtLeast(2)
-            graph.setData(points)  // scrollOffset が最新側にリセットされる
-            toggleBtn.text = if (zoomed) "全体表示" else "直近${zoomCount}戦"
-        }
-        toggleBtn.setOnClickListener { zoomed = !zoomed; applyZoom() }
         // 横軸の切替 (既定 = 戦闘数、タップで日時軸と反転。表示は現在の軸。iOS と統一)
         val axisBtn = toggleTextView().apply { text = "横軸: 戦闘数" }
         axisBtn.setOnClickListener {
@@ -929,7 +918,8 @@ class HistoryActivity : AppCompatActivity() {
             selText.text = s
         }
         graph.onSelectionChanged = { p -> showSelection(p) }
-        applyZoom()
+        graph.visibleCount = points.size.coerceAtLeast(2)
+        graph.setData(points)
         showSelection(points.lastOrNull())
 
         // 凡例+情報枠+グラフをまとめて角丸カードに (iOS の chartCard と統一)
@@ -952,7 +942,7 @@ class HistoryActivity : AppCompatActivity() {
         col.addView(graph, android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(265)
         ))
-        // 凡例 + ズームトグルはグラフ (横軸ラベル) の下 (iOS と統一)
+        // 凡例 + 横軸トグルはグラフ (横軸ラベル) の下 (iOS と統一)
         col.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -964,7 +954,6 @@ class HistoryActivity : AppCompatActivity() {
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(axisBtn)
-            addView(toggleBtn)
         })
         return col
     }
