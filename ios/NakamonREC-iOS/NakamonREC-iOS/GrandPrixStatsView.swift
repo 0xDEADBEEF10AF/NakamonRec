@@ -13,6 +13,7 @@ struct GrandPrixStatsView: View {
     @State private var sorted: [GrandPrixRecord] = []       // timestamp 昇順
     @State private var sortedDates: [Date] = []             // sorted と同じ並びのパース済み日時 (不正は .distantPast)
     @State private var chartPoints: [ChartPoint] = []       // グラフ用の点 (id は安定)
+    @State private var deltas: [Double?] = []               // sorted と同じ並びの「変動」(reload() で計算)
     @State private var showAsList = false          // false = グラフ(既定) / true = テキスト
     @State private var chartZoomed = false         // true = 直近N戦ズーム+横スクロール
     /// 横軸。false = 戦闘の順番 (既定、1 戦 = 1 目盛で等間隔) / true = 実時間 (日時)。
@@ -58,6 +59,17 @@ struct GrandPrixStatsView: View {
             }
         }
         chartPoints = pts
+        // 変動 (テキスト一覧の列) も読み込み時に 1 回だけ計算する。行ごとに過去をさかのぼると
+        // 1000 件超で O(n²) になり、テキスト表示への切替がもたついていた (2026-11-16 ビーフ指摘)
+        var ds: [Double?] = []
+        ds.reserveCapacity(sorted.count)
+        var prevReadable: GrandPrixRecord? = nil
+        for r in sorted {
+            if r.isUnread { ds.append(nil); continue }
+            ds.append(prevReadable.map { r.currentRating - $0.currentRating })
+            prevReadable = r
+        }
+        deltas = ds
         // 選択は範囲内なら維持、外れたら最新へ
         if let p = pinnedIndex, !sorted.indices.contains(p) { pinnedIndex = nil }
     }
@@ -407,7 +419,9 @@ struct GrandPrixStatsView: View {
     // タイトル行は Section ヘッダーとしてスクロール中も上部に固定される。
     private var listView: some View {
         Section {
-            VStack(spacing: 6) {
+            // LazyVStack: 見えている行だけを作る (26.11.2 までは VStack で全件を一度に作っており、
+            // 1773 件で切替がもたついていた)
+            LazyVStack(spacing: 6) {
                 ForEach(Array(sorted.enumerated().reversed()), id: \.element.id) { idx, r in
                     // 操作メニューは長押しで開く (メイン戦績の BattleRecordRow / Android と同じ作法。
                     // 26.9.1 まではタップだったが両OS統一のため 26.10.1 で長押しに変更)
@@ -437,11 +451,9 @@ struct GrandPrixStatsView: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
-    /// 変動 = 直前の「読めている」レコードとの差。自分または直前が未取得なら nil
+    /// 変動 = 直前の「読めている」レコードとの差。自分または直前が未取得なら nil (reload() で計算済み)
     private func delta(at idx: Int) -> Double? {
-        guard idx > 0, !sorted[idx].isUnread else { return nil }
-        guard let prev = sorted[..<idx].last(where: { !$0.isUnread }) else { return nil }
-        return sorted[idx].currentRating - prev.currentRating
+        deltas.indices.contains(idx) ? deltas[idx] : nil
     }
 
     private func recordRow(_ r: GrandPrixRecord, battleNo: Int, delta: Double?) -> some View {

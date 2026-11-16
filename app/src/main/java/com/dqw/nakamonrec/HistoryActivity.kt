@@ -1021,7 +1021,6 @@ class HistoryActivity : AppCompatActivity() {
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
-        val list = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
         // ヘッダ (固定)
         container.addView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
@@ -1034,8 +1033,11 @@ class HistoryActivity : AppCompatActivity() {
             addView(cell("ボーダー", "#888888".toColorInt(), 11f, 1.3f, true))
         })
 
-        // 新しい順に行を作る。戦闘数は時系列の連番。
-        records.reversed().forEachIndexed { revIdx, r ->
+        // 新しい順に並べる。戦闘数は時系列の連番。
+        // RecyclerView で見えている行だけを作る (26.11.2 までは ScrollView に全行を並べており、
+        // 1773 件で約 1 万 8 千個の View を一度に作ってテキスト表示への切替がもたついていた、2026-11-16 ビーフ指摘)
+        fun fillRow(row: android.widget.LinearLayout, revIdx: Int) {
+            val r = records[records.size - 1 - revIdx]
             val chronoIdx = records.size - 1 - revIdx
             val battleNo = chronoIdx + 1
             val parsed = try { sdfIn.parse(r.timestamp) } catch (_: Exception) { null }
@@ -1066,20 +1068,9 @@ class HistoryActivity : AppCompatActivity() {
                     text = timeStr; setTextColor(android.graphics.Color.WHITE); textSize = 10f
                 })
             }
-            // メイン戦績と同じ「1 レコード = 1 カード」形式
-            list.addView(android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor("#333333".toColorInt())
-                    cornerRadius = dp(8).toFloat()
-                }
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, dp(2), 0, dp(2)) }
-                isLongClickable = true
+            // メイン戦績と同じ「1 レコード = 1 カード」形式 (枠は onCreateViewHolder で作成済み、中身だけ詰め直す)
+            row.apply {
+                removeAllViews()
                 addView(timeCell)
                 addView(rankCell)
                 addView(cell("$battleNo", "#888888".toColorInt(), 12f, 1.0f, true))
@@ -1089,11 +1080,36 @@ class HistoryActivity : AppCompatActivity() {
                 addView(cell(deltaStr, deltaColor, 12f, 1.1f, true))
                 addView(cell(borderStr, "#90D7EC".toColorInt(), 12f, 1.3f, true))
                 setOnLongClickListener { onRowLongClick(r); true }
-            })
+            }
         }
 
+        val recycler = androidx.recyclerview.widget.RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(this@HistoryActivity)
+            adapter = object : androidx.recyclerview.widget.RecyclerView.Adapter<androidx.recyclerview.widget.RecyclerView.ViewHolder>() {
+                override fun getItemCount() = records.size
+                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): androidx.recyclerview.widget.RecyclerView.ViewHolder {
+                    val row = android.widget.LinearLayout(this@HistoryActivity).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        setPadding(dp(8), dp(8), dp(8), dp(8))
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor("#333333".toColorInt())
+                            cornerRadius = dp(8).toFloat()
+                        }
+                        layoutParams = androidx.recyclerview.widget.RecyclerView.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { setMargins(0, dp(2), 0, dp(2)) }
+                        isLongClickable = true
+                    }
+                    return object : androidx.recyclerview.widget.RecyclerView.ViewHolder(row) {}
+                }
+                override fun onBindViewHolder(holder: androidx.recyclerview.widget.RecyclerView.ViewHolder, position: Int) {
+                    fillRow(holder.itemView as android.widget.LinearLayout, position)
+                }
+            }
+        }
         // レコード部分だけスクロール (ヘッダは container 直下で固定)
-        container.addView(android.widget.ScrollView(this).apply { addView(list) },
+        container.addView(recycler,
             android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             ))
