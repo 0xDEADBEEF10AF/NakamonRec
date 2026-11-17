@@ -15,6 +15,12 @@
         <item name="colorSurface">#252525</item>
         <item name="android:colorBackground">#252525</item>
         <item name="colorOnSurface">#FFFFFF</item>
+        <!-- 一覧の項目 (setItems / setMultiChoiceItems / setSingleChoiceItems) と入力欄の文字も白に固定する。
+             未指定だと Material の既定 (colorOnSurfaceVariant = 灰色がかった白) になり、ファイルマージの一覧などが
+             他の白文字と違って見えていた (ビーフ指摘 2026-11-18、iOS と同じ白に統一) -->
+        <item name="colorOnSurfaceVariant">#FFFFFF</item>
+        <item name="android:textColorAlertDialogListItem">#FFFFFF</item>
+        <item name="android:textColorPrimary">#FFFFFF</item>
         <item name="colorPrimary">#BB86FC</item>
         <item name="alertDialogStyle">@style/NakamonRec.Dialog.Layout</item>
         <item name="materialAlertDialogTitleTextStyle">@style/NakamonRec.Dialog.Title</item>

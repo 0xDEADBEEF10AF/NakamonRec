@@ -18,7 +18,9 @@ import java.util.Locale
 /**
  * タイムフィルタの範囲指定ダイアログ (2026-11-17 ビーフ設計、iOS `TimeFilterView` と同仕様)。
  * 戦績画面のフィルタモードでレコードの日時をタップすると開く。
- * - 横軸 = 日時 (ファイル全体の最初〜最後。寝ている時間の横ばいもそのまま見せる)
+ * - 横軸 = グランプリ集計が使えるなら日時 (寝ている時間の横ばいもそのまま見せる)、
+ *   使えないなら戦闘数 (日時軸の勝率推移は何のグラフか分かりにくかった、ビーフ確認 2026-11-18)。
+ *   上部の開始/終了はどちらのときも日時で表示する
  * - 縦軸 = グランプリ集計が使える (= 虫眼鏡メニューでグレーアウトされない) ならレーティング + ボーダー、
  *   使えないなら 20 戦移動平均勝率 (戦績画面右上のグラフと同じ計算)
  * - 左右 2 本の縦線をドラッグして範囲を決める。縦線は最も近いレコードの日時に吸着し、範囲外は暗くする
@@ -57,18 +59,21 @@ object TimeFilterDialog {
             graph.isPercent = false
         } else {
             // 戦績画面右上のグラフと同じ: 1〜20 戦目はそれまでの全戦、以降は直近 20 戦の勝率
-            val sortedRecs = records.sortedBy { it.timestamp }
+            // 勝敗は stops (日時順) と同じ並びで引く (日時を読めないレコードがあっても添字がずれない)
+            val resultByTs = records.associate { it.timestamp to it.result }
+            val isWin = stops.map { resultByTs[it.first] == "WIN" }
             val window = 20
-            val pts = sortedRecs.indices.mapNotNull { idx ->
-                val t = try { sdf.parse(sortedRecs[idx].timestamp)?.time } catch (_: Exception) { null } ?: return@mapNotNull null
+            // 横軸は戦闘数: x = stops の添字
+            val pts = stops.indices.map { idx ->
                 val start = maxOf(0, idx - window + 1)
-                val wins = (start..idx).count { sortedRecs[it].result == "WIN" }
-                t to wins.toDouble() / (idx - start + 1) * 100.0
+                val wins = (start..idx).count { isWin[it] }
+                idx.toLong() to wins.toDouble() / (idx - start + 1) * 100.0
             }
             graph.lines = listOf(TimeRangeGraphView.Line(pts, "#F09199".toColorInt()))
             graph.isPercent = true
         }
-        graph.stops = stops.map { it.second }
+        graph.battleAxis = !useGrandPrix
+        graph.stops = if (useGrandPrix) stops.map { it.second } else stops.indices.map { it.toLong() }
         val hasData = stops.isNotEmpty() && graph.lines.any { it.points.isNotEmpty() }
         graph.hasData = hasData
         if (hasData) {
@@ -157,7 +162,7 @@ object TimeFilterDialog {
 }
 
 /**
- * タイムフィルタ用のグラフ。横軸 = 日時 (epoch ms)、左右 2 本の縦線をドラッグして範囲を選ぶ。
+ * タイムフィルタ用のグラフ。横軸 = 日時 (epoch ms) または戦闘数 ([battleAxis])、左右 2 本の縦線をドラッグして範囲を選ぶ。
  * 縦線は [stops] (レコードの日時) の最も近い点に吸着する。範囲外は暗くする
  */
 class TimeRangeGraphView(context: Context) : View(context) {
@@ -166,6 +171,8 @@ class TimeRangeGraphView(context: Context) : View(context) {
     var lines: List<Line> = emptyList()
     var stops: List<Long> = emptyList()
     var isPercent = false
+    /** true = 横軸は戦闘数 (stops は 0 始まりの添字)。false = 日時 (stops は epoch ms) */
+    var battleAxis = false
     var hasData = false
     var startIdx = 0
     var endIdx = 0
@@ -242,9 +249,22 @@ class TimeRangeGraphView(context: Context) : View(context) {
                 w - padR + 6 * density, y + 4 * density, textPaint)
             v += step
         }
+        if (battleAxis) {
+            // 横軸 (戦闘数) の目盛り: 切りの良い戦闘番号で約 5 本 (iOS の desiredCount: 5 と同じ)
+            val n = stops.size
+            val xStep = niceStep(n / 5.0).coerceAtLeast(1.0).toInt()
+            var no = xStep
+            while (no <= n) {
+                val x = xOf((no - 1).toLong())
+                canvas.drawLine(x, top, x, bottom, gridPaint)
+                val label = no.toString()
+                canvas.drawText(label, (x - textPaint.measureText(label) / 2).coerceAtLeast(padL), bottom + 14 * density, textPaint)
+                no += xStep
+            }
+        } else
         // 横軸 (日時) の目盛り: 3 本 (iOS の desiredCount: 3 と同じ)
-        val sdfD = SimpleDateFormat("M/d", Locale.US); val sdfT = SimpleDateFormat("HH:mm", Locale.US)
         for (i in 0..2) {
+            val sdfD = SimpleDateFormat("M/d", Locale.US); val sdfT = SimpleDateFormat("HH:mm", Locale.US)
             val t = tMin + (tMax - tMin) * i / 2
             val x = xOf(t)
             canvas.drawLine(x, top, x, bottom, gridPaint)

@@ -4,7 +4,9 @@ import NakamonREC_Shared
 
 /// タイムフィルタの範囲指定シート (2026-11-17 ビーフ設計、Android `TimeFilterDialog` と同仕様)。
 /// 戦績画面のフィルタモードでレコードの日時をタップすると開く。
-/// - 横軸 = 日時 (ファイル全体の最初〜最後。寝ている時間の横ばいもそのまま見せる)
+/// - 横軸 = グランプリ集計が使えるなら日時 (寝ている時間の横ばいもそのまま見せる)、
+///   使えないなら戦闘数 (日時軸の勝率推移は何のグラフか分かりにくかった、ビーフ確認 2026-11-18)。
+///   上部の開始/終了はどちらのときも日時で表示する
 /// - 縦軸 = グランプリ集計が使える (= 虫眼鏡メニューでグレーアウトされない) ならレーティング + ボーダー、
 ///   使えないなら 20 戦移動平均勝率 (戦績画面右上の RECENT TREND と同じ計算)
 /// - 左右 2 本の縦線をドラッグして範囲を決める。縦線は最も近いレコードの日時に吸着し、範囲外は暗くする
@@ -30,6 +32,8 @@ struct TimeFilterView: View {
     struct Point: Identifiable {
         let id = UUID()
         let date: Date
+        /// 戦闘数軸 (通常モード) での位置。1 始まり (= stops の添字 + 1)
+        var battleNo: Int = 0
         let value: Double
         let series: String
     }
@@ -119,7 +123,40 @@ struct TimeFilterView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    @ViewBuilder
     private var chart: some View {
+        if useGrandPrix { dateAxisChart } else { battleAxisChart }
+    }
+
+    /// 通常モード: 横軸 = 戦闘数 (RECENT TREND と同じ見せ方)
+    private var battleAxisChart: some View {
+        Chart {
+            ForEach(series) { p in
+                LineMark(x: .value("戦", p.battleNo), y: .value("勝率", p.value))
+                    .foregroundStyle(Color.recCoral)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+        }
+        .chartXScale(domain: 1...max(stops.count, 2))
+        .chartYScale(domain: yDomain)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                AxisGridLine()
+                if let i = value.as(Int.self) { AxisValueLabel { Text("\(i)") } }
+            }
+        }
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                if hasData, let plotAnchor = proxy.plotFrame {
+                    rangeOverlay(proxy: proxy, plot: geo[plotAnchor])
+                }
+            }
+            .coordinateSpace(name: Self.plotSpace)
+        }
+    }
+
+    /// グランプリ: 横軸 = 日時
+    private var dateAxisChart: some View {
         Chart {
             ForEach(series) { p in
                 LineMark(x: .value("日時", p.date), y: .value("値", p.value))
@@ -127,7 +164,7 @@ struct TimeFilterView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
             }
         }
-        .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan, "勝率": Color.recCoral])
+        .chartForegroundStyleScale(["自分": Color.recCoral, "ボーダー": Color.cyan])
         .chartLegend(.hidden)
         .chartXScale(domain: xDomain)
         .chartYScale(domain: yDomain)
@@ -158,8 +195,8 @@ struct TimeFilterView: View {
 
     /// 範囲外の暗幕 + 左右の縦線 (上端に掴みやすい丸)。縦線は最も近いレコードの日時に吸着する
     private func rangeOverlay(proxy: ChartProxy, plot: CGRect) -> some View {
-        let xs = proxy.position(forX: stops[startIdx].date) ?? 0
-        let xe = proxy.position(forX: stops[endIdx].date) ?? plot.width
+        let xs = plotX(proxy, startIdx) ?? 0
+        let xe = plotX(proxy, endIdx) ?? plot.width
         let left = plot.minX + xs
         let right = plot.minX + xe
         return ZStack(alignment: .topLeading) {
@@ -191,13 +228,27 @@ struct TimeFilterView: View {
             DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.plotSpace))
                 .onChanged { g in
                     dragging = which
-                    let localX = g.location.x - plot.minX
-                    guard let d: Date = proxy.value(atX: min(max(localX, 0), plot.width)) else { return }
-                    let i = nearestStop(to: d)
+                    let localX = min(max(g.location.x - plot.minX, 0), plot.width)
+                    guard let i = stopIndex(proxy, atX: localX) else { return }
                     if which == 0 { startIdx = min(i, endIdx) } else { endIdx = max(i, startIdx) }
                 }
                 .onEnded { _ in dragging = nil }
         )
+    }
+
+    /// stops[i] のグラフ上の x (プロット領域内の座標)。横軸が日時か戦闘数かで変わる
+    private func plotX(_ proxy: ChartProxy, _ i: Int) -> CGFloat? {
+        useGrandPrix ? proxy.position(forX: stops[i].date) : proxy.position(forX: i + 1)
+    }
+
+    /// プロット領域内の x に最も近い stops の添字 (縦線の吸着先)
+    private func stopIndex(_ proxy: ChartProxy, atX x: CGFloat) -> Int? {
+        if useGrandPrix {
+            guard let d: Date = proxy.value(atX: x) else { return nil }
+            return nearestStop(to: d)
+        }
+        guard let v: Double = proxy.value(atX: x) else { return nil }
+        return min(max(Int(v.rounded()) - 1, 0), stops.count - 1)
     }
 
     private func nearestStop(to d: Date) -> Int {
@@ -255,7 +306,8 @@ struct TimeFilterView: View {
             for idx in sorted.indices {
                 let start = max(0, idx - window + 1)
                 let wins = sorted[start...idx].filter { $0.0.result == "WIN" }.count
-                pts.append(Point(date: sorted[idx].1, value: Double(wins) / Double(idx - start + 1) * 100, series: "勝率"))
+                pts.append(Point(date: sorted[idx].1, battleNo: idx + 1,
+                                 value: Double(wins) / Double(idx - start + 1) * 100, series: "勝率"))
             }
         }
         series = pts
