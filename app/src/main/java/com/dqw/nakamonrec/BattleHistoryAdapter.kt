@@ -25,7 +25,9 @@ class BattleHistoryAdapter(
      */
     private val onLongClick: (BattleRecord) -> Unit,
     val onResultClick: (String) -> Unit,   // 引数: タップされた行の result ("WIN" or "LOSE")
-    private val onMonsterClick: (String, Boolean) -> Unit
+    private val onMonsterClick: (String, Boolean) -> Unit,
+    /** フィルタモードで日時をタップしたとき (タイムフィルタを開く、2026-11-17) */
+    private val onTimestampClick: () -> Unit = {}
 ) : RecyclerView.Adapter<BattleHistoryAdapter.ViewHolder>() {
 
     var filterMyMonsters: List<String> = listOf()
@@ -129,6 +131,10 @@ class BattleHistoryAdapter(
         // (保存形式・CSV は yyyy-MM-dd のまま変更しない。時刻の「:」は影響なし)
         // 日付と時刻を明示的に改行で分け、欄幅に収まるよう自動縮小させる (レイアウト側 autoSize と対)
         holder.time.text = record.timestamp.replace('-', '.').replaceFirst(' ', '\n')
+        // フィルタモードでは日時のタップでタイムフィルタを開く。編集モードでは行のタップ (メモ表示切替) と同じ
+        holder.time.setOnClickListener {
+            if (isFilterMode) onTimestampClick() else toggleMemoDisplay(holder)
+        }
 
         // スコア表示
         holder.vsScore.visibility = View.GONE

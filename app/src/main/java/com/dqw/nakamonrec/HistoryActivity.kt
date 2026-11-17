@@ -37,6 +37,9 @@ class HistoryActivity : AppCompatActivity() {
     // 除外条件: このモンスターを「含まない」レコードだけ表示 (iOS と同一仕様)
     private val excludedEnemyMonsters = mutableListOf<String>()
     private val excludedMyMonsters = mutableListOf<String>()
+    // タイムフィルタ (2026-11-17): この範囲の timestamp ("yyyy-MM-dd HH:mm:ss"、文字列比較 = 時刻順) のレコードだけ。null = 指定なし。
+    // 戦績画面の一覧・上部カード・パーティカード・グラフ・集計の入口 (timeFiltered) で絞り、他の条件と AND になる
+    private var filterTimeRange: ClosedRange<String>? = null
     private var isFilterMode = false
     
     private lateinit var historyAdapter: BattleHistoryAdapter
@@ -69,6 +72,7 @@ class HistoryActivity : AppCompatActivity() {
             excludedEnemyMonsters.clear()
             excludedMyMonsters.clear()
             filterResult = null
+            filterTimeRange = null
             updateFilterStatusUI()
             setupUI()
         }
@@ -110,7 +114,8 @@ class HistoryActivity : AppCompatActivity() {
             },
             onMonsterClick = { name, isEnemy ->
                 addMonsterFilter(name, isEnemy)
-            }
+            },
+            onTimestampClick = { showTimeFilterDialog() }
         )
         binding.recyclerViewHistory.apply {
             val lm = LinearLayoutManager(this@HistoryActivity)
@@ -154,9 +159,28 @@ class HistoryActivity : AppCompatActivity() {
         setupUI()
     }
 
+    /** TIME だけを掛けたレコード (一覧・カード・グラフ・集計の入口。他の条件はこの後に AND で掛かる) */
+    private fun timeFiltered(records: List<BattleRecord>): List<BattleRecord> {
+        val r = filterTimeRange ?: return records
+        return records.filter { it.timestamp in r }
+    }
+
+    /** タイムフィルタの範囲指定ダイアログ。グラフは他のフィルタに関係なくファイル全体を描く */
+    private fun showTimeFilterDialog() {
+        val gpRecords = dataManager.loadGrandPrixRecords()
+        // 縦軸の種類は虫眼鏡メニューのグランプリ集計の有効/グレーアウトと同じ判定 (showAnalysisDialog の gpAvailable)
+        val useGrandPrix = GrandPrixMode.isEnabled(this) || gpRecords.isNotEmpty()
+        TimeFilterDialog.show(this, dataManager.history.records.toList(), gpRecords, useGrandPrix, filterTimeRange) { range ->
+            filterTimeRange = range
+            updateFilterStatusUI()
+            setupUI()
+        }
+    }
+
     private fun updateFilterStatusUI() {
         if (filterEnemyMonsters.isEmpty() && filterMyMonsters.isEmpty() &&
-            excludedEnemyMonsters.isEmpty() && excludedMyMonsters.isEmpty() && filterResult == null) {
+            excludedEnemyMonsters.isEmpty() && excludedMyMonsters.isEmpty() && filterResult == null &&
+            filterTimeRange == null) {
             binding.layoutFilterStatus.visibility = View.GONE
             historyAdapter.filterMyMonsters = listOf()
             historyAdapter.filterEnemyMonsters = listOf()
@@ -170,6 +194,15 @@ class HistoryActivity : AppCompatActivity() {
             val color = if (result == "WIN") "#F09199".toColorInt() else "#90D7EC".toColorInt()
             addFilterChip(if (result == "WIN") "WIN" else "LOSE", color) {
                 filterResult = null
+                updateFilterStatusUI()
+                setupUI()
+            }
+        }
+
+        if (filterTimeRange != null) {
+            // タップでタイムフィルタだけ解除 (CLEAR は全条件を解除)
+            addFilterChip("TIME", "#8E8E93".toColorInt()) {
+                filterTimeRange = null
                 updateFilterStatusUI()
                 setupUI()
             }
@@ -366,7 +399,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        val allRecords = dataManager.history.records
+        val allRecords = timeFiltered(dataManager.history.records)
         
         // 統計表示用の計算（トップカード用：パーティ選択フィルタを除外し、検索/勝敗フィルタのみ適用）
         val topStatsRecords = allRecords.filter { record ->
@@ -1274,7 +1307,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showPartyAnalysisDialog() {
-        val allRecords = dataManager.history.records
+        val allRecords = timeFiltered(dataManager.history.records)
         if (allRecords.isEmpty()) return
 
         // 日次グラフの表示/非表示 (シンプルビュー)。モンスター集計と共通キーで永続化
@@ -1617,7 +1650,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showMonsterRankingDialog() {
-        val allRecords = dataManager.history.records
+        val allRecords = timeFiltered(dataManager.history.records)
         val filteredRecords = getFilteredRecords(allRecords)
         if (filteredRecords.isEmpty()) return
 

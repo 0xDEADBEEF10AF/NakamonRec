@@ -18,6 +18,8 @@ struct BattleFilter: Equatable {
     var excludedEnemyMonsters: Set<String> = []
     /// パーティ index (カードタップによる簡易フィルタ用) — nil = 全パーティ
     var partyIndex: Int? = nil
+    /// タイムフィルタ (2026-11-17): この範囲の timestamp ("yyyy-MM-dd HH:mm:ss"、文字列比較 = 時刻順) のレコードだけ。nil = 指定なし
+    var timeRange: ClosedRange<String>? = nil
 
     var isEmpty: Bool {
         winLoseFilter == nil &&
@@ -25,7 +27,8 @@ struct BattleFilter: Equatable {
         requiredEnemyMonsters.isEmpty &&
         excludedMyMonsters.isEmpty &&
         excludedEnemyMonsters.isEmpty &&
-        partyIndex == nil
+        partyIndex == nil &&
+        timeRange == nil
     }
 
     func matches(_ record: BattleRecord) -> Bool {
@@ -43,6 +46,7 @@ struct BattleFilter: Equatable {
             if record.enemyParty.contains(m) { return false }
         }
         if let pi = partyIndex, record.partyIndex != pi { return false }
+        if let tr = timeRange, !tr.contains(record.timestamp) { return false }
         return true
     }
 }
@@ -69,12 +73,20 @@ struct BattleHistoryView: View {
     @State private var trendPinnedBattleNum: Int? = nil  // タップで設定する選択点。nil = 表示なし (デフォルトは Canvas が最新点を採用)
     @State private var showStatsMenu = false
     @State private var statsTarget: StatsTarget? = nil
+    /// タイムフィルタの範囲指定シート (フィルタモードでレコードの日時をタップすると開く)
+    @State private var showTimeFilter = false
 
     enum StatsTarget: String, Identifiable {
         case party, monster, grandPrix
         var id: String { rawValue }
     }
     @Environment(\.dismiss) private var dismiss
+
+    /// TIME だけを掛けた records (パーティ集計用)
+    private var timeFilteredAll: [BattleRecord] {
+        guard let tr = filter.timeRange else { return history.records }
+        return history.records.filter { tr.contains($0.timestamp) }
+    }
 
     /// フィルタ後の records (古い順)
     private var filtered: [BattleRecord] {
@@ -170,6 +182,12 @@ struct BattleHistoryView: View {
         .sheet(item: $matchingScoreFor) { record in
             MatchingScoreDetailView(record: record)
         }
+        .sheet(isPresented: $showTimeFilter) {
+            // グラフは他のフィルタに関係なくファイル全体を描く (実行時に他の条件と AND)
+            TimeFilterView(records: history.records, initialRange: filter.timeRange) { range in
+                withAnimation(.easeInOut(duration: 0.25)) { filter.timeRange = range }
+            }
+        }
         .sheet(isPresented: $showStatsMenu) {
             StatsMenuSheet { target in
                 showStatsMenu = false
@@ -181,7 +199,9 @@ struct BattleHistoryView: View {
         }
         .sheet(item: $statsTarget) { target in
             switch target {
-            case .party:   PartyStatsView(records: history.records)
+            // パーティ集計はこれまでどおり他のフィルタを掛けないが、TIME だけは反映する
+            // (時間帯ごとの環境変化を見るのがタイムフィルタの目的のため、2026-11-17)
+            case .party:   PartyStatsView(records: timeFilteredAll)
             // P1~3 簡易フィルタ・フィルタモードを反映するため filtered を渡す
             case .monster: MonsterStatsView(records: filtered, partyFilter: filter.partyIndex)
             case .grandPrix: GrandPrixStatsView()
@@ -378,6 +398,14 @@ struct BattleHistoryView: View {
                             }
                         }
                     }
+                    if filter.timeRange != nil {
+                        // タップでタイムフィルタだけ解除 (CLEAR は全条件を解除)
+                        chipText("TIME", color: .white) {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                filter.timeRange = nil
+                            }
+                        }
+                    }
                     if let pi = filter.partyIndex {
                         chipText("P\(pi + 1)", color: Color.recCoral) {
                             withAnimation(.easeInOut(duration: 0.25)) {
@@ -482,6 +510,9 @@ struct BattleHistoryView: View {
                         enemyFilter: filter.requiredEnemyMonsters,
                         showMemo: memoShown.contains(record.id),
                         onAddFilter: addFilter,
+                        onTimestampTap: {
+                            if mode == .filter { showTimeFilter = true }
+                        },
                         onTap: {
                             // 編集モード中: メモのあるレコードはタップで「通常表示 ⇄ メモ表示」を切り替える
                             guard mode == .edit, record.hasMemo else { return }
@@ -604,6 +635,8 @@ private struct BattleRecordRow: View {
     /// true のとき 1 行の内容をメモの文章に置き換えて表示する (編集モード中のタップで切替)
     let showMemo: Bool
     let onAddFilter: (FilterEvent) -> Void
+    /// 日時のタップ (フィルタモードでタイムフィルタを開く。編集モードでは何もしない = 行のタップとして扱う)
+    let onTimestampTap: () -> Void
     /// 行のタップ (編集モードでのメモ表示切替に使う。フィルタモードでは個別要素のタップが優先)
     let onTap: () -> Void
     let onLongPress: () -> Void
@@ -704,6 +737,10 @@ private struct BattleRecordRow: View {
             }
             .foregroundStyle(.gray)
             .frame(width: 50)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if mode == .filter { onTimestampTap() } else { onTap() }
+            }
         }
     }
 
