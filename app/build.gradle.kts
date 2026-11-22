@@ -26,6 +26,9 @@ android {
     // Google Play の対象 API レベル要件 (2026/08/31 以降 API 36 必須) に準拠するため 36 に復帰。
     // 初期は 36 で作成 → 実機インストール互換性のため一時 35 に下げていたが、API 36 正式版化に伴い再度 36 へ。
     compileSdk = 36
+    // Play Console「16KB デバイス: 古い NDK でビルドされたライブラリ」警告 (2026-11-18) 対策。
+    // NDK r28 以降を明示 (opencv モジュールと同じ値にそろえる。SDK Manager で同じ版の導入が必要)。
+    ndkVersion = "28.2.13676358"
 
     signingConfigs {
         getByName("debug") {
@@ -57,7 +60,7 @@ android {
         targetSdk = 36
 
         versionCode = gitCommitCount
-        versionName = "26.11.3"
+        versionName = "26.11.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

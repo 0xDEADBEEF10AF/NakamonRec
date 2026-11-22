@@ -19,6 +19,9 @@ println "OpenCV: " +openCVersionName + " " + project.buildscript.sourceFile
 android {
     namespace 'org.opencv'
     compileSdkVersion 34
+    // Play Console「16KB デバイス: 古い NDK でビルドされたライブラリ」警告 (2026-11-18) 対策。
+    // libcxx_helper が同梱する libc++_shared.so を NDK r28 以降でビルドさせる (app と同じ値)。
+    ndkVersion "28.2.13676358"
 
     defaultConfig {
         minSdkVersion 21
