@@ -131,5 +131,6 @@
   { "name": "やかんのまじん", "fileName": "id10015.png" },
   { "name": "エリー", "fileName": "id10016.png", "isWall": true },
   { "name": "オルゴ・デミーラ", "fileName": "id10017.png" },
-  { "name": "暗黒神ラプソーン", "shortName": "ラプソーン", "fileName": "id10018.png", "isWall": true }
+  { "name": "暗黒神ラプソーン", "shortName": "ラプソーン", "fileName": "id10018.png", "isWall": true },
+  { "name": "プチぼう", "fileName": "id10019.png" }
 ]
