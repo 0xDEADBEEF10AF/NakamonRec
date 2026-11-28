@@ -28,6 +28,8 @@ struct ContentView: View {
     @State private var showUpdateAlert = false
     /// 自動エクスポートが失敗して OFF になったときの理由 (iOS 27)。表示したら消す
     @State private var autoExportFailure: String? = nil
+    /// 読めずに退避した戦績ファイル名 (26.12.1)。表示したら消す
+    @State private var brokenHistoryFile: String? = nil
     @AppStorage("suppressedUpdateVersion") private var suppressedUpdateVersion = ""
     @AppStorage("lastUpdateCheckDate") private var lastUpdateCheckDate = ""
 
@@ -112,6 +114,14 @@ struct ContentView: View {
             } message: {
                 Text("格納先への書き出しに失敗しました。\n\(autoExportFailure ?? "")\n\n格納先フォルダを選び直してから、ユーザー設定で再度 ON にしてください。")
             }
+            .alert("戦績ファイルを読み込めませんでした", isPresented: Binding(
+                get: { brokenHistoryFile != nil },
+                set: { if !$0 { brokenHistoryFile = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("「\(brokenHistoryFile ?? "")」のデータが壊れていたため、別名で退避して空の状態で開きました。")
+            }
             .task {
                 // Extension からの放送状態と戦績更新シグナルを 0.5 秒ごとに polling。
                 // SwiftUI の .task は view が消えると自動でキャンセルされる
@@ -171,6 +181,10 @@ struct ContentView: View {
     private func reloadHistory() {
         history = BattleHistoryStore.shared.loadActive()
         activeFileName = BattleHistoryStore.shared.activeFileName
+        // 戦績ファイルが壊れていて退避した場合は 1 回だけ知らせる (26.12.1)
+        if let broken = BattleHistoryStore.consumeBrokenFileNotice() {
+            brokenHistoryFile = broken
+        }
     }
 
     /// 初回のみ NAKAMON ロゴが反時計回りに 1 周してから着地するアニメーション

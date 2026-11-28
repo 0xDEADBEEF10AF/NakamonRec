@@ -90,7 +90,39 @@ public final class BattleHistoryStore: @unchecked Sendable {
         if let history = try? decoder.decode(BattleHistory.self, from: data) {
             return history
         }
+        // 26.12.1: 読めないファイルは「○○.json.broken-日時」に退避してから空で始める。
+        // 以前は黙って空を返していたため、次の保存で壊れたファイルが上書きされ中身が失われていた
+        // (Android は同じ状況で起動のたびに落ちていた。Vitals 26.11.2)
+        quarantineBrokenFile(at: url, fileName: fileName)
         return BattleHistory()
+    }
+
+    /// 読めずに退避した戦績ファイル名 (App Group 共有。Extension で起きてもホストが知らせられるように)
+    private static let brokenFileNoticeKey = "brokenBattleHistoryFile"
+
+    /// 退避した戦績ファイル名を 1 回だけ取り出す (メイン画面で知らせて消す)
+    public static func consumeBrokenFileNotice() -> String? {
+        let defaults = UserDefaults(suiteName: appGroupID)
+        guard let name = defaults?.string(forKey: brokenFileNoticeKey) else { return nil }
+        defaults?.removeObject(forKey: brokenFileNoticeKey)
+        return name
+    }
+
+    /// 拡張子が .json でなくなるのでファイル一覧・マージには出ない。
+    /// ホストと Extension が同時に退避しようとした場合、後の側は移動に失敗するだけで何もしない
+    private func quarantineBrokenFile(at url: URL, fileName: String) {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let dest = url.deletingLastPathComponent()
+            .appendingPathComponent("\(url.lastPathComponent).broken-\(formatter.string(from: Date()))")
+        do {
+            try fileManager.moveItem(at: url, to: dest)
+            UserDefaults(suiteName: Self.appGroupID)?.set(fileName, forKey: Self.brokenFileNoticeKey)
+            NSLog("BattleHistoryStore: quarantined unreadable \(fileName) → \(dest.lastPathComponent)")
+        } catch {
+            NSLog("BattleHistoryStore: quarantine failed for \(fileName): \(error)")
+        }
     }
 
     // MARK: - Write

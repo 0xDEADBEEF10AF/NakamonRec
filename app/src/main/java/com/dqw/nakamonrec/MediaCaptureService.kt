@@ -16,6 +16,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.*
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import java.util.Locale
@@ -186,10 +187,18 @@ class MediaCaptureService : Service() {
             .setContentTitle("起動中...")
             .build()
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, bootNotif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, bootNotif)
+        // 26.12.1: 画面共有の許可が OS に有効と見なされないと SecurityException で落ちていた
+        // (Vitals 26.11.2: startForeground の validateForegroundServiceType / createVirtualDisplay の再利用・期限切れ、各 1 件)。
+        // 原因操作は特定できていないので、落とさずに REC を止めて押し直してもらう
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, bootNotif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            } else {
+                startForeground(NOTIFICATION_ID, bootNotif)
+            }
+        } catch (e: SecurityException) {
+            abortStartOnPermissionError("startForeground", e)
+            return START_NOT_STICKY
         }
 
         val prefs = getSharedPreferences("NakamonPrefs", MODE_PRIVATE)
@@ -209,11 +218,22 @@ class MediaCaptureService : Service() {
         if (data != null) {
             val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = mpManager.getMediaProjection(resultCode, data)
-            setupVirtualDisplay()
+            try {
+                mediaProjection = mpManager.getMediaProjection(resultCode, data)
+                setupVirtualDisplay()
+            } catch (e: SecurityException) {
+                abortStartOnPermissionError("createVirtualDisplay", e)
+            }
         }
 
         return START_NOT_STICKY
+    }
+
+    /** 画面共有の許可エラーで REC を開始できなかったとき。後片付け (途中まで作った ImageReader 等) は onDestroy に任せる */
+    private fun abortStartOnPermissionError(where: String, e: SecurityException) {
+        dataManager.appendFlightLog("⚠️ 画面共有の許可エラーで REC 開始を中止 ($where): ${e.message?.take(120)}")
+        Toast.makeText(this, "画面共有の許可が無効になりました。もう一度 REC を押してください", Toast.LENGTH_LONG).show()
+        stopSelf()
     }
 
     private fun reloadCalibrationData() {

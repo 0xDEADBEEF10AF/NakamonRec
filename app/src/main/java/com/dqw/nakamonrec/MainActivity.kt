@@ -1075,6 +1075,14 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null)
                 .show()
         }
+        // 戦績ファイルが壊れていて読めず、退避して空で開いたら 1 回だけ知らせる (26.12.1)
+        BattleDataManager.consumeBrokenFileNotice()?.let { name ->
+            AlertDialog.Builder(this, R.style.Theme_NakamonRec_Dialog)
+                .setTitle("戦績ファイルを読み込めませんでした")
+                .setMessage("「$name」のデータが壊れていたため、別名で退避して空の状態で開きました。")
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
     private fun generateDefaultFileName(): String = "record_${SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault()).format(Date())}"
 

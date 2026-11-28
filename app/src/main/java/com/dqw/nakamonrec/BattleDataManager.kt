@@ -1,13 +1,25 @@
 package com.dqw.nakamonrec
 
 import android.content.Context
+import androidx.core.util.AtomicFile
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class BattleDataManager(private val context: Context) {
+    companion object {
+        /** 戦績ファイルの書き込み・退避をプロセス内で直列化する (インスタンスの saveLock では別インスタンス同士を防げない) */
+        private val fileWriteLock = Any()
+
+        /** 読めずに退避した戦績ファイル名。メイン画面が 1 回だけ知らせて消す */
+        @Volatile private var brokenFileNotice: String? = null
+
+        fun consumeBrokenFileNotice(): String? = brokenFileNotice.also { brokenFileNotice = null }
+    }
+
     private val gson = Gson()
     // デフォルト名を統一
     var currentFileName: String = "default_record"
@@ -173,16 +185,46 @@ class BattleDataManager(private val context: Context) {
     fun loadHistory(fileName: String) {
         this.currentFileName = fileName
         val file = File(context.filesDir, "$fileName.json")
-        if (file.exists()) {
-            val json = file.readText()
-            history = Gson().fromJson(json, BattleHistory::class.java)
-            // 過去に略称で保存された名前 (例: ラプソーン) を正式名称 (暗黒神ラプソーン) に寄せる。
-            // 読み出し側で吸収するだけでファイルは書き換えない (次に保存されるときは正式名称になる)
-            history.records.forEach { normalizeNames(it) }
-            // 保存済みのカウンターが古くても (下記 saveHistory のコメント参照)、読み込んだ時点で正しい値に戻す
-            recomputeTotals()
-        } else {
+        if (!file.exists()) {
             history = BattleHistory()
+            return
+        }
+        // 26.12.1: 壊れたファイル (書きかけで途切れた / 文法が崩れた) で起動のたびに落ちていた
+        // (Vitals 26.11.2: Gson.fromJson の JsonSyntaxException 2 件、EOF と Malformed の両方)。
+        // 落とさずに退避して空で始める。空ファイルは fromJson が null を返すので同じ扱い
+        val loaded: BattleHistory? = try {
+            Gson().fromJson(file.readText(), BattleHistory::class.java)
+        } catch (e: JsonParseException) {
+            appendFlightLog("⚠️ 戦績ファイル「$fileName」を読めません: ${e.cause?.javaClass?.simpleName ?: e.javaClass.simpleName}")
+            null
+        }
+        if (loaded == null) {
+            quarantineBrokenFile(file, fileName)
+            history = BattleHistory()
+            return
+        }
+        history = loaded
+        // 過去に略称で保存された名前 (例: ラプソーン) を正式名称 (暗黒神ラプソーン) に寄せる。
+        // 読み出し側で吸収するだけでファイルは書き換えない (次に保存されるときは正式名称になる)
+        history.records.forEach { normalizeNames(it) }
+        // 保存済みのカウンターが古くても (下記 saveHistory のコメント参照)、読み込んだ時点で正しい値に戻す
+        recomputeTotals()
+    }
+
+    /**
+     * 読めない戦績ファイルを「○○.json.broken-日時」に退避する。そのまま空で保存すると上書きで
+     * 中身が失われるため、先に名前を変えて残す (拡張子が json でなくなるのでファイル一覧・マージには出ない)。
+     * サービスと画面が同時に退避しようとした場合、後の側はファイルが無いので何もしない
+     */
+    private fun quarantineBrokenFile(file: File, fileName: String) {
+        synchronized(fileWriteLock) {
+            if (!file.exists()) return
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+            val dest = File(file.parentFile, "${file.name}.broken-$stamp")
+            if (file.renameTo(dest)) {
+                brokenFileNotice = fileName
+                appendFlightLog("⚠️ 戦績ファイルを退避: ${dest.name}")
+            }
         }
     }
 
@@ -202,7 +244,22 @@ class BattleDataManager(private val context: Context) {
         recomputeTotals()
         val file = File(context.filesDir, "$currentFileName.json")
         val json = Gson().toJson(history)
-        file.writeText(json)
+        // 26.12.1: 一時ファイル (○○.json.new) に書き切ってから置き換える。直接上書きしていた頃は、
+        // 書き込み途中でプロセスが終わると途切れたファイルが残り、次の起動で落ちていた。
+        // サービスと画面は別インスタンスで同じファイルに書くので、書き込みはプロセス共通のロックで直列化する
+        // (androidx の AtomicFile は全 API レベルで「.new に書いて rename」方式。android.util 版は
+        //  API 29 以下だと書き込み中に本体を .bak へ移すため、素の readText と組み合わせられない)
+        synchronized(fileWriteLock) {
+            val atomic = AtomicFile(file)
+            val out = atomic.startWrite()
+            try {
+                out.write(json.toByteArray(Charsets.UTF_8))
+                atomic.finishWrite(out)
+            } catch (e: Exception) {
+                atomic.failWrite(out)
+                throw e
+            }
+        }
         // 自動エクスポート (2026-11-02): ON なら保存のたびに利用者指定フォルダへ CSV/HTML を上書きする
         // (連続保存は 1 秒でまとめる。失敗しても保存自体には影響させない)
         AutoExportManager.onHistorySaved(context, this)
