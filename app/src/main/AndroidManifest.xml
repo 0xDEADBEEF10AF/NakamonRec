@@ -7,6 +7,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 各 Activity の screenOrientation="portrait" で暗黙に required=true になり、Play Console で
+         「縦向きにできない端末に配信されない」と告知されるため (2026-11-22) 必須を外す。
+         targetSdk 36 の大画面 (sw600dp+) では OS が portrait 指定を既に無視するので挙動は変わらない。 -->
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+
     <application
         android:name=".NakamonApplication"
         android:allowBackup="true"

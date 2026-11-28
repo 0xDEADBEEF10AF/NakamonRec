@@ -60,7 +60,7 @@ android {
         targetSdk = 36
 
         versionCode = gitCommitCount
-        versionName = "26.11.4"
+        versionName = "26.11.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -79,7 +79,10 @@ android {
             versionNameSuffix = "-GP-test"
         }
         release {
-            isMinifyEnabled = false
+            // Play Console「DEX コードの最適化が閾値を下回っています (難読化 1%)」(期限 2027-02) 対策で R8 を有効化。
+            // keep ルールは proguard-rules.pro (Gson のデータモデルと OpenCV は名前を残す)。
+            // isShrinkResources は入れない: ランク帯エンブレム等を getIdentifier で名前参照しており、削除されるおそれがあるため。
+            isMinifyEnabled = true
             // app/keystore.properties が存在すれば release 署名、無ければ debug 署名にフォールバック
             signingConfig = if (keystorePropsFile.exists()) {
                 signingConfigs.getByName("release")
